@@ -8,7 +8,7 @@ ORG="${1:?usage: bootstrap.sh <github-org> [--include-archived]}"
 INCLUDE_ARCHIVED="${2:-}"
 
 gh repo list "$ORG" --limit 300 \
-  --json name,url,defaultBranchRef,isArchived,isFork > /tmp/archimedes-repos.json
+  --json name,sshUrl,defaultBranchRef,isArchived,isFork > /tmp/archimedes-repos.json
 
 jq_filter='.[] | select(.isFork == false)'
 [ "$INCLUDE_ARCHIVED" = "--include-archived" ] || jq_filter+=' | select(.isArchived == false)'
@@ -19,7 +19,7 @@ new_count=0
 
 while IFS= read -r repo; do
   name=$(jq -r '.name' <<<"$repo")
-  url=$(jq -r '.url' <<<"$repo")
+  url=$(jq -r '.sshUrl' <<<"$repo")
   base=$(jq -r '.defaultBranchRef.name // "main"' <<<"$repo")
   path="../$name"
 
