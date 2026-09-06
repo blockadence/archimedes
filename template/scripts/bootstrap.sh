@@ -24,7 +24,7 @@ while IFS= read -r repo; do
   path="../$name"
 
   if ! repo_exists "$name"; then
-    yq -i ".repos += [{\"name\": \"$name\", \"path\": \"$path\", \"base_branch\": \"$base\", \"depends_on\": [], \"context_modeled_sha\": null, \"convention_pack\": null}]" "$REPOS_YAML"
+    yq -i ".repos += [{\"name\": \"$name\", \"path\": \"$path\", \"base_branch\": \"$base\", \"depends_on\": [], \"context_modeled_sha\": null, \"convention_pack\": null, \"driver\": null}]" "$REPOS_YAML"
     new_count=$((new_count + 1))
   fi
 
