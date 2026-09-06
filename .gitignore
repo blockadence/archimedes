@@ -1,3 +1,20 @@
+# OS
 .DS_Store
+Thumbs.db
+
+# Editors/IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Env/secrets
+.env
+.env.local
+.env.*.local
+
+# Misc
 *.bak
+*.log
 /tmp/
