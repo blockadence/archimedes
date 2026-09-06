@@ -20,3 +20,6 @@ below this line is specific to this instance.
    repo. Safe to re-run any time — repos already current for their base
    branch's latest commit are skipped.
 4. `scripts/render-map.sh` after any `repos.yaml` change.
+5. `scripts/sync-templates.sh --dry-run` to preview, then without
+   `--dry-run` to open a PR in each tracked repo introducing/updating the
+   canonical PR/issue templates from `scaffolding/`.

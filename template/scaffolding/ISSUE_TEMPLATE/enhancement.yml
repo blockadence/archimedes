@@ -1,0 +1,25 @@
+name: Enhancement request
+description: Propose a new capability or improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: What should change or be added?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What problem does this solve, or what value does it add?
+    validations:
+      required: true
+  - type: textarea
+    id: who-for
+    attributes:
+      label: Who for
+      description: Who benefits from this (which users, teams, or workflows)?
+    validations:
+      required: true
