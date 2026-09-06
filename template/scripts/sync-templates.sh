@@ -28,10 +28,13 @@ trap 'rm -f "$MOD_SCRIPT"' EXIT
 cat > "$MOD_SCRIPT" <<'EOF'
 #!/usr/bin/env bash
 # Run by multi-gitter with cwd set to the root of each cloned repo.
+# $SCAFFOLD_DIR must reach this process via inherited environment — multi-gitter
+# execs this script as a child, so the parent's `export` below is what carries it.
 set -euo pipefail
 mkdir -p .github/ISSUE_TEMPLATE
 cp "$SCAFFOLD_DIR/PULL_REQUEST_TEMPLATE.md" .github/PULL_REQUEST_TEMPLATE.md
 cp "$SCAFFOLD_DIR"/ISSUE_TEMPLATE/*.yml .github/ISSUE_TEMPLATE/
+rm -f .github/ISSUE_TEMPLATE.md  # drop any legacy single-file template we're superseding
 EOF
 chmod +x "$MOD_SCRIPT"
 export SCAFFOLD_DIR
