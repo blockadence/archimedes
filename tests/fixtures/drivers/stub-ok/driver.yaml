@@ -1,0 +1,4 @@
+name: stub-ok
+description: Well-behaved path-parameterized stub driver, for testing.
+output_mode: path-parameterized
+command: run.sh

@@ -1,0 +1,7 @@
+name: openspec
+description: >-
+  Wraps the OpenSpec CLI's `context` command to produce a context map for a
+  repo, initializing OpenSpec in the target repo first if it isn't already
+  set up there.
+output_mode: path-parameterized
+command: run.sh

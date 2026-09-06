@@ -1,0 +1,4 @@
+name: stub-liar
+description: Exits zero without writing the output file, for testing.
+output_mode: path-parameterized
+command: run.sh

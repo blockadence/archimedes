@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPOS_YAML="$ROOT/repos.yaml"
 WORK_DIR="$ROOT/work"
+DRIVERS_DIR="${ARCHIMEDES_DRIVERS_DIR:-$ROOT/drivers}"
 
 require() { command -v "$1" >/dev/null 2>&1 || { echo "missing dependency: $1" >&2; exit 1; }; }
 require gh; require git; require yq; require jq

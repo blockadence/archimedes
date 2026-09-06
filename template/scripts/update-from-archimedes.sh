@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Re-vendor the latest scripts/ from a local Archimedes checkout into this
-# instance. Doesn't touch repos.yaml, WORKSPACE-MAP.md, repos/, or work/.
+# Re-vendor the latest scripts/ and drivers/ from a local Archimedes checkout
+# into this instance. Doesn't touch repos.yaml, WORKSPACE-MAP.md, repos/, or
+# work/.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARCHIMEDES_SRC="${1:?usage: update-from-archimedes.sh <path-to-archimedes-checkout>}"
 
 cp -r "$ARCHIMEDES_SRC/template/scripts/." "$ROOT/scripts/"
 chmod +x "$ROOT"/scripts/*.sh
-echo "scripts/ refreshed from $ARCHIMEDES_SRC"
+mkdir -p "$ROOT/drivers"
+cp -r "$ARCHIMEDES_SRC/template/drivers/." "$ROOT/drivers/"
+chmod +x "$ROOT"/drivers/*/*.sh 2>/dev/null || true
+echo "scripts/ and drivers/ refreshed from $ARCHIMEDES_SRC"

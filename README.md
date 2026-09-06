@@ -30,6 +30,7 @@ your-workspace/
 │   ├── repos.yaml           # machine-readable source of truth
 │   ├── repos/*.md           # per-repo dossier: branching, release procedure
 │   ├── work/<slug>/          # one folder per active unit of work
+│   ├── drivers/              # pluggable context-mapping drivers
 │   └── scripts/
 ├── service-a/
 ├── service-b/
@@ -83,10 +84,18 @@ Requires `git`, `gh` (authenticated), `yq` (v4), `jq`.
   dependencies and skipping any repo whose map is already current for its
   base branch's latest commit (tracked via `context_modeled_sha` in
   `repos.yaml`), so re-runs after new repos or merges are incremental.
-  Orchestration only — the mapping itself is still an interactive,
-  human-in-the-loop session per repo, and it doesn't assume any particular
-  coding agent or skill (`ARCHIMEDES_AGENT_CMD`/`ARCHIMEDES_CONTEXT_PROMPT`/
-  `ARCHIMEDES_CONTEXT_FILE` override the defaults).
+  Orchestration only — it doesn't assume any particular coding agent, skill,
+  or driver. By default the mapping itself is an interactive, human-in-the-
+  loop session per repo (`ARCHIMEDES_AGENT_CMD`/`ARCHIMEDES_CONTEXT_PROMPT`/
+  `ARCHIMEDES_CONTEXT_FILE` override the defaults); set `ARCHIMEDES_DRIVER`
+  to a name under `drivers/` to build the map unattended instead, via
+  `run-driver.sh` (see `drivers/README.md`).
+- `run-driver.sh <driver-name> <repo-path> <output-path>` — invoke one
+  driver's context-mapping contract directly. A driver declares, in its
+  `driver.yaml` manifest, whether it accepts an explicit output path
+  (`output_mode: path-parameterized`); an `openspec` driver wrapping the
+  [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec) ships as a working
+  example.
 - `spawn.sh <slug> <repo> [--base <branch>|--stack-on <repo>:<slug>]` —
   fetch-first worktree creation for one unit of work in one repo.
 - `status.sh [<slug>]` — live PR/branch status across every spawned
@@ -94,8 +103,8 @@ Requires `git`, `gh` (authenticated), `yq` (v4), `jq`.
 - `prune.sh [<slug>] [--force]` — list (or, with `--force`, remove)
   worktrees/branches whose PR has merged or closed. Refuses to remove a
   branch still acting as another worktree's stack base.
-- `update-from-archimedes.sh <path-to-this-repo>` — re-vendor `scripts/`
-  into an existing instance.
+- `update-from-archimedes.sh <path-to-this-repo>` — re-vendor `scripts/` and
+  `drivers/` into an existing instance.
 
 ## Status
 

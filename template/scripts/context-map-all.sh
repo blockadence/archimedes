@@ -4,11 +4,14 @@
 # already current for its base branch's latest commit — so re-runs are
 # incremental as repos are added or merged into.
 #
-# Orchestration only: building the actual context map is still an
-# interactive, human-in-the-loop session per repo, not something this script
-# can do unattended. It also never assumes a specific coding agent or skill
-# — override ARCHIMEDES_AGENT_CMD / ARCHIMEDES_CONTEXT_PROMPT /
-# ARCHIMEDES_CONTEXT_FILE below for whatever harness/skill set you use.
+# Orchestration only: it never assumes a specific coding agent, skill, or
+# driver. By default, building the actual context map is an interactive,
+# human-in-the-loop session per repo — override ARCHIMEDES_AGENT_CMD /
+# ARCHIMEDES_CONTEXT_PROMPT / ARCHIMEDES_CONTEXT_FILE below for whatever
+# harness/skill set you use. Set ARCHIMEDES_DRIVER to a name under
+# drivers/ instead, to build the map unattended via that driver's contract
+# (see drivers/README.md) — swapping which driver runs never requires
+# changes here.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -17,6 +20,7 @@ DRY_RUN=0
 
 AGENT_CMD="${ARCHIMEDES_AGENT_CMD:-claude}"
 CONTEXT_FILE="${ARCHIMEDES_CONTEXT_FILE:-CONTEXT.md}"
+DRIVER="${ARCHIMEDES_DRIVER:-}"
 
 names=($(yq -r '.repos[].name' "$REPOS_YAML"))
 declare -A done_map
@@ -77,23 +81,29 @@ for name in "${order[@]}"; do
   echo "=== $name ($reason) ==="
   [ "$DRY_RUN" -eq 1 ] && continue
 
-  echo "Path: $path"
-  deps=($(repo_field "$name" 'depends_on[]' 2>/dev/null || true))
-  prompt="Build or refresh this repo's $CONTEXT_FILE: describe its purpose, structure, and relationship to its dependencies."
-  if [ "${#deps[@]}" -gt 0 ]; then
-    echo "Depends on (already mapped, prime the session with these):"
-    for dep in "${deps[@]}"; do
-      echo "  - $dep: $(repo_path "$dep")/$CONTEXT_FILE"
-    done
-    prompt="$prompt Dependencies: ${deps[*]}."
+  if [ -n "$DRIVER" ]; then
+    echo "Running driver '$DRIVER' against $path..."
+    "$(dirname "${BASH_SOURCE[0]}")/run-driver.sh" "$DRIVER" "$path" "$path/$CONTEXT_FILE"
+    echo "Wrote $path/$CONTEXT_FILE"
+  else
+    echo "Path: $path"
+    deps=($(repo_field "$name" 'depends_on[]' 2>/dev/null || true))
+    prompt="Build or refresh this repo's $CONTEXT_FILE: describe its purpose, structure, and relationship to its dependencies."
+    if [ "${#deps[@]}" -gt 0 ]; then
+      echo "Depends on (already mapped, prime the session with these):"
+      for dep in "${deps[@]}"; do
+        echo "  - $dep: $(repo_path "$dep")/$CONTEXT_FILE"
+      done
+      prompt="$prompt Dependencies: ${deps[*]}."
+    fi
+    echo ""
+    echo "Run:"
+    echo "  cd $path && $AGENT_CMD"
+    echo "First message:"
+    echo "  ${ARCHIMEDES_CONTEXT_PROMPT:-$prompt}"
+    echo ""
+    read -r -p "Press enter once that session is done, to record $name as mapped at ${current_sha:0:8}... " _
   fi
-  echo ""
-  echo "Run:"
-  echo "  cd $path && $AGENT_CMD"
-  echo "First message:"
-  echo "  ${ARCHIMEDES_CONTEXT_PROMPT:-$prompt}"
-  echo ""
-  read -r -p "Press enter once that session is done, to record $name as mapped at ${current_sha:0:8}... " _
 
   set_repo_field "$name" context_modeled_sha "$current_sha"
 done
