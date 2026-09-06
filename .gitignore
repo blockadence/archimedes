@@ -18,3 +18,7 @@ Thumbs.db
 *.bak
 *.log
 /tmp/
+
+# Go CLI build output
+/cli/archimedes
+/cli/archimedes.exe

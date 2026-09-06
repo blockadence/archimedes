@@ -74,6 +74,14 @@ scripts/context-map-all.sh --dry-run    # see the planned + stale/fresh order
 Requires `git`, `gh` (authenticated), `yq` (v4), `jq`. `sync-templates.sh`
 additionally requires [`multi-gitter`](https://github.com/lindell/multi-gitter).
 
+## Compiled CLI
+
+A `archimedes` binary is being built at [`cli/`](./cli) to replace the
+vendored bash scripts below with one globally-installed tool (see
+[`cli/README.md`](./cli/README.md)). It currently has one subcommand,
+`render-map`, ported from `render-map.sh`; the rest follow the same
+pattern one at a time.
+
 ## Scripts (in `template/scripts/`, vendored into each instance)
 
 - `bootstrap.sh` — discover org repos via `gh repo list`, clone what's
