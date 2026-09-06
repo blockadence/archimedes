@@ -26,8 +26,7 @@ command: run.sh            # path to the executable, relative to this directory
 ```
 
 `output_mode` declares which invocation contract the driver honors.
-Currently only `path-parameterized` is supported by
-`scripts/run-driver.sh`:
+`scripts/run-driver.sh` supports two modes:
 
 - **path-parameterized** — the driver accepts an explicit output location and
   writes exactly there. `scripts/run-driver.sh <name> <repo-path>
@@ -43,8 +42,23 @@ Currently only `path-parameterized` is supported by
   on failure. `run-driver.sh` treats a zero exit with no file at
   `<output-path>` as an error.
 
-  (A `fixed-location` mode, for drivers that can only ever write into the
-  repo they're run in, is future work — see issue 06 in the v2 plan.)
+- **fixed-location** — the driver can't be told where to write; it always
+  writes into whatever repo it's run in, at a fixed path relative to that
+  repo's root. The manifest must also declare `fixed_path` (e.g.
+  `CONTEXT.md`). `scripts/run-driver.sh <name> <repo-path> <output-path>`
+  invokes it as:
+
+  ```
+  <driver-dir>/<command> <repo-path>
+  ```
+
+  The driver must write to exactly `<repo-path>/<fixed_path>` and exit
+  non-zero — without leaving a file behind — on failure. `run-driver.sh`
+  then harvests that file itself: it moves (not copies)
+  `<repo-path>/<fixed_path>` to `<output-path>`, so the canonical copy ends
+  up wherever the caller asked and the target repo is left with no trace of
+  it. A zero exit with no file at `<repo-path>/<fixed_path>` is treated as
+  an error, same as path-parameterized.
 
 ## Trying one directly
 
@@ -60,3 +74,9 @@ scripts/run-driver.sh <name> <path-to-a-repo> <path-to-write-the-map-to>
   (`npm install -g @fission-ai/openspec`). Initializes OpenSpec in the target
   repo if needed, then captures `openspec context`'s working-context report
   as the context map.
+- `pocock` — wraps [Matt Pocock's `domain-modeling`
+  skill](https://github.com/mattpocock/skills) via a headless `claude -p`
+  session. The skill always writes `CONTEXT.md` at the root of whatever repo
+  it's run in, so this is a `fixed-location` driver (`fixed_path:
+  CONTEXT.md`) — requires the `claude` CLI and the `domain-modeling` skill
+  installed.

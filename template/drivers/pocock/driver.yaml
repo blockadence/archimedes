@@ -1,0 +1,7 @@
+name: pocock
+description: >-
+  Wraps Matt Pocock's domain-modeling skill (github.com/mattpocock/skills),
+  run headlessly via `claude -p`, to build a repo's CONTEXT.md.
+output_mode: fixed-location
+fixed_path: CONTEXT.md
+command: run.sh
