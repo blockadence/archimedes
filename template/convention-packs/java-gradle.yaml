@@ -1,0 +1,15 @@
+# First real convention pack: Java repos built with Gradle, pulling shared
+# Checkstyle/Spotless/JaCoCo/etc. config from one published Gradle
+# convention plugin instead of each repo hand-rolling its own.
+name: java-gradle
+language: java
+build_tool: gradle
+description: >
+  Shared Checkstyle/Spotless/JaCoCo/Error Prone conventions for Java repos,
+  applied as a Gradle convention plugin from one published artifact.
+artifact:
+  group: com.example.buildtools
+  id: java-conventions-plugin
+  version: "1.4.0"
+gradle:
+  plugin_id: com.example.buildtools.java-conventions

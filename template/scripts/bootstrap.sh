@@ -23,8 +23,8 @@ while IFS= read -r repo; do
   base=$(jq -r '.defaultBranchRef.name // "main"' <<<"$repo")
   path="../$name"
 
-  if ! yq -e ".repos[] | select(.name == \"$name\")" "$REPOS_YAML" >/dev/null 2>&1; then
-    yq -i ".repos += [{\"name\": \"$name\", \"path\": \"$path\", \"base_branch\": \"$base\", \"depends_on\": [], \"context_modeled_sha\": null}]" "$REPOS_YAML"
+  if ! repo_exists "$name"; then
+    yq -i ".repos += [{\"name\": \"$name\", \"path\": \"$path\", \"base_branch\": \"$base\", \"depends_on\": [], \"context_modeled_sha\": null, \"convention_pack\": null}]" "$REPOS_YAML"
     new_count=$((new_count + 1))
   fi
 

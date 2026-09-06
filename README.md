@@ -115,8 +115,24 @@ additionally requires [`multi-gitter`](https://github.com/lindell/multi-gitter).
   request, via `multi-gitter`. `--dry-run` shows which repos would receive
   changes without pushing or opening anything; an optional repo name limits
   the run to one repo. Requires `multi-gitter` and `gh auth login`.
+- `apply-convention-pack.sh <repo>` — one-time scaffold: add whatever
+  dependency/plugin reference a repo's declared `convention_pack` (see
+  `repos.yaml` and `convention-packs/`) needs to start pulling in its shared
+  build/lint/static-analysis config. Idempotent; not an ongoing sync.
 - `update-from-archimedes.sh <path-to-this-repo>` — re-vendor `scripts/`,
   `drivers/`, and `scaffolding/` into an existing instance.
+
+## Language-tooling convention packs
+
+A repo can declare, via `convention_pack` in `repos.yaml`, which shared
+build-tooling convention it's meant to follow — e.g. a Java repo pointing at
+a shared Gradle convention plugin for Checkstyle/Spotless/JaCoCo. The pack
+itself (language, build tool, and the shared artifact + version that carries
+the config) is defined once in `convention-packs/<pack-name>.yaml` and
+referenced by name from any repo that follows it. This is documentation
+plus a one-time scaffold, not ongoing config-file distribution — see
+`template/convention-packs/README.md` for the shape and how to add a pack
+for another language/build tool.
 
 ## Status
 
