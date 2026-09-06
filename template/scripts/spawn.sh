@@ -38,7 +38,7 @@ mkdir -p "$(dirname "$WT")"
 git -C "$REPO_PATH" worktree add "$WT" -b "$SLUG" "$START_POINT"
 
 mkdir -p "$WORK_DIR/$SLUG"
-materialize_worktree_context "$REPO_PATH" "$SLUG" "$WT"
+materialize_worktree_context "$REPO_PATH" "$REPO" "$SLUG" "$WT"
 
 STATUS="$(status_file "$SLUG")"
 [ -f "$STATUS" ] || printf '# %s\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n' "$SLUG" > "$STATUS"
