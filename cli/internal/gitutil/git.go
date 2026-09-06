@@ -1,7 +1,9 @@
 // Package gitutil runs git as a subprocess on behalf of other packages that
 // need repository state or need to mutate a working tree. It has no
 // knowledge of Archimedes' own conventions (repos.yaml, work/, .archimedes/)
-// — see internal/spawn for that.
+// — see internal/spawn for that. It does know the one thing every caller
+// needs from a remote URL: the GitHub "owner/name" slug gh addresses repos
+// by (GHSlug).
 package gitutil
 
 import (
@@ -10,6 +12,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -54,4 +57,39 @@ func CommonDir(repoPath string) (string, error) {
 		return out, nil
 	}
 	return filepath.Join(repoPath, out), nil
+}
+
+// RemoveWorktree force-removes the git worktree at wt from the repo
+// checked out at repoPath, mirroring `git worktree remove --force`.
+func RemoveWorktree(repoPath, wt string) error {
+	_, err := Run(repoPath, "worktree", "remove", wt, "--force")
+	return err
+}
+
+// RemoveBranch deletes branch from repoPath. An already-gone branch is not
+// an error, matching prune.sh's `git branch -D "$slug" 2>/dev/null || true`.
+func RemoveBranch(repoPath, branch string) error {
+	_, _ = Run(repoPath, "branch", "-D", branch)
+	return nil
+}
+
+// githubRemoteRE extracts "owner/name" from a github.com origin remote URL,
+// SSH or HTTPS. Mirrors lib.sh's gh_slug():
+// sed -E 's#.*github\.com[:/](.+)\.git#\1#'
+var githubRemoteRE = regexp.MustCompile(`github\.com[:/](.+)\.git$`)
+
+// GHSlug derives the "owner/name" slug gh needs from repoPath's origin
+// remote. If the remote URL doesn't match the expected github.com/...git
+// shape, it's returned unchanged, same as the sed pass it replaces (which
+// leaves non-matching input untouched rather than erroring).
+func GHSlug(repoPath string) (string, error) {
+	url, err := Run(repoPath, "remote", "get-url", "origin")
+	if err != nil {
+		return "", fmt.Errorf("reading origin remote for %s: %w", repoPath, err)
+	}
+
+	if m := githubRemoteRE.FindStringSubmatch(url); m != nil {
+		return m[1], nil
+	}
+	return url, nil
 }

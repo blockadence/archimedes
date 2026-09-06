@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/blockadence/archimedes/cli/internal/gitutil"
 	"github.com/blockadence/archimedes/cli/internal/manifest"
 	"github.com/blockadence/archimedes/cli/internal/prune"
 )
@@ -76,7 +77,7 @@ func runPrune(out io.Writer, root, slugFilter string, force bool, ghState prune.
 		slug, cached := ghSlugs[repo]
 		if !cached {
 			var err error
-			slug, err = prune.GHSlug(repoPath)
+			slug, err = gitutil.GHSlug(repoPath)
 			if err != nil {
 				return "NONE", nil
 			}
@@ -105,11 +106,13 @@ func runPrune(out io.Writer, root, slugFilter string, force bool, ghState prune.
 		}
 
 		repoPath := repoPaths[it.Repo]
-		if err := prune.RemoveWorktree(repoPath, it.Worktree); err != nil {
-			return fmt.Errorf("removing worktree %s: %w", it.Worktree, err)
+		// gitutil's errors already name the git command and its
+		// arguments, so re-wrapping here would just repeat the path.
+		if err := gitutil.RemoveWorktree(repoPath, it.Worktree); err != nil {
+			return err
 		}
-		if err := prune.RemoveBranch(repoPath, it.Slug); err != nil {
-			return fmt.Errorf("removing branch %s: %w", it.Slug, err)
+		if err := gitutil.RemoveBranch(repoPath, it.Slug); err != nil {
+			return err
 		}
 		if err := prune.RemoveStatusRow(it.StatusPath, it.Repo); err != nil {
 			return fmt.Errorf("updating %s: %w", it.StatusPath, err)

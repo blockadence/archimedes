@@ -1,8 +1,9 @@
 // Package prune finds and removes worktrees/branches whose PR has merged
 // or closed — a port of template/scripts/prune.sh. Parsing and candidate
 // selection are pure (Scan takes PR lookup as an injected function so they
-// can be unit-tested without gh or a real git checkout); the git/gh-facing
-// adapters that do the actual removal live in git.go and gh.go.
+// can be unit-tested without gh or a real git checkout); the gh-facing
+// adapter lives in gh.go, and the git commands that do the actual removal
+// come from internal/gitutil.
 package prune
 
 import (
