@@ -3,9 +3,9 @@ package status
 import (
 	"encoding/json"
 	"os/exec"
-	"regexp"
 	"strconv"
-	"strings"
+
+	"github.com/blockadence/archimedes/cli/internal/gitutil"
 )
 
 // PR is one row's live PR state, as reported by `gh pr list`.
@@ -23,33 +23,11 @@ var noPR = PR{Number: "-", State: "no PR"}
 // PRLookup resolves a repo's live PR state for a given head branch.
 type PRLookup func(repoPath, headBranch string) (PR, error)
 
-// githubRemoteRe extracts "owner/name" from a github.com origin remote URL,
-// SSH or HTTPS. Mirrors status.sh's gh_slug: `sed -E
-// 's#.*github\.com[:/](.+)\.git#\1#'`.
-var githubRemoteRe = regexp.MustCompile(`github\.com[:/](.+)\.git$`)
-
-// ghSlug reads repoPath's origin remote and returns the "owner/name" slug
-// gh expects. If the remote URL doesn't match the expected github.com
-// pattern, it's returned unchanged, matching sed's behavior when a
-// substitution doesn't match.
-func ghSlug(repoPath string) (string, error) {
-	out, err := exec.Command("git", "-C", repoPath, "remote", "get-url", "origin").Output()
-	if err != nil {
-		return "", err
-	}
-
-	url := strings.TrimSpace(string(out))
-	if m := githubRemoteRe.FindStringSubmatch(url); m != nil {
-		return m[1], nil
-	}
-	return url, nil
-}
-
 // GHLookup is the real PRLookup, backed by `git` and `gh`. Any failure
 // (unresolvable remote, gh not installed, no network, no auth) degrades to
 // noPR rather than an error.
 func GHLookup(repoPath, headBranch string) (PR, error) {
-	slug, err := ghSlug(repoPath)
+	slug, err := gitutil.GHSlug(repoPath)
 	if err != nil {
 		return noPR, nil
 	}

@@ -20,6 +20,14 @@ Each subcommand lives in its own `internal/cmd/<name>.go`, exposing a
 unit-tested directly (see `internal/workspacemap` for the pattern the
 `render-map` subcommand follows).
 
+Anything that shells out to `git` goes through `internal/gitutil` rather
+than calling `exec.Command("git", ...)` directly, so "run git and interpret
+the result" lives in one place. Helpers that more than one subcommand needs
+— deriving a repo's `owner/name` slug from its origin remote, removing a
+worktree or branch — belong there too. Tests are exempt: a test that builds
+a git fixture drives git directly, so a bug in `gitutil` can't hide itself
+by also breaking the fixture.
+
 ## Status
 
 Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
