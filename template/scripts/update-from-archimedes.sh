@@ -10,5 +10,4 @@ cp -r "$ARCHIMEDES_SRC/template/scripts/." "$ROOT/scripts/"
 chmod +x "$ROOT"/scripts/*.sh
 mkdir -p "$ROOT/drivers"
 cp -r "$ARCHIMEDES_SRC/template/drivers/." "$ROOT/drivers/"
-chmod +x "$ROOT"/drivers/*/*.sh 2>/dev/null || true
 echo "scripts/ and drivers/ refreshed from $ARCHIMEDES_SRC"
