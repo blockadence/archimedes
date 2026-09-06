@@ -24,7 +24,7 @@ while IFS= read -r repo; do
   path="../$name"
 
   if ! yq -e ".repos[] | select(.name == \"$name\")" "$REPOS_YAML" >/dev/null 2>&1; then
-    yq -i ".repos += [{\"name\": \"$name\", \"path\": \"$path\", \"base_branch\": \"$base\", \"depends_on\": []}]" "$REPOS_YAML"
+    yq -i ".repos += [{\"name\": \"$name\", \"path\": \"$path\", \"base_branch\": \"$base\", \"depends_on\": [], \"context_modeled_sha\": null}]" "$REPOS_YAML"
     new_count=$((new_count + 1))
   fi
 
@@ -43,7 +43,7 @@ while IFS= read -r repo; do
 **Depended on by:** TBD
 
 ## Branching
-TBD, fill in during the domain-modeling / dossier pass.
+TBD, fill in during the context-mapping / dossier pass.
 
 ## Release procedure
 TBD

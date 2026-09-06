@@ -67,7 +67,7 @@ dependent branch is still current.
 ./scripts/init.sh <instance-name> <parent-dir-for-your-repos>
 cd <parent-dir-for-your-repos>/<instance-name>
 scripts/bootstrap.sh <github-org>       # discovers + clones repos via `gh`
-scripts/domain-model-all.sh --dry-run   # see the planned modeling order
+scripts/context-map-all.sh --dry-run    # see the planned + stale/fresh order
 ```
 
 Requires `git`, `gh` (authenticated), `yq` (v4), `jq`.
@@ -78,10 +78,15 @@ Requires `git`, `gh` (authenticated), `yq` (v4), `jq`.
   missing, scaffold `repos.yaml` and per-repo dossier stubs.
 - `render-map.sh` — regenerate `WORKSPACE-MAP.md`'s repo list from
   `repos.yaml` (the `## Relationships` section stays hand-written).
-- `domain-model-all.sh` — sequence a domain-modeling pass across every repo,
-  dependency/base repos first, priming each session with already-modeled
-  dependencies. Orchestration only — the modeling itself is still an
-  interactive, human-in-the-loop session per repo.
+- `context-map-all.sh` — sequence a context-mapping pass across every repo,
+  dependency/base repos first, priming each session with already-mapped
+  dependencies and skipping any repo whose map is already current for its
+  base branch's latest commit (tracked via `context_modeled_sha` in
+  `repos.yaml`), so re-runs after new repos or merges are incremental.
+  Orchestration only — the mapping itself is still an interactive,
+  human-in-the-loop session per repo, and it doesn't assume any particular
+  coding agent or skill (`ARCHIMEDES_AGENT_CMD`/`ARCHIMEDES_CONTEXT_PROMPT`/
+  `ARCHIMEDES_CONTEXT_FILE` override the defaults).
 - `spawn.sh <slug> <repo> [--base <branch>|--stack-on <repo>:<slug>]` —
   fetch-first worktree creation for one unit of work in one repo.
 - `status.sh [<slug>]` — live PR/branch status across every spawned

@@ -15,6 +15,8 @@ below this line is specific to this instance.
 1. `scripts/bootstrap.sh <github-org>` — discover and clone repos, scaffold
    `repos.yaml` and `repos/*.md` dossiers.
 2. Fill in each `repos/*.md` dossier's branching/release sections by hand.
-3. `scripts/domain-model-all.sh --dry-run` to see the modeling order, then
-   without `--dry-run` to work through it, repo by repo.
+3. `scripts/context-map-all.sh --dry-run` to see the mapping order and which
+   repos are stale, then without `--dry-run` to work through it, repo by
+   repo. Safe to re-run any time — repos already current for their base
+   branch's latest commit are skipped.
 4. `scripts/render-map.sh` after any `repos.yaml` change.

@@ -10,6 +10,7 @@ require() { command -v "$1" >/dev/null 2>&1 || { echo "missing dependency: $1" >
 require gh; require git; require yq; require jq
 
 repo_field() { yq -r ".repos[] | select(.name == \"$1\") | .$2" "$REPOS_YAML"; }
+set_repo_field() { yq -i "(.repos[] | select(.name == \"$1\") | .$2) = \"$3\"" "$REPOS_YAML"; }
 repo_path()  { echo "$ROOT/$(repo_field "$1" path)"; }
 worktree_path() { echo "$(repo_path "$1")-worktrees/$2"; }  # <repo> <slug>
 status_file() { echo "$WORK_DIR/$1/status.md"; }             # <slug>
