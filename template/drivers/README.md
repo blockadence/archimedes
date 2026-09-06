@@ -4,8 +4,40 @@ A driver is whatever actually produces a repo's context map — an AI coding
 agent, a wrapped third-party CLI, a script. `scripts/context-map-all.sh`
 orchestrates *which* repos need mapping and in what order; it never knows how
 any given driver does its job. That split is the point: swapping the
-configured driver (`ARCHIMEDES_DRIVER=<name>`) never requires touching
-orchestration.
+configured driver never requires touching orchestration.
+
+## Selecting a driver
+
+`repos.yaml`'s top-level `driver` field sets the instance-wide default,
+used for any repo that doesn't set one of its own:
+
+```yaml
+driver: openspec
+repos:
+  - name: some-repo
+    ...
+```
+
+A single repo can override that default for itself alone by setting its own
+`driver` field — this takes precedence over the instance-wide default when
+both are present:
+
+```yaml
+repos:
+  - name: some-repo
+    driver: openspec       # this repo always uses openspec, regardless of the default above
+  - name: other-repo
+    driver: null            # falls back to the instance-wide default (or interactive, if unset)
+```
+
+If neither is set, `ARCHIMEDES_DRIVER=<name>` (checked when `repos.yaml` has
+no top-level `driver`) is a per-invocation way to set the same instance-wide
+default without editing the file. Leaving every level unset falls back to an
+interactive, human-in-the-loop session.
+
+Naming a driver that doesn't exist under `drivers/` — at either level — is a
+misconfiguration: `scripts/run-driver.sh` fails immediately with an "unknown
+driver" error rather than silently falling back to the interactive session.
 
 Each driver lives in its own directory here, named after itself:
 

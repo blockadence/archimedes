@@ -13,6 +13,7 @@ require gh; require git; require yq; require jq
 repo_exists() { yq -e ".repos[] | select(.name == \"$1\")" "$REPOS_YAML" >/dev/null 2>&1; }
 repo_field() { yq -r ".repos[] | select(.name == \"$1\") | .$2" "$REPOS_YAML"; }
 set_repo_field() { yq -i "(.repos[] | select(.name == \"$1\") | .$2) = \"$3\"" "$REPOS_YAML"; }
+top_level_field() { yq -r ".$1" "$REPOS_YAML"; }  # instance-wide (not per-repo) repos.yaml field
 repo_path()  { echo "$ROOT/$(repo_field "$1" path)"; }
 worktree_path() { echo "$(repo_path "$1")-worktrees/$2"; }  # <repo> <slug>
 STATUS_FILE_NAME="status.md"

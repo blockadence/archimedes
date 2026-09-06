@@ -8,10 +8,12 @@
 # driver. By default, building the actual context map is an interactive,
 # human-in-the-loop session per repo — override ARCHIMEDES_AGENT_CMD /
 # ARCHIMEDES_CONTEXT_PROMPT / ARCHIMEDES_CONTEXT_FILE below for whatever
-# harness/skill set you use. Set ARCHIMEDES_DRIVER to a name under
-# drivers/ instead, to build the map unattended via that driver's contract
-# (see drivers/README.md) — swapping which driver runs never requires
-# changes here.
+# harness/skill set you use. Set repos.yaml's top-level `driver` field (or
+# ARCHIMEDES_DRIVER, checked when that's unset) to a name under drivers/
+# instead, to build every repo's map unattended via that driver's contract
+# (see drivers/README.md). A repo can override this instance-wide default
+# for itself alone via its own `driver` field in repos.yaml. Swapping which
+# driver runs, at either level, never requires changes here.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -20,7 +22,9 @@ DRY_RUN=0
 
 AGENT_CMD="${ARCHIMEDES_AGENT_CMD:-claude}"
 CONTEXT_FILE="${ARCHIMEDES_CONTEXT_FILE:-CONTEXT.md}"
-DRIVER="${ARCHIMEDES_DRIVER:-}"
+DEFAULT_DRIVER="$(top_level_field driver)"
+[ "$DEFAULT_DRIVER" = "null" ] && DEFAULT_DRIVER=""
+[ -n "$DEFAULT_DRIVER" ] || DEFAULT_DRIVER="${ARCHIMEDES_DRIVER:-}"
 
 names=($(yq -r '.repos[].name' "$REPOS_YAML"))
 declare -A done_map
@@ -81,9 +85,13 @@ for name in "${order[@]}"; do
   echo "=== $name ($reason) ==="
   [ "$DRY_RUN" -eq 1 ] && continue
 
-  if [ -n "$DRIVER" ]; then
-    echo "Running driver '$DRIVER' against $path..."
-    "$(dirname "${BASH_SOURCE[0]}")/run-driver.sh" "$DRIVER" "$path" "$path/$CONTEXT_FILE"
+  repo_driver="$(repo_field "$name" driver)"
+  [ "$repo_driver" = "null" ] && repo_driver=""
+  driver="${repo_driver:-$DEFAULT_DRIVER}"
+
+  if [ -n "$driver" ]; then
+    echo "Running driver '$driver' against $path..."
+    "$(dirname "${BASH_SOURCE[0]}")/run-driver.sh" "$driver" "$path" "$path/$CONTEXT_FILE"
     echo "Wrote $path/$CONTEXT_FILE"
   else
     echo "Path: $path"
