@@ -1,0 +1,5 @@
+name: stub-fixed-ok
+description: Well-behaved fixed-location stub driver, for testing.
+output_mode: fixed-location
+fixed_path: OUT.md
+command: run.sh

@@ -102,9 +102,12 @@ pattern one at a time.
 - `run-driver.sh <driver-name> <repo-path> <output-path>` — invoke one
   driver's context-mapping contract directly. A driver declares, in its
   `driver.yaml` manifest, whether it accepts an explicit output path
-  (`output_mode: path-parameterized`); an `openspec` driver wrapping the
-  [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec) ships as a working
-  example.
+  (`output_mode: path-parameterized`) or always writes into whatever repo
+  it's run in (`output_mode: fixed-location`, harvested afterward so the
+  target repo ends up clean). An `openspec` driver wrapping the
+  [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec) and a `pocock`
+  driver wrapping Matt Pocock's `domain-modeling` skill ship as working
+  examples of each mode.
 - `spawn.sh <slug> <repo> [--base <branch>|--stack-on <repo>:<slug>]` —
   fetch-first worktree creation for one unit of work in one repo. Also
   materializes `work/<slug>/`'s contents (a ticket, a spec, whatever
