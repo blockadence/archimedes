@@ -43,4 +43,4 @@ STATUS="$(status_file "$SLUG")"
 printf '| %s | %s | %s | %s | - |\n' "$REPO" "$SLUG" "$WT" "$NOTE" >> "$STATUS"
 
 echo "Worktree ready: $WT ($NOTE)"
-echo "cd $WT && claude"
+echo "cd $WT && ${ARCHIMEDES_AGENT_CMD:-claude}"
