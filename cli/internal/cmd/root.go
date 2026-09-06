@@ -26,6 +26,7 @@ tracking/spawning/pruning the worktrees used to execute it.`,
 	}
 
 	root.AddCommand(newRenderMapCmd())
+	root.AddCommand(newSpawnCmd())
 
 	return root
 }

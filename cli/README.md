@@ -22,8 +22,10 @@ unit-tested directly (see `internal/workspacemap` for the pattern the
 
 ## Status
 
-Walking skeleton: one real subcommand (`render-map`, the port of
-`template/scripts/render-map.sh`) proves the structure end to end — build,
-install, help text, `--version`, and shell completion (via
-`spf13/cobra` + `charmbracelet/fang`). The rest of `template/scripts/*.sh`
-get ported the same way, one subcommand at a time.
+Two subcommands ported so far: `render-map` (`template/scripts/render-map.sh`)
+and `spawn` (`template/scripts/spawn.sh` + the worktree-materialization
+mechanics from `template/scripts/lib.sh`). Together they proved the
+structure end to end — build, install, help text, `--version`, and shell
+completion (via `spf13/cobra` + `charmbracelet/fang`), plus a pattern for
+subcommands that shell out to git (`internal/gitutil`). The rest of
+`template/scripts/*.sh` get ported the same way, one subcommand at a time.
