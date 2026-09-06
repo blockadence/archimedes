@@ -71,7 +71,8 @@ scripts/bootstrap.sh <github-org>       # discovers + clones repos via `gh`
 scripts/context-map-all.sh --dry-run    # see the planned + stale/fresh order
 ```
 
-Requires `git`, `gh` (authenticated), `yq` (v4), `jq`.
+Requires `git`, `gh` (authenticated), `yq` (v4), `jq`. `sync-templates.sh`
+additionally requires [`multi-gitter`](https://github.com/lindell/multi-gitter).
 
 ## Scripts (in `template/scripts/`, vendored into each instance)
 
@@ -109,8 +110,13 @@ Requires `git`, `gh` (authenticated), `yq` (v4), `jq`.
 - `prune.sh [<slug>] [--force]` — list (or, with `--force`, remove)
   worktrees/branches whose PR has merged or closed. Refuses to remove a
   branch still acting as another worktree's stack base.
-- `update-from-archimedes.sh <path-to-this-repo>` — re-vendor `scripts/` and
-  `drivers/` into an existing instance.
+- `sync-templates.sh [--dry-run] [<repo-name>]` — push the canonical PR/issue
+  templates (`scaffolding/`) into every tracked repo's `.github/` as a pull
+  request, via `multi-gitter`. `--dry-run` shows which repos would receive
+  changes without pushing or opening anything; an optional repo name limits
+  the run to one repo. Requires `multi-gitter` and `gh auth login`.
+- `update-from-archimedes.sh <path-to-this-repo>` — re-vendor `scripts/`,
+  `drivers/`, and `scaffolding/` into an existing instance.
 
 ## Status
 
