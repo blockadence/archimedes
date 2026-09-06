@@ -25,8 +25,17 @@ unit-tested directly (see `internal/workspacemap` for the pattern the
 Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
 
 - `render-map` — port of `template/scripts/render-map.sh`
+- `spawn` — port of `template/scripts/spawn.sh`
 - `status` — port of `template/scripts/status.sh`
 - `prune` — port of `template/scripts/prune.sh`
+
+`spawn` creates the branch and worktree for one unit of work in one target
+repo. It always fetches first, so a branch starts from current remote state
+rather than a stale local checkout, and resolves its start point with the
+same precedence the script used (`--stack-on` over `--base` over the repo's
+own base branch). It then materializes the unit of work's reference material
+plus the target repo's house rules into the worktree's `.archimedes/`, under
+the no-commit guarantee (see `internal/spawn/materialize.go`).
 
 `status` reads every `work/<slug>/status.md`, looks up each row's live PR
 state via `gh pr list`, and prints the same fixed-width table the shell

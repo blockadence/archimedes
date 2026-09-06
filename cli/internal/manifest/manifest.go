@@ -22,6 +22,17 @@ type Manifest struct {
 	Repos []Repo `yaml:"repos"`
 }
 
+// Find looks up a repo by name. The second return value is false if no
+// repo with that name exists.
+func (m *Manifest) Find(name string) (Repo, bool) {
+	for _, r := range m.Repos {
+		if r.Name == name {
+			return r, true
+		}
+	}
+	return Repo{}, false
+}
+
 // Load reads and parses repos.yaml at path.
 func Load(path string) (*Manifest, error) {
 	data, err := os.ReadFile(path)
@@ -40,10 +51,9 @@ func Load(path string) (*Manifest, error) {
 // RepoPath resolves name's local path, relative to root (the instance
 // directory containing repos.yaml). Mirrors lib.sh's repo_path helper.
 func (m *Manifest) RepoPath(root, name string) (string, error) {
-	for _, r := range m.Repos {
-		if r.Name == name {
-			return filepath.Join(root, r.Path), nil
-		}
+	r, ok := m.Find(name)
+	if !ok {
+		return "", fmt.Errorf("unknown repo: %s", name)
 	}
-	return "", fmt.Errorf("unknown repo: %s", name)
+	return filepath.Join(root, r.Path), nil
 }
