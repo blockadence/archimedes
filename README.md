@@ -28,7 +28,8 @@ your-workspace/
 ├── your-instance/          # generated from this template
 │   ├── WORKSPACE-MAP.md    # which repos exist, how they relate
 │   ├── repos.yaml           # machine-readable source of truth
-│   ├── repos/*.md           # per-repo dossier: branching, release procedure
+│   ├── repos/*.md           # per-repo dossier: branching, release procedure,
+│   │                        # house rules, known gotchas
 │   ├── work/<slug>/          # one folder per active unit of work
 │   ├── drivers/              # pluggable context-mapping drivers
 │   └── scripts/
@@ -61,6 +62,16 @@ worktree off another in-flight worktree's branch instead of off trunk — the
 "stacked branches" pattern. The stack relationship is tracked explicitly, so
 tooling can prompt a rebase once the base PR merges instead of assuming the
 dependent branch is still current.
+
+### House rules
+
+A dossier's `## House rules` section (distinct from `## Known gotchas`) is
+for mandated decisions that must be respected even if unusual — the kind of
+thing good judgment alone would get wrong. It's the one place they're
+edited, and it's delivered two ways from there: `sync-house-rules.sh` pushes
+a durable, committed `HOUSE_RULES.md` into the target repo (so humans
+browsing it on GitHub see it too), and `spawn.sh` injects an ephemeral copy
+into every worktree it spawns for that repo, automatically.
 
 ## Getting started
 
@@ -111,11 +122,11 @@ pattern one at a time.
 - `spawn.sh <slug> <repo> [--base <branch>|--stack-on <repo>:<slug>]` —
   fetch-first worktree creation for one unit of work in one repo. Also
   materializes `work/<slug>/`'s contents (a ticket, a spec, whatever
-  reference material the planning session left behind) into the new
-  worktree at `.archimedes/`, and makes sure that directory can never show
-  up in `git status`/`git add -A` or get committed there — no `.gitignore`
-  edit needed in the target repo, and removing the worktree removes the
-  copy with it.
+  reference material the planning session left behind), plus the target
+  repo's house rules (see below), into the new worktree at `.archimedes/`,
+  and makes sure that directory can never show up in `git status`/`git add
+  -A` or get committed there — no `.gitignore` edit needed in the target
+  repo, and removing the worktree removes the copy with it.
 - `status.sh [<slug>]` — live PR/branch status across every spawned
   worktree, with a warning past a configurable concurrent-stream cap.
 - `prune.sh [<slug>] [--force]` — list (or, with `--force`, remove)
@@ -126,6 +137,14 @@ pattern one at a time.
   request, via `multi-gitter`. `--dry-run` shows which repos would receive
   changes without pushing or opening anything; an optional repo name limits
   the run to one repo. Requires `multi-gitter` and `gh auth login`.
+- `sync-house-rules.sh <repo> [--dry-run]` — push one repo's house rules
+  (the `## House rules` section of its dossier, `repos/<repo>.md`) into that
+  repo as a durably committed `HOUSE_RULES.md`, via a pull request. Content
+  is per-repo rather than identical across every tracked repo, so — unlike
+  `sync-templates.sh` — this isn't a `multi-gitter` fan-out; it opens the PR
+  itself via `gh`. `--dry-run` shows the pending diff without committing,
+  pushing, or opening anything. A no-op once the target repo's copy already
+  matches the dossier.
 - `apply-convention-pack.sh <repo>` — one-time scaffold: add whatever
   dependency/plugin reference a repo's declared `convention_pack` (see
   `repos.yaml` and `convention-packs/`) needs to start pulling in its shared
