@@ -44,8 +44,31 @@ write_dossier_stub "widget-service" "../widget-service" "main"
 assert_contains "$(cat "$DOSSIER")" "Edited by hand." "write_dossier_stub does not overwrite an existing dossier"
 
 # --- house_rules_content: extraction ---------------------------------------
-assert_contains "$(house_rules_content "widget-service")" "Mandated decisions" \
-  "house_rules_content extracts the stub's House rules body"
+# A never-edited stub must read as "no rules recorded yet", so bootstrapping a
+# repo and immediately syncing/spawning can't ship the stub's own
+# instructional boilerplate as though it were a real mandated rule.
+assert_eq "$(house_rules_content "widget-service")" "" \
+  "house_rules_content treats an unedited stub placeholder as no house rules"
+
+cat >> "$DOSSIER_DIR/edited-stub.md" <<'EOF'
+# edited-stub
+
+## House rules
+TBD. Mandated decisions that must be respected even if unusual — the kind of
+thing a new contributor (or agent) would otherwise get wrong by using good
+judgment. Kept separate from "Known gotchas" below: gotchas are surprising
+facts about the repo, house rules are standing directives. Edit this section
+only here — `sync-house-rules.sh` pushes a durable copy into the repo
+itself, and `spawn.sh` injects an ephemeral copy into every worktree
+spawned for it, so this dossier is the one place changes need to be made.
+
+Actually: never deploy on a Friday.
+
+## Known gotchas
+n/a
+EOF
+assert_contains "$(house_rules_content "edited-stub")" "never deploy on a Friday" \
+  "house_rules_content returns the section once a real rule is added alongside the placeholder"
 
 cat > "$DOSSIER_DIR/custom.md" <<'EOF'
 # custom

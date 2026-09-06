@@ -50,6 +50,21 @@ ignore_worktree_artifacts() { # <repo-path>
     || printf '/%s/\n' "$CONTEXT_DIR_NAME" >> "$exclude_file"
 }
 
+# Heading and not-yet-filled-in placeholder body for a dossier's House rules
+# section, shared by write_dossier_stub (which writes them) and
+# house_rules_content (which must recognize the placeholder as "no rules
+# recorded yet" rather than a real one — otherwise a freshly-bootstrapped,
+# never-edited dossier would get its instructional boilerplate pushed/
+# injected as though it were an actual mandated rule).
+HOUSE_RULES_HEADING='## House rules'
+HOUSE_RULES_STUB_BODY='TBD. Mandated decisions that must be respected even if unusual — the kind of
+thing a new contributor (or agent) would otherwise get wrong by using good
+judgment. Kept separate from "Known gotchas" below: gotchas are surprising
+facts about the repo, house rules are standing directives. Edit this section
+only here — `sync-house-rules.sh` pushes a durable copy into the repo
+itself, and `spawn.sh` injects an ephemeral copy into every worktree
+spawned for it, so this dossier is the one place changes need to be made.'
+
 # Scaffold a new repo's dossier stub (repos/<name>.md) if one doesn't exist
 # yet. Split out of bootstrap.sh so the stub's shape — notably, "House
 # rules" and "Known gotchas" as two distinct sections — is unit-testable
@@ -73,32 +88,27 @@ TBD, fill in during the context-mapping / dossier pass.
 ## Release procedure
 TBD
 
-## House rules
-TBD. Mandated decisions that must be respected even if unusual — the kind of
-thing a new contributor (or agent) would otherwise get wrong by using good
-judgment. Kept separate from "Known gotchas" below: gotchas are surprising
-facts about the repo, house rules are standing directives. Edit this section
-only here — \`sync-house-rules.sh\` pushes a durable copy into the repo
-itself, and \`spawn.sh\` injects an ephemeral copy into every worktree
-spawned for it, so this dossier is the one place changes need to be made.
+$HOUSE_RULES_HEADING
+$HOUSE_RULES_STUB_BODY
 
 ## Known gotchas
 TBD
 EOF
 }
 
-# Read the "## House rules" section body out of a repo's dossier
-# (repos/<name>.md) — the single source of truth both sync-house-rules.sh
-# (durable copy committed into the target repo) and
-# materialize_worktree_context (ephemeral copy in a spawned worktree) read
-# from, so editing the dossier is the only place a house rule ever needs to
-# change. Trims leading/trailing blank lines; prints nothing if the repo has
-# no dossier or no such section.
+# Read the House rules section body out of a repo's dossier (repos/<name>.md)
+# — the single source of truth both sync-house-rules.sh (durable copy
+# committed into the target repo) and materialize_worktree_context (ephemeral
+# copy in a spawned worktree) read from, so editing the dossier is the only
+# place a house rule ever needs to change. Trims leading/trailing blank
+# lines; prints nothing if the repo has no dossier, no such section, or the
+# section is still the unfilled-in stub placeholder.
 house_rules_content() { # <repo>
   local dossier="$DOSSIER_DIR/$1.md"
   [ -f "$dossier" ] || return 0
-  awk '
-    /^## House rules/ { found=1; next }
+  local body
+  body="$(awk -v heading="$HOUSE_RULES_HEADING" '
+    $0 == heading { found=1; next }
     found && /^## / { exit }
     found { buf[++n] = $0 }
     END {
@@ -107,7 +117,11 @@ house_rules_content() { # <repo>
       while (end >= start && buf[end] == "") end--
       for (i = start; i <= end; i++) print buf[i]
     }
-  ' "$dossier"
+  ' "$dossier")"
+  if [ "$body" = "$HOUSE_RULES_STUB_BODY" ]; then
+    return 0
+  fi
+  printf '%s' "$body"
 }
 
 # Copy this unit of work's control-repo directory (work/<slug>/, whatever
