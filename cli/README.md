@@ -22,9 +22,11 @@ unit-tested directly (see `internal/workspacemap` for the pattern the
 
 ## Status
 
-Two subcommands ported so far: `render-map` (`template/scripts/render-map.sh`)
-and `status` (`template/scripts/status.sh`). The rest of
-`template/scripts/*.sh` get ported the same way, one subcommand at a time.
+Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
+
+- `render-map` — port of `template/scripts/render-map.sh`
+- `status` — port of `template/scripts/status.sh`
+- `prune` — port of `template/scripts/prune.sh`
 
 `status` reads every `work/<slug>/status.md`, looks up each row's live PR
 state via `gh pr list`, and prints the same fixed-width table the shell
@@ -32,3 +34,8 @@ script did (or `--json` for a machine-readable report). A row's PR lookup
 degrading to "no PR" — a missing `gh` auth, no network, an unset repo — never
 fails the rest of the report, matching the original script's `|| echo '{}'`
 fallback.
+
+`prune` removes worktrees, branches, and status rows for units of work whose
+PR has merged or closed. It's a dry run unless `--force` is passed, and it
+refuses to remove a branch still acting as another unit of work's stacked
+base.
