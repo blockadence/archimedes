@@ -22,8 +22,7 @@ unit-tested directly (see `internal/workspacemap` for the pattern the
 
 ## Status
 
-Walking skeleton: one real subcommand (`render-map`, the port of
-`template/scripts/render-map.sh`) proves the structure end to end — build,
-install, help text, `--version`, and shell completion (via
-`spf13/cobra` + `charmbracelet/fang`). The rest of `template/scripts/*.sh`
-get ported the same way, one subcommand at a time.
+Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
+
+- `render-map` — port of `template/scripts/render-map.sh`
+- `prune` — port of `template/scripts/prune.sh`
