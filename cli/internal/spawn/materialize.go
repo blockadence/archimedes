@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/blockadence/archimedes/cli/internal/dossier"
 	"github.com/blockadence/archimedes/cli/internal/gitutil"
 )
 
@@ -55,40 +56,78 @@ func IgnoreWorktreeArtifacts(repoPath string) error {
 	return err
 }
 
-// MaterializeContext copies this unit of work's control-repo directory
-// (workDir/slug/, whatever reference material it holds) into a freshly
+// HouseRulesFileName is where a repo's house rules land inside a spawned
+// worktree — an ephemeral copy of the dossier's section, delivered fresh on
+// every spawn so it can't go stale.
+const HouseRulesFileName = "HOUSE_RULES.md"
+
+// Context describes one worktree's materialization: which unit of work,
+// into which repo's worktree, and which instance the reference material and
+// dossiers come from.
+type Context struct {
+	// RepoPath is the target repo's checkout.
+	RepoPath string
+	// RepoName is the repo's name in repos.yaml, used to find its dossier.
+	RepoName string
+	// Root is the instance directory; work/ and repos/ live under it.
+	Root string
+	// Slug names the unit of work.
+	Slug string
+	// Worktree is the freshly created worktree to materialize into.
+	Worktree string
+}
+
+// Materialize copies this unit of work's control-repo directory
+// (work/<slug>/, whatever reference material it holds) into a freshly
 // spawned worktree, at the conventional ContextDirName location, and
 // guarantees it can never end up in a commit there. StatusFileName is
 // Archimedes' own cross-repo bookkeeping (other worktrees' local paths for
 // this slug), not reference material, so it's excluded from the copy.
-func MaterializeContext(repoPath, workDir, slug, worktreePath string) error {
-	if err := IgnoreWorktreeArtifacts(repoPath); err != nil {
+//
+// The target repo's house rules are delivered too, independently of whether
+// this slug has any reference material of its own: house rules apply to
+// every worktree of the repo, not just ones carrying a ticket. When there's
+// neither, no ContextDirName directory is created at all.
+func Materialize(c Context) error {
+	if err := IgnoreWorktreeArtifacts(c.RepoPath); err != nil {
 		return err
 	}
 
-	// Nothing to copy is not an error, matching lib.sh's `[ ! -d "$src" ]`
-	// guard — which treats a missing *or* non-directory source as a no-op.
-	src := filepath.Join(workDir, slug)
+	// A missing or unreadable work/<slug> is not an error, matching lib.sh's
+	// `[ ! -d "$src" ]` guard — it just means there's no reference material.
+	src := filepath.Join(c.Root, "work", c.Slug)
 	entries, err := os.ReadDir(src)
+	hasWork := err == nil && len(entries) > 0
+
+	rules, err := dossier.HouseRules(filepath.Join(c.Root, "repos"), c.RepoName)
 	if err != nil {
-		return nil
+		return err
 	}
-	if len(entries) == 0 {
+
+	if !hasWork && rules == "" {
 		return nil
 	}
 
-	dest := filepath.Join(worktreePath, ContextDirName)
+	dest := filepath.Join(c.Worktree, ContextDirName)
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return err
 	}
-	if err := copyTree(src, dest); err != nil {
-		return err
+
+	if hasWork {
+		if err := copyTree(src, dest); err != nil {
+			return err
+		}
+		if err := os.Remove(filepath.Join(dest, StatusFileName)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
 
-	err = os.Remove(filepath.Join(dest, StatusFileName))
-	if err != nil && !os.IsNotExist(err) {
-		return err
+	if rules != "" {
+		if err := os.WriteFile(filepath.Join(dest, HouseRulesFileName), []byte(rules+"\n"), 0o644); err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 

@@ -9,30 +9,76 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/spawn"
 )
 
-// gitRepoWithWorktree sets up a git repo at <tmp>/repo with one commit on
-// main, plus a worktree of it on a new branch — the shape spawn's "git
-// worktree add" leaves behind, without the surrounding orchestration.
-func gitRepoWithWorktree(t *testing.T, slug string) (repoPath, worktreePath string) {
-	t.Helper()
-	repoPath = filepath.Join(t.TempDir(), "repo")
-	mustMkdirAll(t, repoPath)
-
-	gitOK(t, repoPath, "init", "-q", "-b", "main")
-	gitCommit(t, repoPath, "init", "--allow-empty")
-
-	worktreePath = spawn.WorktreePath(repoPath, slug)
-	gitOK(t, repoPath, "worktree", "add", worktreePath, "-b", slug)
-
-	return repoPath, worktreePath
+// materializeFixture is a minimal instance root plus one target repo and a
+// worktree of it — the state spawn's "git worktree add" leaves behind,
+// without the surrounding orchestration.
+type materializeFixture struct {
+	root     string // instance root; work/ and repos/ live under it
+	repoPath string
+	worktree string
+	slug     string
 }
 
-func TestMaterializeContextCopiesReferenceMaterial(t *testing.T) {
-	slug := "widget-fix"
-	repoPath, wt := gitRepoWithWorktree(t, slug)
+func newMaterializeFixture(t *testing.T, slug string) materializeFixture {
+	t.Helper()
+	tmp := t.TempDir()
 
-	workDir := t.TempDir()
-	src := filepath.Join(workDir, slug)
-	mustMkdirAll(t, src)
+	f := materializeFixture{
+		root:     filepath.Join(tmp, "instance"),
+		repoPath: filepath.Join(tmp, "repo"),
+		slug:     slug,
+	}
+	mustMkdirAll(t, f.root)
+	mustMkdirAll(t, f.repoPath)
+
+	gitOK(t, f.repoPath, "init", "-q", "-b", "main")
+	gitCommit(t, f.repoPath, "init", "--allow-empty")
+
+	f.worktree = spawn.WorktreePath(f.repoPath, slug)
+	gitOK(t, f.repoPath, "worktree", "add", f.worktree, "-b", slug)
+
+	return f
+}
+
+// workSlug creates work/<slug>/ under the instance root and returns it.
+func (f materializeFixture) workSlug(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(f.root, "work", f.slug)
+	mustMkdirAll(t, dir)
+	return dir
+}
+
+// writeDossier records repo's dossier with the given House rules body.
+func (f materializeFixture) writeDossier(t *testing.T, repo, houseRules string) {
+	t.Helper()
+	mustMkdirAll(t, filepath.Join(f.root, "repos"))
+	mustWriteFile(t, filepath.Join(f.root, "repos", repo+".md"),
+		"# "+repo+"\n\n## House rules\n\n"+houseRules+"\n\n## Known gotchas\nn/a\n")
+}
+
+func (f materializeFixture) materialize(t *testing.T, repoName string) {
+	t.Helper()
+	err := spawn.Materialize(spawn.Context{
+		RepoPath: f.repoPath,
+		RepoName: repoName,
+		Root:     f.root,
+		Slug:     f.slug,
+		Worktree: f.worktree,
+	})
+	if err != nil {
+		t.Fatalf("Materialize: %v", err)
+	}
+}
+
+// contextPath is a path inside the worktree's materialized context dir.
+func (f materializeFixture) contextPath(parts ...string) string {
+	return filepath.Join(append([]string{f.worktree, spawn.ContextDirName}, parts...)...)
+}
+
+func TestMaterializeCopiesReferenceMaterial(t *testing.T) {
+	f := newMaterializeFixture(t, "widget-fix")
+	src := f.workSlug(t)
+
 	mustWriteFile(t, filepath.Join(src, "ticket.md"), "# Ticket: widgets are broken\n")
 	mustWriteFile(t, filepath.Join(src, "mockup.png"), "\x89PNG\r\n\x1a\nfakebinarydata")
 	// A nested directory, to prove the copy recurses.
@@ -41,25 +87,22 @@ func TestMaterializeContextCopiesReferenceMaterial(t *testing.T) {
 	// Bookkeeping, not reference material — must not be copied.
 	mustWriteFile(t, filepath.Join(src, spawn.StatusFileName), "bookkeeping")
 
-	if err := spawn.MaterializeContext(repoPath, workDir, slug, wt); err != nil {
-		t.Fatalf("MaterializeContext: %v", err)
-	}
+	f.materialize(t, "target")
 
-	context := filepath.Join(wt, spawn.ContextDirName)
-	ticket, err := os.ReadFile(filepath.Join(context, "ticket.md"))
+	ticket, err := os.ReadFile(f.contextPath("ticket.md"))
 	if err != nil {
 		t.Fatalf("ticket.md was not materialized: %v", err)
 	}
 	if string(ticket) != "# Ticket: widgets are broken\n" {
 		t.Errorf("ticket.md content diverged: %q", ticket)
 	}
-	if _, err := os.ReadFile(filepath.Join(context, "mockup.png")); err != nil {
+	if _, err := os.ReadFile(f.contextPath("mockup.png")); err != nil {
 		t.Errorf("mockup.png was not materialized: %v", err)
 	}
-	if _, err := os.ReadFile(filepath.Join(context, "notes", "call.md")); err != nil {
+	if _, err := os.ReadFile(f.contextPath("notes", "call.md")); err != nil {
 		t.Errorf("nested notes/call.md was not materialized: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(context, spawn.StatusFileName)); !os.IsNotExist(err) {
+	if _, err := os.Stat(f.contextPath(spawn.StatusFileName)); !os.IsNotExist(err) {
 		t.Error("status.md (bookkeeping) leaked into the materialized context")
 	}
 }
@@ -67,86 +110,115 @@ func TestMaterializeContextCopiesReferenceMaterial(t *testing.T) {
 // The mechanism is meant to work regardless of what kind of artifact is
 // being copied, so a symlink is carried over as a symlink rather than
 // silently dropped or flattened into its target's contents.
-func TestMaterializeContextPreservesSymlinks(t *testing.T) {
-	slug := "widget-fix"
-	repoPath, wt := gitRepoWithWorktree(t, slug)
+func TestMaterializePreservesSymlinks(t *testing.T) {
+	f := newMaterializeFixture(t, "widget-fix")
+	src := f.workSlug(t)
 
-	workDir := t.TempDir()
-	src := filepath.Join(workDir, slug)
-	mustMkdirAll(t, src)
 	mustWriteFile(t, filepath.Join(src, "ticket.md"), "# Ticket\n")
 	if err := os.Symlink("ticket.md", filepath.Join(src, "latest.md")); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := spawn.MaterializeContext(repoPath, workDir, slug, wt); err != nil {
-		t.Fatalf("MaterializeContext: %v", err)
-	}
+	f.materialize(t, "target")
 
-	link := filepath.Join(wt, spawn.ContextDirName, "latest.md")
+	link := f.contextPath("latest.md")
 	info, err := os.Lstat(link)
 	if err != nil {
 		t.Fatalf("symlink was not materialized: %v", err)
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
-		t.Errorf("symlink was flattened into a regular file")
+		t.Error("symlink was flattened into a regular file")
 	}
-	target, err := os.Readlink(link)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if target != "ticket.md" {
-		t.Errorf("symlink target = %q, want %q", target, "ticket.md")
+	if target, err := os.Readlink(link); err != nil || target != "ticket.md" {
+		t.Errorf("symlink target = %q (err %v), want %q", target, err, "ticket.md")
 	}
 }
 
-func TestMaterializeContextNoopWhenNothingToCopy(t *testing.T) {
-	slug := "widget-fix"
-	repoPath, wt := gitRepoWithWorktree(t, slug)
-	workDir := t.TempDir() // no work/<slug>/ at all
+func TestMaterializeNoopWhenNothingToDeliver(t *testing.T) {
+	f := newMaterializeFixture(t, "widget-fix") // no work/<slug>/, no dossier
 
-	if err := spawn.MaterializeContext(repoPath, workDir, slug, wt); err != nil {
-		t.Fatalf("MaterializeContext: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(wt, spawn.ContextDirName)); !os.IsNotExist(err) {
+	f.materialize(t, "target")
+
+	if _, err := os.Stat(filepath.Join(f.worktree, spawn.ContextDirName)); !os.IsNotExist(err) {
 		t.Errorf("expected no %s directory to be created", spawn.ContextDirName)
 	}
 }
 
-func TestMaterializeContextArtifactInvisibleToGitStatusAndAdd(t *testing.T) {
-	slug := "widget-fix"
-	repoPath, wt := gitRepoWithWorktree(t, slug)
+// House rules apply to every worktree of a repo, not just ones carrying
+// their own reference material — so they're delivered even when the slug
+// has no work/<slug> content at all.
+func TestMaterializeDeliversHouseRulesWithoutReferenceMaterial(t *testing.T) {
+	f := newMaterializeFixture(t, "quiet-fix")
+	rules := "Never rebase a shared branch.\nAll schema changes go through the migration tool, no exceptions."
+	f.writeDossier(t, "has-rules", rules)
 
-	workDir := t.TempDir()
-	src := filepath.Join(workDir, slug)
-	mustMkdirAll(t, src)
-	mustWriteFile(t, filepath.Join(src, "ticket.md"), "ticket")
+	f.materialize(t, "has-rules")
 
-	if err := spawn.MaterializeContext(repoPath, workDir, slug, wt); err != nil {
-		t.Fatalf("MaterializeContext: %v", err)
+	got, err := os.ReadFile(f.contextPath(spawn.HouseRulesFileName))
+	if err != nil {
+		t.Fatalf("%s was not materialized: %v", spawn.HouseRulesFileName, err)
 	}
+	if string(got) != rules+"\n" {
+		t.Errorf("house rules content diverged\n got: %q\nwant: %q", got, rules+"\n")
+	}
+}
 
-	if got := gitOut(t, wt, "status", "--porcelain"); got != "" {
+// An empty House rules section means "none recorded" and must not produce
+// an empty .archimedes/ directory.
+func TestMaterializeSkipsEmptyHouseRulesSection(t *testing.T) {
+	f := newMaterializeFixture(t, "another-fix")
+	f.writeDossier(t, "no-rules", "")
+
+	f.materialize(t, "no-rules")
+
+	if _, err := os.Stat(filepath.Join(f.worktree, spawn.ContextDirName)); !os.IsNotExist(err) {
+		t.Errorf("expected no %s directory for a repo with no house rules", spawn.ContextDirName)
+	}
+}
+
+func TestMaterializeDeliversHouseRulesAlongsideReferenceMaterial(t *testing.T) {
+	f := newMaterializeFixture(t, "widget-fix")
+	mustWriteFile(t, filepath.Join(f.workSlug(t), "ticket.md"), "# Ticket\n")
+	f.writeDossier(t, "target", "Never rebase a shared branch.")
+
+	f.materialize(t, "target")
+
+	if _, err := os.Stat(f.contextPath("ticket.md")); err != nil {
+		t.Errorf("ticket.md was not materialized: %v", err)
+	}
+	if _, err := os.Stat(f.contextPath(spawn.HouseRulesFileName)); err != nil {
+		t.Errorf("%s was not materialized: %v", spawn.HouseRulesFileName, err)
+	}
+}
+
+func TestMaterializeArtifactInvisibleToGitStatusAndAdd(t *testing.T) {
+	f := newMaterializeFixture(t, "widget-fix")
+	mustWriteFile(t, filepath.Join(f.workSlug(t), "ticket.md"), "ticket")
+	f.writeDossier(t, "target", "Never rebase a shared branch.")
+
+	f.materialize(t, "target")
+
+	if got := gitOut(t, f.worktree, "status", "--porcelain"); got != "" {
 		t.Errorf("git status surfaced the materialized context: %q", got)
 	}
 
-	gitOK(t, wt, "add", "-A")
-	if got := gitOut(t, wt, "status", "--porcelain"); got != "" {
+	gitOK(t, f.worktree, "add", "-A")
+	if got := gitOut(t, f.worktree, "status", "--porcelain"); got != "" {
 		t.Errorf("git add -A staged the materialized context: %q", got)
 	}
 }
 
 func TestIgnoreWorktreeArtifactsIsIdempotent(t *testing.T) {
-	repoPath, _ := gitRepoWithWorktree(t, "widget-fix")
+	f := newMaterializeFixture(t, "widget-fix")
 
-	if err := spawn.IgnoreWorktreeArtifacts(repoPath); err != nil {
+	if err := spawn.IgnoreWorktreeArtifacts(f.repoPath); err != nil {
 		t.Fatalf("1st call: %v", err)
 	}
-	if err := spawn.IgnoreWorktreeArtifacts(repoPath); err != nil {
+	if err := spawn.IgnoreWorktreeArtifacts(f.repoPath); err != nil {
 		t.Fatalf("2nd call: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(repoPath, ".git", "info", "exclude"))
+	data, err := os.ReadFile(filepath.Join(f.repoPath, ".git", "info", "exclude"))
 	if err != nil {
 		t.Fatal(err)
 	}

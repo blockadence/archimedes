@@ -1,0 +1,5 @@
+name: stub-fixed-liar
+description: Exits zero without writing its declared fixed_path, for testing.
+output_mode: fixed-location
+fixed_path: OUT.md
+command: run.sh

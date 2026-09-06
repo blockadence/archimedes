@@ -1,4 +1,4 @@
 name: stub-bad-mode
 description: Declares an output_mode run-driver.sh doesn't support, for testing.
-output_mode: fixed-location
+output_mode: made-up-mode
 command: run.sh

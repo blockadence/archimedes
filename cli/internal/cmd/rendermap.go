@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes/cli/internal/manifest"
 	"github.com/blockadence/archimedes/cli/internal/workspacemap"
 )
 
@@ -31,10 +30,9 @@ The "## Relationships" section below it is hand-written and left untouched.`,
 }
 
 func runRenderMap(root string) error {
-	manifestPath := filepath.Join(root, "repos.yaml")
-	m, err := manifest.Load(manifestPath)
+	m, err := loadManifest(root)
 	if err != nil {
-		return fmt.Errorf("loading %s: %w", manifestPath, err)
+		return err
 	}
 
 	mapPath := filepath.Join(root, "WORKSPACE-MAP.md")

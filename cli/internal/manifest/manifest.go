@@ -5,6 +5,7 @@ package manifest
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -45,4 +46,14 @@ func Load(path string) (*Manifest, error) {
 	}
 
 	return &m, nil
+}
+
+// RepoPath resolves name's local path, relative to root (the instance
+// directory containing repos.yaml). Mirrors lib.sh's repo_path helper.
+func (m *Manifest) RepoPath(root, name string) (string, error) {
+	r, ok := m.Find(name)
+	if !ok {
+		return "", fmt.Errorf("unknown repo: %s", name)
+	}
+	return filepath.Join(root, r.Path), nil
 }

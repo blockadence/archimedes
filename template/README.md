@@ -14,7 +14,12 @@ below this line is specific to this instance.
 
 1. `scripts/bootstrap.sh <github-org>` — discover and clone repos, scaffold
    `repos.yaml` and `repos/*.md` dossiers.
-2. Fill in each `repos/*.md` dossier's branching/release sections by hand.
+2. Fill in each `repos/*.md` dossier's branching/release sections by hand,
+   including `## House rules` — mandated decisions for that repo. Editing it
+   here is the only place a house rule needs to change: `spawn.sh` injects
+   an ephemeral copy into every worktree automatically, and
+   `scripts/sync-house-rules.sh <repo>` pushes a durable, committed copy
+   into the repo itself.
 3. `scripts/context-map-all.sh --dry-run` to see the mapping order and which
    repos are stale, then without `--dry-run` to work through it, repo by
    repo. Safe to re-run any time — repos already current for their base

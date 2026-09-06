@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Minimal assertion helpers shared by tests/*.sh. Not a framework — this repo
-# is plain bash throughout, so tests stay plain bash too.
+# Minimal assertion + e2e-fixture helpers shared by tests/*.sh. Not a
+# framework — this repo is plain bash throughout, so tests stay plain bash
+# too.
 set -uo pipefail
+
+HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TESTS_REPO_ROOT="$(cd "$HELPERS_DIR/.." && pwd)"
 
 TESTS_RUN=0
 TESTS_FAILED=0
@@ -31,4 +35,34 @@ assert_file_missing() { # <path> <label>
 report() { # call at end of each test file
   echo "$TESTS_RUN run, $TESTS_FAILED failed"
   [ "$TESTS_FAILED" -eq 0 ]
+}
+
+# A bare "origin" plus a clone with one commit pushed to main, so an
+# e2e test's fetch/rev-parse work with no network. <work-dir> <name> ->
+# creates <work-dir>/<name> (the clone tests operate on) and
+# <work-dir>/<name>-origin.git (the bare remote).
+make_origin_and_clone() {
+  local work="$1" name="$2"
+  git init -q --bare "$work/$name-origin.git"
+  git clone -q "$work/$name-origin.git" "$work/$name"
+  (
+    cd "$work/$name"
+    git checkout -q -b main
+    echo "hi" > README.md
+    git add -A
+    git -c user.email=test@example.com -c user.name=test commit -qm init
+    git push -q -u origin main
+  )
+}
+
+# Scaffold a throwaway Archimedes instance under <work-dir>/instance: just
+# scripts/ (vendored from template/scripts, matching what
+# init.sh/update-from-archimedes.sh vendor into a real instance) — the
+# caller still writes its own repos.yaml. Echoes the instance path.
+new_test_instance() {
+  local work="$1"
+  mkdir -p "$work/instance/scripts"
+  cp "$TESTS_REPO_ROOT/template/scripts/"*.sh "$work/instance/scripts/"
+  chmod +x "$work/instance/scripts/"*.sh
+  echo "$work/instance"
 }

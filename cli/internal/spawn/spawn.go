@@ -153,7 +153,13 @@ func Run(opts Options, out, progress io.Writer) error {
 	if err := os.MkdirAll(filepath.Join(workDir, opts.Slug), 0o755); err != nil {
 		return err
 	}
-	if err := MaterializeContext(repoPath, workDir, opts.Slug, wt); err != nil {
+	if err := Materialize(Context{
+		RepoPath: repoPath,
+		RepoName: opts.Repo,
+		Root:     root,
+		Slug:     opts.Slug,
+		Worktree: wt,
+	}); err != nil {
 		return fmt.Errorf("materializing worktree context: %w", err)
 	}
 

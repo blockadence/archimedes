@@ -24,34 +24,14 @@ while IFS= read -r repo; do
   path="../$name"
 
   if ! repo_exists "$name"; then
-    yq -i ".repos += [{\"name\": \"$name\", \"path\": \"$path\", \"base_branch\": \"$base\", \"depends_on\": [], \"context_modeled_sha\": null, \"convention_pack\": null}]" "$REPOS_YAML"
+    yq -i ".repos += [{\"name\": \"$name\", \"path\": \"$path\", \"base_branch\": \"$base\", \"depends_on\": [], \"context_modeled_sha\": null, \"convention_pack\": null, \"driver\": null}]" "$REPOS_YAML"
     new_count=$((new_count + 1))
   fi
 
   target="$ROOT/$path"
   [ -d "$target" ] || { echo "cloning $name"; git clone "$url" "$target"; }
 
-  dossier="$ROOT/repos/$name.md"
-  if [ ! -f "$dossier" ]; then
-    mkdir -p "$ROOT/repos"
-    cat > "$dossier" <<EOF
-# $name
-
-**Path:** $path
-**Base branch:** $base
-**Depends on:** TBD
-**Depended on by:** TBD
-
-## Branching
-TBD, fill in during the context-mapping / dossier pass.
-
-## Release procedure
-TBD
-
-## Known gotchas
-TBD
-EOF
-  fi
+  write_dossier_stub "$name" "$path" "$base"
 done < /tmp/archimedes-repos.filtered.json
 
 echo "New repos added: $new_count"

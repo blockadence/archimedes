@@ -307,6 +307,46 @@ func TestRunResolvesRepoPathsBelowInstanceRoot(t *testing.T) {
 	}
 }
 
+// The end-to-end equivalent of tests/house_rules_spawn.sh: spawning
+// delivers the target repo's house rules even when the slug has no
+// reference material of its own.
+func TestRunDeliversHouseRules(t *testing.T) {
+	inst := newInstance(t)
+
+	rules := "Never rebase a shared branch.\nAll schema changes go through the migration tool, no exceptions."
+	mustMkdirAll(t, filepath.Join(inst.root, "repos"))
+	mustWriteFile(t, filepath.Join(inst.root, "repos", "target.md"),
+		"# target\n\n## House rules\n\n"+rules+"\n\n## Known gotchas\nn/a\n")
+
+	slug := "quiet-fix"
+	inst.workSlug(t, slug)
+
+	run(t, spawn.Options{Root: inst.root, Slug: slug, Repo: "target"})
+
+	wt := spawn.WorktreePath(inst.targetRepo, slug)
+	got, err := os.ReadFile(filepath.Join(wt, spawn.ContextDirName, spawn.HouseRulesFileName))
+	if err != nil {
+		t.Fatalf("%s was not delivered: %v", spawn.HouseRulesFileName, err)
+	}
+	if string(got) != rules+"\n" {
+		t.Errorf("house rules diverged from the dossier\n got: %q\nwant: %q", got, rules+"\n")
+	}
+	if status := gitOut(t, wt, "status", "--porcelain"); status != "" {
+		t.Errorf("the ephemeral house-rules copy surfaced in git status: %q", status)
+	}
+
+	// A repo with no dossier at all gets no house rules, and with no
+	// reference material either, no context directory at all.
+	other := "another-fix"
+	inst.workSlug(t, other)
+	run(t, spawn.Options{Root: inst.root, Slug: other, Repo: "target2"})
+
+	wt2 := spawn.WorktreePath(inst.targetRepo2, other)
+	if _, err := os.Stat(filepath.Join(wt2, spawn.ContextDirName)); !os.IsNotExist(err) {
+		t.Error("an empty context dir was created for a repo with no house rules and no reference material")
+	}
+}
+
 func TestRunUnknownRepoErrors(t *testing.T) {
 	inst := newInstance(t)
 	inst.workSlug(t, "widget-fix")

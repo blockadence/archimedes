@@ -6,6 +6,10 @@ lifecycle orchestration, not implementation.
 - Root planning sessions (impact-mapping, "which repos does this touch")
   under `work/<slug>/`, using `WORKSPACE-MAP.md` and `repos/*.md` for
   context.
+- A repo's mandated house rules live in its dossier's `## House rules`
+  section (`repos/<repo>.md`) — edit them only there. `spawn.sh` and
+  `sync-house-rules.sh` both read from it, so a change made anywhere else
+  will not stick.
 - Hand off actual code changes to a spawned worktree in the target repo
   (`scripts/spawn.sh <slug> <repo>`), so that session isn't cluttered with
   every other repo's context.

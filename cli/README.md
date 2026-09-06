@@ -22,10 +22,29 @@ unit-tested directly (see `internal/workspacemap` for the pattern the
 
 ## Status
 
-Two subcommands ported so far: `render-map` (`template/scripts/render-map.sh`)
-and `spawn` (`template/scripts/spawn.sh` + the worktree-materialization
-mechanics from `template/scripts/lib.sh`). Together they proved the
-structure end to end — build, install, help text, `--version`, and shell
-completion (via `spf13/cobra` + `charmbracelet/fang`), plus a pattern for
-subcommands that shell out to git (`internal/gitutil`). The rest of
-`template/scripts/*.sh` get ported the same way, one subcommand at a time.
+Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
+
+- `render-map` — port of `template/scripts/render-map.sh`
+- `spawn` — port of `template/scripts/spawn.sh`
+- `status` — port of `template/scripts/status.sh`
+- `prune` — port of `template/scripts/prune.sh`
+
+`spawn` creates the branch and worktree for one unit of work in one target
+repo. It always fetches first, so a branch starts from current remote state
+rather than a stale local checkout, and resolves its start point with the
+same precedence the script used (`--stack-on` over `--base` over the repo's
+own base branch). It then materializes the unit of work's reference material
+plus the target repo's house rules into the worktree's `.archimedes/`, under
+the no-commit guarantee (see `internal/spawn/materialize.go`).
+
+`status` reads every `work/<slug>/status.md`, looks up each row's live PR
+state via `gh pr list`, and prints the same fixed-width table the shell
+script did (or `--json` for a machine-readable report). A row's PR lookup
+degrading to "no PR" — a missing `gh` auth, no network, an unset repo — never
+fails the rest of the report, matching the original script's `|| echo '{}'`
+fallback.
+
+`prune` removes worktrees, branches, and status rows for units of work whose
+PR has merged or closed. It's a dry run unless `--force` is passed, and it
+refuses to remove a branch still acting as another unit of work's stacked
+base.

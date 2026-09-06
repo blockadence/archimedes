@@ -68,3 +68,27 @@ func TestLoadMissingFile(t *testing.T) {
 		t.Fatal("expected error for missing file, got nil")
 	}
 }
+
+func TestRepoPath(t *testing.T) {
+	m := &manifest.Manifest{Repos: []manifest.Repo{
+		{Name: "service-a", Path: "../service-a", BaseBranch: "main"},
+	}}
+
+	got, err := m.RepoPath("/instances/demo", "service-a")
+	if err != nil {
+		t.Fatalf("RepoPath returned error: %v", err)
+	}
+	if want := filepath.Join("/instances/demo", "../service-a"); got != want {
+		t.Errorf("RepoPath() = %q, want %q", got, want)
+	}
+}
+
+func TestRepoPathUnknownRepoErrors(t *testing.T) {
+	m := &manifest.Manifest{Repos: []manifest.Repo{
+		{Name: "service-a", Path: "../service-a", BaseBranch: "main"},
+	}}
+
+	if _, err := m.RepoPath("/instances/demo", "service-z"); err == nil {
+		t.Fatal("expected error for unknown repo, got nil")
+	}
+}

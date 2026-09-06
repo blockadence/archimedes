@@ -1,1 +1,4 @@
+# driver: <name>   # optional instance-wide default driver (drivers/<name>), used by
+                    # scripts/context-map-all.sh when a repo below sets no driver of its own.
+                    # Unset entirely (or per-repo) falls back to the interactive agent session.
 repos: []
