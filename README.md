@@ -88,7 +88,13 @@ Requires `git`, `gh` (authenticated), `yq` (v4), `jq`.
   coding agent or skill (`ARCHIMEDES_AGENT_CMD`/`ARCHIMEDES_CONTEXT_PROMPT`/
   `ARCHIMEDES_CONTEXT_FILE` override the defaults).
 - `spawn.sh <slug> <repo> [--base <branch>|--stack-on <repo>:<slug>]` —
-  fetch-first worktree creation for one unit of work in one repo.
+  fetch-first worktree creation for one unit of work in one repo. Also
+  materializes `work/<slug>/`'s contents (a ticket, a spec, whatever
+  reference material the planning session left behind) into the new
+  worktree at `.archimedes/`, and makes sure that directory can never show
+  up in `git status`/`git add -A` or get committed there — no `.gitignore`
+  edit needed in the target repo, and removing the worktree removes the
+  copy with it.
 - `status.sh [<slug>]` — live PR/branch status across every spawned
   worktree, with a warning past a configurable concurrent-stream cap.
 - `prune.sh [<slug>] [--force]` — list (or, with `--force`, remove)
