@@ -36,23 +36,7 @@ fi
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 REPO="$WORK/throwaway-repo"
-mkdir -p "$REPO/src"
-(
-  cd "$REPO"
-  git init -q
-  cat > src/index.js <<'EOF'
-// A tiny widget-catalog service: Widgets have a name and a price.
-class Widget {
-  constructor(name, priceCents) {
-    this.name = name;
-    this.priceCents = priceCents;
-  }
-}
-module.exports = { Widget };
-EOF
-  git add -A
-  git -c user.email=test@example.com -c user.name=test commit -qm init
-)
+make_widget_repo "$REPO"
 
 echo "spec-kit driver end-to-end:"
 
@@ -68,12 +52,17 @@ assert_file_exists "$OUT" "context map lands at the exact requested path in the 
 
 content="$(cat "$OUT" 2>/dev/null)"
 assert_contains "$content" "Constitution" "the harvested artifact is Spec Kit's constitution"
-case "$content" in
-  *"[PRINCIPLE_1_NAME]"*|*"[PROJECT_NAME]"*)
-    fail "the constitution's placeholder tokens were filled in, not harvested as-scaffolded" ;;
-  *)
-    pass "the constitution's placeholder tokens were filled in, not harvested as-scaffolded" ;;
-esac
+# The scaffolded template is nothing but [ALL_CAPS] placeholders, so a
+# constitution still carrying them is one nobody filled in. The Sync Impact
+# Report is skipped when checking: it legitimately names the tokens it
+# replaced, which is the opposite of the problem being looked for.
+body="$(awk '/<!--/{c=1} !c; /-->/{c=0}' "$OUT")"
+if printf '%s' "$body" | grep -qE '\[[A-Z][A-Z0-9_]+\]'; then
+  fail "the constitution's placeholder tokens were filled in, not harvested as-scaffolded"
+  printf '%s\n' "$body" | grep -E '\[[A-Z][A-Z0-9_]+\]' >&2
+else
+  pass "the constitution's placeholder tokens were filled in, not harvested as-scaffolded"
+fi
 
 status="$(git -C "$REPO" status --porcelain)"
 assert_eq "$status" "" "target repo has no trace of the artifact after harvesting (clean git status)"
@@ -83,12 +72,10 @@ assert_file_missing "$REPO/.specify/memory/constitution.md" \
 # git status can't see these: it doesn't track directories at all, so a
 # scaffolded toolchain left behind in empty (or ignored) directories would
 # pass the check above while very much still being there.
-[ -d "$REPO/.specify" ] \
-  && fail "Spec Kit's own .specify/ scaffolding is stripped back out of the target repo" \
-  || pass "Spec Kit's own .specify/ scaffolding is stripped back out of the target repo"
-[ -d "$REPO/.claude" ] \
-  && fail "the speckit-* agent skills Spec Kit installed are stripped back out of the target repo" \
-  || pass "the speckit-* agent skills Spec Kit installed are stripped back out of the target repo"
+assert_dir_missing "$REPO/.specify" \
+  "Spec Kit's own .specify/ scaffolding is stripped back out of the target repo"
+assert_dir_missing "$REPO/.claude" \
+  "the speckit-* agent skills Spec Kit installed are stripped back out of the target repo"
 assert_eq "$(cd "$REPO" && ls -A | sort | tr '\n' ' ')" ".git src " \
   "the target repo holds exactly what it held before the run"
 

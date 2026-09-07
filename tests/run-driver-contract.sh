@@ -78,9 +78,8 @@ else
 fi
 assert_file_exists "$out_path" "nested fixed_path is harvested to the exact requested path"
 assert_file_missing "$REPO/.stub/memory/OUT.md" "nested fixed_path is gone from the repo after harvesting"
-[ -d "$REPO/.stub" ] \
-  && fail "directories the harvest emptied are pruned, so a nested fixed_path really leaves no trace" \
-  || pass "directories the harvest emptied are pruned, so a nested fixed_path really leaves no trace"
+assert_dir_missing "$REPO/.stub" \
+  "directories the harvest emptied are pruned, so a nested fixed_path really leaves no trace"
 assert_eq "$(git -C "$REPO" status --porcelain)" "" "target repo's git status is clean after harvesting a nested fixed_path"
 
 out_path="$WORK/fixed-no-path.md"

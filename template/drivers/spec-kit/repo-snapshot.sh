@@ -17,21 +17,34 @@
 # alone, so a repo that was already dirty stays dirty in exactly the same
 # way.
 #
+# Requires bash 4+ for associative arrays, same as scripts/context-map-all.sh.
 # Sourced, not run: `source repo-snapshot.sh`.
 
-# Print a snapshot of <repo-path>'s working state: one NUL-terminated
-# "<kind><TAB><path>" record per interesting path, where kind is U for an
-# untracked path (including ignored ones -- a scaffolder that ships its own
-# .gitignore would otherwise hide its output from us) and D for a tracked
-# path that already differs from HEAD.
+# Print a snapshot of <repo-path>'s working state as NUL-terminated
+# "<kind><TAB><value>" records:
+#
+#   H  the commit HEAD points at -- everything below is described relative
+#      to it, so a run that moves HEAD invalidates the whole snapshot
+#   D  a directory that already existed (git tracks none, so they have to
+#      be listed explicitly or a scaffolder's leftover empty directories
+#      would be invisible to both this and `git status`)
+#   U  an untracked path, ignored ones included -- a scaffolder that ships
+#      its own .gitignore would otherwise hide its output from us
+#   M  a tracked path that already differs from HEAD
 snapshot_repo_state() { # <repo-path>
-  local repo="$1"
+  local repo="$1" head
+  head="$(git -C "$repo" rev-parse --verify -q HEAD || true)"
+  printf 'H\t%s\0' "$head"
+
+  list_repo_dirs "$repo" | while IFS= read -r -d '' d; do
+    printf 'D\t%s\0' "$d"
+  done
   git -C "$repo" ls-files --others -z | while IFS= read -r -d '' p; do
     printf 'U\t%s\0' "$p"
   done
-  if git -C "$repo" rev-parse --verify -q HEAD >/dev/null; then
+  if [ -n "$head" ]; then
     git -C "$repo" diff --name-only -z HEAD | while IFS= read -r -d '' p; do
-      printf 'D\t%s\0' "$p"
+      printf 'M\t%s\0' "$p"
     done
   fi
 }
@@ -41,59 +54,85 @@ snapshot_repo_state() { # <repo-path>
 # fixed_path, which has to survive for run-driver.sh to harvest).
 #
 # Paths that appeared since the snapshot are deleted; tracked paths that
-# have gone dirty since the snapshot are restored from HEAD. Paths already
-# listed in the snapshot are left exactly as they are.
+# have gone dirty since the snapshot are restored from HEAD; directories
+# that appeared and are now empty are removed. Anything already listed in
+# the snapshot is left exactly as it is.
+#
+# Returns non-zero, having changed nothing, if HEAD has moved since the
+# snapshot: every judgement below is relative to that commit, so a run that
+# committed, stashed or switched branches has put the repo somewhere this
+# can't safely unwind. That's a case for telling the operator, not guessing.
 restore_repo_state() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
   local repo="$1" snapshot="$2"; shift 2
 
   local -A before=() keep=()
-  local kind path record
+  local kind value record head_at_snapshot=""
   while IFS= read -r -d '' record; do
-    kind="${record%%$'\t'*}"; path="${record#*$'\t'}"
-    before["$kind:$path"]=1
+    kind="${record%%$'\t'*}"; value="${record#*$'\t'}"
+    if [ "$kind" = "H" ]; then head_at_snapshot="$value"; else before["$kind:$value"]=1; fi
   done < "$snapshot"
-  for path in "$@"; do keep["$path"]=1; done
+  for value in "$@"; do keep["$value"]=1; done
+
+  local head_now
+  head_now="$(git -C "$repo" rev-parse --verify -q HEAD || true)"
+  if [ "$head_now" != "$head_at_snapshot" ]; then
+    echo "refusing to restore $repo: HEAD moved from ${head_at_snapshot:-(no commits)} to ${head_now:-(no commits)} during the run, so what the run added can no longer be told apart from what was already committed -- the repo needs looking at by hand" >&2
+    return 1
+  fi
 
   # Delete paths that weren't there before. Collected first and deleted
   # after, so removing a scaffolder's own .gitignore mid-walk can't change
   # what the rest of the walk sees.
   local -a added=()
-  while IFS= read -r -d '' path; do
-    [ -n "${before["U:$path"]:-}" ] && continue
-    [ -n "${keep["$path"]:-}" ] && continue
-    added+=("$path")
+  while IFS= read -r -d '' value; do
+    [ -n "${before["U:$value"]:-}" ] && continue
+    [ -n "${keep["$value"]:-}" ] && continue
+    added+=("$value")
   done < <(git -C "$repo" ls-files --others -z)
-  for path in "${added[@]+"${added[@]}"}"; do
-    rm -f "$repo/$path"
-    prune_empty_parents "$repo" "$path"
+  for value in "${added[@]+"${added[@]}"}"; do
+    rm -f "$repo/$value"
   done
 
-  git -C "$repo" rev-parse --verify -q HEAD >/dev/null || return 0
+  if [ -n "$head_now" ]; then
+    while IFS= read -r -d '' value; do
+      [ -n "${before["M:$value"]:-}" ] && continue
+      [ -n "${keep["$value"]:-}" ] && continue
+      if git -C "$repo" cat-file -e "HEAD:$value" 2>/dev/null; then
+        git -C "$repo" checkout -q HEAD -- "$value"
+      else
+        # Staged into the index but absent from HEAD: unstage, then it's
+        # just another path the run added.
+        git -C "$repo" rm -q --cached --force -- "$value" >/dev/null 2>&1 || true
+        rm -f "$repo/$value"
+      fi
+    done < <(git -C "$repo" diff --name-only -z HEAD)
+  fi
 
-  while IFS= read -r -d '' path; do
-    [ -n "${before["D:$path"]:-}" ] && continue
-    [ -n "${keep["$path"]:-}" ] && continue
-    if git -C "$repo" cat-file -e "HEAD:$path" 2>/dev/null; then
-      git -C "$repo" checkout -q HEAD -- "$path"
-    else
-      # Staged into the index but absent from HEAD: unstage, then it's just
-      # another path the run added.
-      git -C "$repo" rm -q --cached --force -- "$path" >/dev/null 2>&1 || true
-      rm -f "$repo/$path"
-      prune_empty_parents "$repo" "$path"
-    fi
-  done < <(git -C "$repo" diff --name-only -z HEAD)
+  # Directories the run created, now that nothing of the run's is left in
+  # them. list_repo_dirs walks deepest-first, so a nested tree collapses in
+  # one pass; rmdir refuses anything that still holds something, which is
+  # exactly right for a directory that also holds a kept path or predates
+  # the run.
+  while IFS= read -r -d '' value; do
+    [ -n "${before["D:$value"]:-}" ] && continue
+    rmdir "$repo/$value" 2>/dev/null || true
+  done < <(list_repo_dirs "$repo")
 }
 
-# Remove now-empty directories left behind by deleting <relpath>, walking up
-# toward — but never reaching — <repo-path> itself. `rmdir` refuses to touch
-# a directory that still holds anything, which is exactly the wanted
-# behavior for a directory that also holds a kept path.
-prune_empty_parents() { # <repo-path> <relpath>
-  local repo="$1" dir
-  dir="$(dirname "$2")"
-  while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
-    rmdir "$repo/$dir" 2>/dev/null || return 0
-    dir="$(dirname "$dir")"
+# Print <repo-path>'s directories, relative and NUL-terminated, deepest
+# first, skipping .git and the repo root itself.
+#
+# `find` is pruned at .git rather than filtering its output, so a repo with
+# a large object store doesn't get walked for nothing; that leaves the
+# results in parent-before-child order, so they're reversed here to get the
+# deepest-first order rmdir needs.
+list_repo_dirs() { # <repo-path>
+  local -a dirs=()
+  local d i
+  while IFS= read -r -d '' d; do
+    dirs+=("${d#./}")
+  done < <(cd "$1" && find . -path './.git' -prune -o -type d ! -name . -print0)
+  for (( i = ${#dirs[@]} - 1; i >= 0; i-- )); do
+    printf '%s\0' "${dirs[i]}"
   done
 }

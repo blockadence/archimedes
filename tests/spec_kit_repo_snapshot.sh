@@ -67,15 +67,11 @@ assert_file_missing "$REPO/.specify/.gitignore" \
 assert_file_missing "$REPO/.claude/skills/speckit-constitution/SKILL.md" \
   "scaffolding added outside the kept path's own directory tree is removed too"
 
-[ -d "$REPO/.claude" ] \
-  && fail "directories left empty by the cleanup are pruned" \
-  || pass "directories left empty by the cleanup are pruned"
-[ -d "$REPO/.specify/scripts" ] \
-  && fail "empty directories are pruned all the way up, not just the leaf" \
-  || pass "empty directories are pruned all the way up, not just the leaf"
-[ -d "$REPO/.specify/memory" ] \
-  && pass "a directory still holding the kept path is not pruned" \
-  || fail "a directory still holding the kept path is not pruned"
+assert_dir_missing "$REPO/.claude" "directories left empty by the cleanup are pruned"
+assert_dir_missing "$REPO/.specify/scripts" \
+  "empty directories are pruned all the way up, not just the leaf"
+assert_dir_exists "$REPO/.specify/memory" \
+  "a directory still holding the kept path is not pruned"
 
 assert_eq "$(cat "$REPO/src/index.js" 2>/dev/null)" "console.log('hi')" \
   "a tracked file the run clobbered is restored from HEAD"
@@ -114,8 +110,75 @@ restore_repo_state "$REPO2" "$SNAP2"
 
 assert_eq "$(git -C "$REPO2" status --porcelain)" "" \
   "with nothing to keep, restore returns the repo to a completely clean git status"
-[ -d "$REPO2/.specify" ] \
-  && fail "with nothing to keep, the scaffolding's directories are pruned entirely" \
-  || pass "with nothing to keep, the scaffolding's directories are pruned entirely"
+assert_dir_missing "$REPO2/.specify" \
+  "with nothing to keep, the scaffolding's directories are pruned entirely"
+
+echo ""
+echo "spec-kit driver repo snapshot/restore, directories holding no files:"
+
+# git tracks no directories at all, so an empty one a scaffolder leaves
+# behind is invisible to `git status` -- it has to be caught by diffing the
+# directory listing, or the "no trace" guarantee quietly isn't one.
+REPO3="$WORK/repo3"
+mkdir -p "$REPO3/keep-me/nested"
+(
+  cd "$REPO3"
+  git init -q
+  echo "# readme" > README.md
+  git add -A
+  git -c user.email=test@example.com -c user.name=test commit -qm init
+)
+
+SNAP3="$WORK/snapshot3"
+snapshot_repo_state "$REPO3" > "$SNAP3"
+mkdir -p "$REPO3/.specify/extensions" "$REPO3/.specify/workflows/speckit"
+restore_repo_state "$REPO3" "$SNAP3"
+
+assert_dir_missing "$REPO3/.specify" \
+  "a directory the run created and left holding nothing at all is removed"
+assert_dir_exists "$REPO3/keep-me/nested" \
+  "an empty directory that predates the run is left alone"
+assert_eq "$(git -C "$REPO3" status --porcelain)" "" \
+  "the repo is clean afterwards (which git status would have said either way -- hence the directory assertions above)"
+
+echo ""
+echo "spec-kit driver repo snapshot/restore, HEAD moved during the run:"
+
+# Every judgement restore makes is relative to the commit HEAD pointed at
+# when the snapshot was taken. An agent session that commits has made the
+# scaffolding indistinguishable from the repo's own history -- and, worse,
+# left `git status` reading clean. Restoring on that basis would be
+# guesswork, so it refuses and says so.
+REPO4="$WORK/repo4"
+mkdir -p "$REPO4"
+(
+  cd "$REPO4"
+  git init -q
+  echo "# readme" > README.md
+  git add -A
+  git -c user.email=test@example.com -c user.name=test commit -qm init
+)
+
+SNAP4="$WORK/snapshot4"
+snapshot_repo_state "$REPO4" > "$SNAP4"
+mkdir -p "$REPO4/.specify/memory"
+echo "scaffolding" > "$REPO4/.specify/memory/constitution.md"
+(
+  cd "$REPO4"
+  git add -A
+  git -c user.email=test@example.com -c user.name=test commit -qm "committed the scaffolding"
+) >/dev/null
+
+if err="$(restore_repo_state "$REPO4" "$SNAP4" 2>&1)"; then
+  fail "restore refuses when HEAD moved during the run"
+else
+  pass "restore refuses when HEAD moved during the run"
+fi
+assert_contains "$err" "HEAD moved" \
+  "the refusal says what went wrong rather than failing silently"
+assert_contains "$err" "$REPO4" \
+  "the refusal names the repo that needs looking at by hand"
+assert_file_exists "$REPO4/.specify/memory/constitution.md" \
+  "the refusal changes nothing -- unwinding a commit is the operator's call, not this helper's"
 
 report

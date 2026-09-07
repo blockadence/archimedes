@@ -111,4 +111,50 @@ case "$log" in
   *) pass "spec-kit is a driver context-map-all.sh can actually find" ;;
 esac
 
+echo ""
+echo "one repo can be switched to spec-kit on its own:"
+
+# drivers/README.md's spec-kit entry argues the map it produces is a
+# different shape from the other two drivers', so which one suits a repo is
+# a per-repo judgement. That's only true if the per-repo override actually
+# reaches this driver.
+# ARCHIMEDES_DRIVERS_DIR names one directory, so the real drivers and the
+# stub the other repo stays on have to sit in the same one.
+MERGED_DRIVERS="$WORK/drivers"
+mkdir -p "$MERGED_DRIVERS"
+cp -R "$ROOT/template/drivers/." "$MERGED_DRIVERS/"
+cp -R "$HERE/fixtures/drivers/stub-ok" "$MERGED_DRIVERS/"
+
+make_origin_and_clone "$WORK" stays-on-default
+make_origin_and_clone "$WORK" switched-to-spec-kit
+INSTANCE2="$(new_test_instance "$WORK")"
+
+cat > "$INSTANCE2/repos.yaml" <<EOF
+driver: stub-ok
+repos:
+  - name: stays-on-default
+    path: ../stays-on-default
+    base_branch: main
+    depends_on: []
+    context_modeled_sha: null
+  - name: switched-to-spec-kit
+    path: ../switched-to-spec-kit
+    base_branch: main
+    depends_on: []
+    context_modeled_sha: null
+    driver: spec-kit
+EOF
+
+(
+  cd "$INSTANCE2"
+  export ARCHIMEDES_DRIVERS_DIR="$MERGED_DRIVERS"
+  PATH="$SPECLESS_PATH" ./scripts/context-map-all.sh
+) </dev/null >"$WORK/override.log" 2>&1
+
+override_log="$(cat "$WORK/override.log")"
+assert_contains "$override_log" "specify CLI not found on PATH" \
+  "a single repo's own driver field reaches spec-kit, so one repo can use it without the rest of the instance doing so"
+assert_contains "$(cat "$WORK/stays-on-default/CONTEXT.md" 2>/dev/null)" "stub-ok saw repo" \
+  "the repo that didn't override stays on the instance-wide default"
+
 report

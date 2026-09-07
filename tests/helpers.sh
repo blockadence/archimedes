@@ -32,6 +32,18 @@ assert_file_missing() { # <path> <label>
   [ -f "$1" ] && fail "$2 (unexpectedly found $1)" || pass "$2"
 }
 
+# Directories need their own assertions rather than reusing the file ones,
+# because `git status` can't stand in for them: git doesn't track
+# directories, so a scaffolded toolchain left behind in empty ones is
+# invisible to every porcelain check.
+assert_dir_exists() { # <path> <label>
+  [ -d "$1" ] && pass "$2" || fail "$2 (no directory at $1)"
+}
+
+assert_dir_missing() { # <path> <label>
+  [ -d "$1" ] && fail "$2 (unexpectedly found $1/)" || pass "$2"
+}
+
 report() { # call at end of each test file
   echo "$TESTS_RUN run, $TESTS_FAILED failed"
   [ "$TESTS_FAILED" -eq 0 ]
@@ -65,4 +77,29 @@ new_test_instance() {
   cp "$TESTS_REPO_ROOT/template/scripts/"*.sh "$work/instance/scripts/"
   chmod +x "$work/instance/scripts/"*.sh
   echo "$work/instance"
+}
+
+# A throwaway one-commit git repo with just enough of a domain in it for a
+# context-mapping driver to have something to say about. Shared by the
+# driver e2e tests so they're all pointed at the same target -- what varies
+# between them should be the driver, not the repo. <path> -> creates it.
+make_widget_repo() {
+  local repo="$1"
+  mkdir -p "$repo/src"
+  cat > "$repo/src/index.js" <<'EOF'
+// A tiny widget-catalog service: Widgets have a name and a price.
+class Widget {
+  constructor(name, priceCents) {
+    this.name = name;
+    this.priceCents = priceCents;
+  }
+}
+module.exports = { Widget };
+EOF
+  (
+    cd "$repo"
+    git init -q
+    git add -A
+    git -c user.email=test@example.com -c user.name=test commit -qm init
+  )
 }

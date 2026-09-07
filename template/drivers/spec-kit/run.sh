@@ -33,6 +33,14 @@ git -C "$REPO_PATH" rev-parse --git-dir >/dev/null 2>&1 || {
   echo "$REPO_PATH is not a git repo -- the spec-kit driver diffs against git to undo its own scaffolding afterwards" >&2
   exit 1
 }
+# Checked here rather than left to fail later, because "later" is after the
+# scaffolding is already unpacked into someone's repo. The rest of
+# Archimedes needs bash 4+ too (scripts/context-map-all.sh), so this is a
+# statement of the existing requirement, not a new one.
+[ "${BASH_VERSINFO[0]}" -ge 4 ] || {
+  echo "the spec-kit driver needs bash 4+ (running ${BASH_VERSION}); on macOS, /bin/bash is 3.2 -- install a newer bash and make sure it comes first on PATH" >&2
+  exit 1
+}
 
 CONSTITUTION=".specify/memory/constitution.md"   # must match driver.yaml's fixed_path
 
@@ -41,11 +49,35 @@ SCAFFOLDED="$(mktemp)"
 trap 'rm -f "$SNAPSHOT" "$SCAFFOLDED"' EXIT
 snapshot_repo_state "$REPO_PATH" > "$SNAPSHOT"
 
-# Roll the repo back to its pre-run state and fail. Nothing is kept -- the
+# Everything from here on happens inside someone else's repo, so the
+# rollback can't hang off the success path or off hand-placed error
+# handling: `set -e` on an unguarded command, a Ctrl-C, a `kill` -- any of
+# those would otherwise walk away leaving a whole toolchain unpacked in
+# there. So restoring is the exit trap, disarmed only once the run has
+# succeeded and done its own restore.
+RESTORE_ON_EXIT=1
+cleanup() {
+  local status=$?
+  if [ "$RESTORE_ON_EXIT" -eq 1 ]; then
+    restore_repo_state "$REPO_PATH" "$SNAPSHOT" \
+      || echo "could not roll $REPO_PATH back to how it was found -- it needs looking at by hand" >&2
+  fi
+  rm -f "$SNAPSHOT" "$SCAFFOLDED"
+  exit "$status"
+}
+#
+# EXIT alone is enough for the way runs actually get interrupted: a Ctrl-C
+# or a killed process tree signals the whole group, so the session dies too
+# and the `|| abort` below carries it here. (A signal delivered to this
+# shell alone, while it waits on one of the subshells, is swallowed by bash
+# before any trap sees it -- INT and TERM traps don't change that, so there
+# are none.)
+trap cleanup EXIT
+
+# Fail, leaving the trap above to put the repo back. Nothing is kept -- the
 # contract says a driver that exits non-zero leaves no file behind, and a
 # half-finished constitution is worse than none.
 abort() { # <message>
-  restore_repo_state "$REPO_PATH" "$SNAPSHOT"
   echo "$1" >&2
   exit 1
 }
@@ -61,9 +93,10 @@ abort() { # <message>
 ) >&2 || abort "specify init failed in $REPO_PATH"
 
 [ -f "$REPO_PATH/$CONSTITUTION" ] || abort "specify init did not scaffold $REPO_PATH/$CONSTITUTION"
-cp "$REPO_PATH/$CONSTITUTION" "$SCAFFOLDED"
+cp "$REPO_PATH/$CONSTITUTION" "$SCAFFOLDED" \
+  || abort "could not take a copy of the scaffolded $CONSTITUTION to compare against later"
 
-PROMPT="Use the speckit-constitution skill to fill in this repo's constitution at $CONSTITUTION, deriving every principle from the codebase you can read here rather than from generic best practice: the languages and frameworks actually in use, the testing and review conventions the existing code and config already follow, the boundaries between its modules, and the constraints its dependencies impose. Do not ask questions, since no one is here to answer them -- where the skill would normally prompt, infer from the code and say so. Replace every bracketed placeholder token. Write only $CONSTITUTION -- this repo is harvested by moving exactly that one file elsewhere, so do not create or modify any other file, and put the Sync Impact Report inside the constitution as the skill directs rather than in a file of its own. When the constitution is complete, stop."
+PROMPT="Use the speckit-constitution skill to fill in this repo's constitution at $CONSTITUTION, deriving every principle from the codebase you can read here rather than from generic best practice: the languages and frameworks actually in use, the testing and review conventions the existing code and config already follow, the boundaries between its modules, and the constraints its dependencies impose. Do not ask questions, since no one is here to answer them -- where the skill would normally prompt, infer from the code and say so. Replace every bracketed placeholder token. Write only $CONSTITUTION -- this repo is harvested by moving exactly that one file elsewhere, so do not create or modify any other file, and put the Sync Impact Report inside the constitution as the skill directs rather than in a file of its own. Do not run any git command that changes this repo's state -- no commit, add, stash, checkout, branch or reset. Everything this run touched is rolled back afterwards by diffing against the commit HEAD points at right now, so moving HEAD makes that impossible and strands the scaffolding here permanently. When the constitution is complete, stop."
 
 (
   cd "$REPO_PATH"
@@ -82,4 +115,9 @@ if cmp -s "$REPO_PATH/$CONSTITUTION" "$SCAFFOLDED"; then
   abort "the claude session left $CONSTITUTION as the unfilled template specify init scaffolded"
 fi
 
+# Everything but the constitution goes back, and the trap stands down --
+# but only once this has actually succeeded. If it fails (the session moved
+# HEAD, say), the trap gets its turn and tries again keeping nothing, which
+# is the right end state for a run that is about to exit non-zero.
 restore_repo_state "$REPO_PATH" "$SNAPSHOT" "$CONSTITUTION"
+RESTORE_ON_EXIT=0

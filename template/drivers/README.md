@@ -130,7 +130,9 @@ scripts/run-driver.sh <name> <path-to-a-repo> <path-to-write-the-map-to>
 - `spec-kit` — wraps [GitHub's Spec Kit](https://github.com/github/spec-kit)
   (`uv tool install specify-cli --from
   git+https://github.com/github/spec-kit.git`), also via a headless `claude
-  -p` session. Requires both the `specify` and `claude` CLIs.
+  -p` session. Requires both the `specify` and `claude` CLIs, and bash 4+
+  (checked before anything is written, so an old bash fails the run rather
+  than stranding a half-unpacked toolchain in the target repo).
 
   Spec Kit is the awkward case the `fixed-location` mode exists for. It has
   no "point at a repo, write a report over here" mode at all: `specify init`
@@ -139,7 +141,17 @@ scripts/run-driver.sh <name> <path-to-a-repo> <path-to-write-the-map-to>
   `.specify/memory/constitution.md`. So the driver snapshots the repo,
   scaffolds, has the `speckit-constitution` skill fill the constitution in
   from the codebase, then restores everything except the constitution
-  itself, which `run-driver.sh` harvests.
+  itself, which `run-driver.sh` harvests. Rollback is the driver's exit
+  trap, not something on its success path, so a failed `specify init`, a
+  session that does nothing, and a Ctrl-C halfway through all leave the repo
+  as it was found.
+
+  The one thing that defeats it is a session that commits: everything the
+  rollback reasons about is relative to the commit `HEAD` pointed at when
+  the run started, so moving `HEAD` makes the scaffolding indistinguishable
+  from the repo's own history — while leaving `git status` reading clean.
+  The driver checks for that and fails loudly rather than reporting a
+  context map for a repo it quietly left a toolchain in.
 
   What you get is a different shape of context map from the other two: a
   repo's *principles and constraints* — the conventions its existing code
