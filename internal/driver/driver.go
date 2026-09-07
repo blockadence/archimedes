@@ -4,18 +4,24 @@
 // specific driver's invocation is hardcoded anywhere else, so swapping
 // which driver is configured never touches orchestration.
 //
-// A driver is a directory under the instance's drivers/ holding a
-// driver.yaml manifest and the executable it names. The manifest's
-// output_mode picks which of two invocation contracts it honors — see
-// template/drivers/README.md for the contract as drivers see it.
+// A driver is a directory holding a driver.yaml manifest and the executable
+// it names. The manifest's output_mode picks which of two invocation
+// contracts it honors — see template/drivers/README.md for the contract as
+// drivers see it.
+//
+// Where that directory comes from is Set's question, and its answer is the
+// ownership split: an instance's own drivers/ over the drivers this binary
+// ships.
 package driver
 
 import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
@@ -32,17 +38,20 @@ const (
 	ModeFixedLocation = "fixed-location"
 )
 
-// ManifestName is the file every driver directory must contain.
-const ManifestName = "driver.yaml"
+// manifestName is the file every driver directory must contain. It is what
+// makes a directory a driver rather than something else somebody left under
+// drivers/, so it answers "is this one?" as well as "where is its manifest?".
+const manifestName = "driver.yaml"
 
-// DirName is where an instance keeps its drivers, relative to its root.
-const DirName = "drivers"
+// dirName is where an instance keeps its drivers, relative to its root.
+const dirName = "drivers"
 
-// ErrNoManifest is what LoadManifest reports for a directory that declares
-// no driver. Callers walking drivers/ — rather than being handed one name —
-// need to tell "not a driver" apart from "a driver that won't load", and
-// asking this package beats each of them stat-ing for the manifest itself.
-var ErrNoManifest = errors.New("unknown driver")
+// errNoManifest is what loadManifest reports for a directory that declares
+// no driver. Listing a Set walks drivers/ rather than being handed one
+// name, and has to tell "not a driver" apart from "a driver that won't
+// load"; running one wraps it into the error an operator sees for a name
+// nothing supplies.
+var errNoManifest = errors.New("unknown driver")
 
 // Manifest is a driver's driver.yaml.
 type Manifest struct {
@@ -56,35 +65,43 @@ type Manifest struct {
 	Command string `yaml:"command"`
 }
 
-// LoadManifest reads the manifest for the driver named name under
-// driversDir. A driver with no manifest there is an unknown driver: naming
-// one that doesn't exist is a misconfiguration that fails immediately,
-// rather than silently falling back to some other way of mapping. A
-// manifest that exists but can't be read is a different problem, and says
-// so rather than blaming the name.
-func LoadManifest(driversDir, name string) (Manifest, error) {
-	path := filepath.Join(driversDir, name, ManifestName)
-	data, err := os.ReadFile(path)
+// readManifest reads the manifest for the driver named name out of fsys, a
+// drivers directory — a real one on disk, or the copy of one embedded in
+// the binary. One reader serves both layers of a Set because a manifest
+// that parsed in a listing and failed in a run, or the reverse, would be a
+// disagreement about what a driver even is.
+//
+// where names the directory for the operator, since an fs.FS cannot say
+// where it came from and "no manifest at driver.yaml" helps nobody.
+//
+// A driver with no manifest there is an unknown driver: naming one that
+// doesn't exist is a misconfiguration that fails immediately, rather than
+// silently falling back to some other way of mapping. A manifest that
+// exists but can't be read is a different problem, and says so rather than
+// blaming the name.
+func readManifest(fsys fs.FS, where, name string) (Manifest, error) {
+	data, err := fs.ReadFile(fsys, path.Join(name, manifestName))
+	at := filepath.Join(where, name, manifestName)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return Manifest{}, fmt.Errorf("%w: %s (no manifest at %s)", ErrNoManifest, name, path)
+		if errors.Is(err, fs.ErrNotExist) {
+			return Manifest{}, fmt.Errorf("%w: %s (no manifest at %s)", errNoManifest, name, at)
 		}
-		return Manifest{}, fmt.Errorf("reading %s: %w", path, err)
+		return Manifest{}, fmt.Errorf("reading %s: %w", at, err)
 	}
 
 	var m Manifest
 	if err := yaml.Unmarshal(data, &m); err != nil {
-		return Manifest{}, fmt.Errorf("parsing %s: %w", path, err)
+		return Manifest{}, fmt.Errorf("parsing %s: %w", at, err)
 	}
 	return m, nil
 }
 
-// CommandPath is where the driver named name keeps the command its
+// commandPath is where the driver named name keeps the command its
 // manifest declares. One place answers it because two callers act on the
-// same file for different reasons — running it, and making it runnable when
-// an instance is scaffolded — and they must never disagree about which file
-// that is.
-func CommandPath(driversDir, name string, m Manifest) string {
+// same file for different reasons — running it, and making it runnable
+// after unpacking or adopting one — and they must never disagree about
+// which file that is.
+func commandPath(driversDir, name string, m Manifest) string {
 	return filepath.Join(driversDir, name, filepath.FromSlash(m.Command))
 }
 
@@ -112,16 +129,18 @@ func (m Manifest) plan(name string) (invocation, error) {
 	}
 }
 
-// Run invokes the driver named name against repoPath and guarantees the
-// finished context map ends up at exactly outputPath, whichever contract
-// the driver declares. The driver's own stdout/stderr go to progress.
+// runIn invokes the driver named name, found in driversDir, against
+// repoPath and guarantees the finished context map ends up at exactly
+// outputPath, whichever contract the driver declares. The driver's own
+// stdout/stderr go to progress. Which drivers/ it is handed is Set's
+// question, answered before this is reached.
 //
 // Every failure mode leaves no output file behind: an unknown driver, an
 // output_mode we don't support, a command that isn't executable, a non-zero
 // exit, and — the one a driver can't self-report — a zero exit that never
 // produced the file it promised.
-func Run(driversDir, name, repoPath, outputPath string, progress io.Writer) error {
-	m, err := LoadManifest(driversDir, name)
+func runIn(driversDir, name, repoPath, outputPath string, progress io.Writer) error {
+	m, err := readManifest(os.DirFS(driversDir), driversDir, name)
 	if err != nil {
 		return err
 	}
@@ -130,7 +149,7 @@ func Run(driversDir, name, repoPath, outputPath string, progress io.Writer) erro
 		return err
 	}
 
-	bin := CommandPath(driversDir, name, m)
+	bin := commandPath(driversDir, name, m)
 	if err := executable(bin); err != nil {
 		return fmt.Errorf("driver %q command not executable: %s (%w)", name, bin, err)
 	}

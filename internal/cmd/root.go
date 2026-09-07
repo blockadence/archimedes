@@ -30,6 +30,7 @@ tracking/spawning/pruning the worktrees used to execute it.`,
 	root.AddCommand(newRenderMapCmd())
 	root.AddCommand(newContextMapCmd())
 	root.AddCommand(newRunDriverCmd())
+	root.AddCommand(newDriversCmd())
 	root.AddCommand(newSpawnCmd())
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newPruneCmd())

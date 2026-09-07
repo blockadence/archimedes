@@ -8,6 +8,19 @@ conventions. It is data only — the `archimedes` binary, installed once on
 this machine, is what acts on it, and nothing here needs updating when that
 tool does.
 
+Everything in here is yours, including the parts it started life with. The
+PR and issue templates in `scaffolding/`, the convention-pack examples in
+`convention-packs/`, this README and `AGENTS.md` were seeded once, when the
+instance was created, and are never refreshed or overwritten from anywhere:
+they carry your org's wording and your repos' conventions, so a tool that
+kept re-supplying them would be overwriting the work. Edit them freely.
+Upgrading `archimedes` will not bring newer versions of them, and that is
+the trade — starting points you own beat boilerplate you cannot keep.
+
+The one exception is `drivers/`, which is not inert data but programs that
+run inside your repositories, and where a fix reaching you matters more than
+a starting point staying put. See `drivers/README.md`.
+
 See the Archimedes README for how the pattern itself works, and
 `archimedes --help` for the full command list. Everything below this line is
 specific to this instance.

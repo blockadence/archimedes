@@ -32,8 +32,10 @@ func writeDriver(t *testing.T, driversDir, name, manifest, body string) {
 
 // stubs installs the cast of well-behaved and misbehaving drivers the
 // contract tests below exercise, so each case names the driver it needs
-// rather than building one.
-func stubs(t *testing.T) string {
+// rather than building one. They are an instance's own drivers, with no
+// built-in layer beneath: what these tests are about is the contract a
+// driver honors, not which layer supplied it (see set_test.go for that).
+func stubs(t *testing.T) driver.Set {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -55,7 +57,7 @@ func stubs(t *testing.T) string {
 	writeDriver(t, dir, "stub-fails", "name: stub-fails\noutput_mode: path-parameterized\ncommand: run.sh\n",
 		"#!/usr/bin/env bash\necho 'driver blew up' >&2\nexit 3\n")
 
-	return dir
+	return driver.Set{Dir: dir}
 }
 
 func repoDir(t *testing.T) string {
@@ -78,7 +80,7 @@ func TestUnknownDriverFailsAndWritesNothing(t *testing.T) {
 	drivers, repo := stubs(t), repoDir(t)
 	out := filepath.Join(t.TempDir(), "unknown.md")
 
-	err := driver.Run(drivers, "nonexistent-driver", repo, out, io.Discard)
+	err := drivers.Run("nonexistent-driver", repo, out, io.Discard)
 	if err == nil {
 		t.Fatal("expected an error for an unknown driver, got nil")
 	}
@@ -92,7 +94,7 @@ func TestUnsupportedOutputModeFailsAndWritesNothing(t *testing.T) {
 	drivers, repo := stubs(t), repoDir(t)
 	out := filepath.Join(t.TempDir(), "bad-mode.md")
 
-	err := driver.Run(drivers, "stub-bad-mode", repo, out, io.Discard)
+	err := drivers.Run("stub-bad-mode", repo, out, io.Discard)
 	if err == nil {
 		t.Fatal("expected an error for an unsupported output_mode, got nil")
 	}
@@ -106,7 +108,7 @@ func TestNonExecutableCommandFails(t *testing.T) {
 	drivers, repo := stubs(t), repoDir(t)
 	out := filepath.Join(t.TempDir(), "not-executable.md")
 
-	err := driver.Run(drivers, "stub-not-executable", repo, out, io.Discard)
+	err := drivers.Run("stub-not-executable", repo, out, io.Discard)
 	if err == nil {
 		t.Fatal("expected an error for a missing/non-executable command, got nil")
 	}
@@ -119,7 +121,7 @@ func TestPathParameterizedWritesToExactPath(t *testing.T) {
 	drivers, repo := stubs(t), repoDir(t)
 	out := filepath.Join(t.TempDir(), "nested", "dir", "ok.md")
 
-	if err := driver.Run(drivers, "stub-ok", repo, out, io.Discard); err != nil {
+	if err := drivers.Run("stub-ok", repo, out, io.Discard); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
@@ -141,7 +143,7 @@ func TestPathParameterizedDriverIsGivenAnAbsoluteRepoPath(t *testing.T) {
 		t.Skipf("no relative path from cwd to %s: %v", repo, err)
 	}
 
-	if err := driver.Run(drivers, "stub-ok", rel, out, io.Discard); err != nil {
+	if err := drivers.Run("stub-ok", rel, out, io.Discard); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
 	got, err := os.ReadFile(out)
@@ -166,7 +168,7 @@ func TestZeroExitWithoutOutputIsAnError(t *testing.T) {
 	drivers, repo := stubs(t), repoDir(t)
 	out := filepath.Join(t.TempDir(), "liar.md")
 
-	err := driver.Run(drivers, "stub-liar", repo, out, io.Discard)
+	err := drivers.Run("stub-liar", repo, out, io.Discard)
 	if err == nil {
 		t.Fatal("expected an error when the driver exits 0 without writing, got nil")
 	}
@@ -179,7 +181,7 @@ func TestNonZeroExitIsAnError(t *testing.T) {
 	drivers, repo := stubs(t), repoDir(t)
 	out := filepath.Join(t.TempDir(), "fails.md")
 
-	err := driver.Run(drivers, "stub-fails", repo, out, io.Discard)
+	err := drivers.Run("stub-fails", repo, out, io.Discard)
 	if err == nil {
 		t.Fatal("expected an error when the driver exits non-zero, got nil")
 	}
@@ -190,7 +192,7 @@ func TestFixedLocationHarvestsToRequestedPathLeavingNoTrace(t *testing.T) {
 	drivers, repo := stubs(t), repoDir(t)
 	out := filepath.Join(t.TempDir(), "harvested", "fixed.md")
 
-	if err := driver.Run(drivers, "stub-fixed-ok", repo, out, io.Discard); err != nil {
+	if err := drivers.Run("stub-fixed-ok", repo, out, io.Discard); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
@@ -214,7 +216,7 @@ func TestFixedLocationPrunesDirectoriesTheHarvestEmpties(t *testing.T) {
 	drivers, repo := stubs(t), repoDir(t)
 	out := filepath.Join(t.TempDir(), "nested.md")
 
-	if err := driver.Run(drivers, "stub-fixed-nested", repo, out, io.Discard); err != nil {
+	if err := drivers.Run("stub-fixed-nested", repo, out, io.Discard); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
@@ -248,7 +250,7 @@ func TestFixedLocationLeavesDirectoriesItDidNotEmpty(t *testing.T) {
 	}
 	out := filepath.Join(t.TempDir(), "nested-shared.md")
 
-	if err := driver.Run(drivers, "stub-fixed-nested", repo, out, io.Discard); err != nil {
+	if err := drivers.Run("stub-fixed-nested", repo, out, io.Discard); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
 	if _, err := os.Stat(kept); err != nil {
@@ -260,7 +262,7 @@ func TestFixedLocationWithoutFixedPathFailsBeforeInvokingTheDriver(t *testing.T)
 	drivers, repo := stubs(t), repoDir(t)
 	out := filepath.Join(t.TempDir(), "no-fixed-path.md")
 
-	err := driver.Run(drivers, "stub-fixed-no-path", repo, out, io.Discard)
+	err := drivers.Run("stub-fixed-no-path", repo, out, io.Discard)
 	if err == nil {
 		t.Fatal("expected an error for fixed-location with no fixed_path, got nil")
 	}
@@ -275,7 +277,7 @@ func TestFixedLocationZeroExitWithoutWritingIsAnError(t *testing.T) {
 	drivers, repo := stubs(t), repoDir(t)
 	out := filepath.Join(t.TempDir(), "fixed-liar.md")
 
-	err := driver.Run(drivers, "stub-fixed-liar", repo, out, io.Discard)
+	err := drivers.Run("stub-fixed-liar", repo, out, io.Discard)
 	if err == nil {
 		t.Fatal("expected an error when a fixed-location driver exits 0 without writing, got nil")
 	}
@@ -290,7 +292,7 @@ func TestDriverOutputReachesProgressWriter(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "fails.md")
 
 	var progress strings.Builder
-	_ = driver.Run(drivers, "stub-fails", repo, out, &progress)
+	_ = drivers.Run("stub-fails", repo, out, &progress)
 
 	if !strings.Contains(progress.String(), "driver blew up") {
 		t.Errorf("progress = %q, want the driver's own output", progress.String())

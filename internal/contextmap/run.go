@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,9 +34,13 @@ type Options struct {
 	// ContextFile overrides where each repo's map is written, relative to
 	// that repo's root. Empty means DefaultContextFile.
 	ContextFile string
-	// DriversDir overrides where drivers are looked up. Empty means
-	// <Root>/drivers.
+	// DriversDir overrides which drivers/ the instance layer is read
+	// from. Empty means <Root>/drivers.
 	DriversDir string
+	// Builtin holds the drivers this binary ships, the layer under the
+	// instance's own. Nil means a pass can only run drivers the instance
+	// itself carries.
+	Builtin fs.FS
 	// Driver is the environment-level default driver, the least specific
 	// of the three levels SelectDriver resolves.
 	Driver string
@@ -45,21 +50,6 @@ type Options struct {
 	// ContextPrompt replaces the first message an interactive session is
 	// told to start from. Empty means the generated one.
 	ContextPrompt string
-}
-
-// DriversDir is where drivers are looked up for an instance rooted at root:
-// override when the operator named one (ARCHIMEDES_DRIVERS_DIR), otherwise
-// the instance's own drivers/.
-//
-// Exported because more than a mapping pass asks the question — `run-driver`
-// exercises one driver on its own — and the two answering it differently
-// would mean a driver that works in a pass and is missing outside it, or the
-// reverse.
-func DriversDir(root, override string) string {
-	if override != "" {
-		return override
-	}
-	return filepath.Join(root, driver.DirName)
 }
 
 // Run sequences a context-mapping pass across every repo in the instance at
@@ -83,7 +73,7 @@ func Run(opts Options, out, progress io.Writer, in io.Reader) error {
 	if contextFile == "" {
 		contextFile = DefaultContextFile
 	}
-	driversDir := DriversDir(root, opts.DriversDir)
+	drivers := driver.SetFor(root, opts.DriversDir, opts.Builtin)
 	confirm := bufio.NewReader(in)
 
 	order, warning := Order(m.Repos)
@@ -131,7 +121,7 @@ func Run(opts Options, out, progress io.Writer, in io.Reader) error {
 
 		if driverName := SelectDriver(repo.Driver, m.Driver, opts.Driver); driverName != "" {
 			fmt.Fprintf(out, "Running driver %q against %s...\n", driverName, turn.path)
-			if err := driver.Run(driversDir, driverName, turn.path, turn.outputPath, progress); err != nil {
+			if err := drivers.Run(driverName, turn.path, turn.outputPath, progress); err != nil {
 				return err
 			}
 			fmt.Fprintf(out, "Wrote %s\n", turn.outputPath)

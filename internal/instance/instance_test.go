@@ -1,10 +1,10 @@
 package instance_test
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -19,20 +19,30 @@ import (
 // hand-built one for the rules Create enforces, and the real embedded
 // template for the promise that what it produces is a working instance.
 
-// fakeTemplate is the shape Create cares about: some data, a driver whose
-// manifest names its command, and — beside it — a file the driver sources
-// rather than runs.
+// fakeTemplate is the shape Create cares about: data, a dotfile, and the
+// empty marker that gives an instance one of its directories.
 func fakeTemplate() fstest.MapFS {
 	return fstest.MapFS{
-		"repos.yaml":               &fstest.MapFile{Data: []byte("repos: []\n")},
-		".gitignore":               &fstest.MapFile{Data: []byte("/tmp/\n")},
-		"work/.gitkeep":            &fstest.MapFile{},
-		"drivers/README.md":        &fstest.MapFile{Data: []byte("# Drivers\n")},
-		"drivers/demo/driver.yaml": &fstest.MapFile{Data: []byte("name: demo\noutput_mode: path-parameterized\ncommand: run.sh\n")},
-		"drivers/demo/run.sh":      &fstest.MapFile{Data: []byte("#!/usr/bin/env bash\necho hi\n")},
-		"drivers/demo/lib.sh":      &fstest.MapFile{Data: []byte("# sourced, never run\n")},
-		"drivers/notes/scratch.md": &fstest.MapFile{Data: []byte("not a driver\n")},
+		"repos.yaml":        &fstest.MapFile{Data: []byte("repos: []\n")},
+		".gitignore":        &fstest.MapFile{Data: []byte("/tmp/\n")},
+		"work/.gitkeep":     &fstest.MapFile{},
+		"drivers/README.md": &fstest.MapFile{Data: []byte("# Drivers\n")},
 	}
+}
+
+// unreadable is a template with one file that cannot be read: a failure
+// part-way through writing an instance, which is the only interesting one
+// — everything before it has already landed on disk.
+type unreadable struct {
+	fsys fstest.MapFS
+	path string
+}
+
+func (u unreadable) Open(name string) (fs.File, error) {
+	if name == u.path {
+		return nil, errors.New("simulated I/O failure")
+	}
+	return u.fsys.Open(name)
 }
 
 func TestCreateWritesTheTemplateTreeIntoANewDirectory(t *testing.T) {
@@ -87,25 +97,6 @@ func TestCreateStartsTheInstanceOnItsOwnFreshHistory(t *testing.T) {
 	}
 }
 
-func TestCreateMakesEachDriversCommandExecutable(t *testing.T) {
-	testrepo.IsolateGit(t)
-
-	dest, err := instance.Create(fakeTemplate(), "widgets", t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assertExecutable(t, filepath.Join(dest, "drivers/demo/run.sh"), true)
-	// The mode is restored from what a driver's manifest names, not from
-	// what a filename looks like: a driver's sourced helper is not a
-	// program and must not be turned into one.
-	assertExecutable(t, filepath.Join(dest, "drivers/demo/lib.sh"), false)
-	assertExecutable(t, filepath.Join(dest, "repos.yaml"), false)
-	// A directory under drivers/ that declares no driver is carried like
-	// anything else rather than treated as a broken one.
-	assertExecutable(t, filepath.Join(dest, "drivers/notes/scratch.md"), false)
-}
-
 func TestCreateRefusesADestinationThatAlreadyExists(t *testing.T) {
 	testrepo.IsolateGit(t)
 	parent := t.TempDir()
@@ -135,8 +126,7 @@ func TestCreateRefusesADestinationThatAlreadyExists(t *testing.T) {
 func TestCreateLeavesNothingBehindWhenItFails(t *testing.T) {
 	testrepo.IsolateGit(t)
 	parent := t.TempDir()
-	broken := fakeTemplate()
-	broken["drivers/demo/driver.yaml"] = &fstest.MapFile{Data: []byte("name: [unterminated\n")}
+	broken := unreadable{fsys: fakeTemplate(), path: "work/.gitkeep"}
 
 	if _, err := instance.Create(broken, "widgets", parent); err == nil {
 		t.Fatal("expected an error, got none")
@@ -172,57 +162,27 @@ func TestCreateScaffoldsTheTemplateThisRepoShips(t *testing.T) {
 		t.Errorf("a fresh instance is not clean:\n%s", got)
 	}
 
-	// Every driver that ships is runnable, and nothing else in the instance
-	// is executable at all — the guarantee the scaffolding has always made.
-	commands := driverCommands(t, dest)
-	if len(commands) == 0 {
-		t.Fatal("the template shipped no drivers")
+	// Nothing in an instance is executable, because nothing in an instance
+	// is a program: the drivers ride in the binary, and everything here is
+	// data. This is the guarantee that decays quietly — one convenience
+	// script back in the template and instances start carrying tooling
+	// again, which is the thing that had to be retired for a fix to be able
+	// to reach them at all.
+	if stray := executableFiles(t, dest); len(stray) != 0 {
+		t.Errorf("a fresh instance carries executable files: %v", stray)
 	}
-	for _, cmd := range commands {
-		assertExecutable(t, cmd, true)
-	}
-	for _, stray := range executableFiles(t, dest) {
-		if !slices.Contains(commands, stray) {
-			t.Errorf("%s is executable but is no driver's command", stray)
-		}
-	}
-}
 
-func assertExecutable(t *testing.T, path string, want bool) {
-	t.Helper()
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := info.Mode()&0o111 != 0; got != want {
-		t.Errorf("%s executable = %v, want %v (mode %v)", path, got, want, info.Mode())
-	}
-}
-
-// driverCommands returns the absolute path of the command each driver in
-// the instance declares.
-func driverCommands(t *testing.T, dest string) []string {
-	t.Helper()
+	// Its drivers/ is the operator's own empty shelf, ready for a driver
+	// they write or adopt.
 	entries, err := os.ReadDir(filepath.Join(dest, "drivers"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var cmds []string
 	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dest, "drivers", e.Name(), "driver.yaml"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, line := range strings.Split(string(data), "\n") {
-			if rest, ok := strings.CutPrefix(line, "command:"); ok {
-				cmds = append(cmds, filepath.Join(dest, "drivers", e.Name(), strings.TrimSpace(rest)))
-			}
+		if e.IsDir() {
+			t.Errorf("a fresh instance already holds a driver (%s)", e.Name())
 		}
 	}
-	return cmds
 }
 
 func executableFiles(t *testing.T, dest string) []string {

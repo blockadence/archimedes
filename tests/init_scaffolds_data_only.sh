@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # A scaffolded instance is data and nothing else: a manifest, dossier and
-# work directories, and the drivers/scaffolding it owns from there on. The
-# tooling that acts on it is the globally installed `archimedes` binary, so
-# nothing executable is copied in and there is nothing to re-vendor later.
+# work directories, the scaffolding it owns from there on, and an empty
+# drivers/ shelf for the drivers it comes to own. The tooling that acts on
+# it is the globally installed `archimedes` binary -- and so are the drivers
+# it ships -- so not one file of an instance is a program, and there is
+# nothing to re-vendor later.
 #
 # This is the guarantee that decays quietly: adding one convenience script
 # back to template/ would go unnoticed until an instance somewhere had a
@@ -43,13 +45,12 @@ INSTANCE="$WORK/widgets"
 
 assert_dir_missing "$INSTANCE/scripts" "no scripts/ directory is vendored into the instance"
 
-# Drivers are the one thing an instance holds that happens to be
-# executable, and they are its own configuration rather than a copy of
-# tooling: which one maps a repo is a per-instance decision, and a driver is
-# whatever program answers it. Everything else must be inert.
+# Nothing at all, not even under drivers/. The drivers an instance can run
+# ride in the binary; its own drivers/ starts empty, holding only whatever
+# the operator later writes or adopts into it.
 strays="$(cd "$INSTANCE" && find . -path ./.git -prune -o -type f \
-  ! -path './drivers/*' \( -name '*.sh' -o -perm -u+x \) -print | sort | tr '\n' ' ')"
-assert_eq "$strays" "" "nothing executable or shell-shaped is copied in outside drivers/"
+  \( -name '*.sh' -o -perm -u+x \) -print | sort | tr '\n' ' ')"
+assert_eq "$strays" "" "nothing executable or shell-shaped is copied into the instance at all"
 
 for path in repos.yaml WORKSPACE-MAP.md AGENTS.md README.md; do
   assert_file_exists "$INSTANCE/$path" "the instance carries its $path"
@@ -58,11 +59,11 @@ for path in repos work drivers scaffolding convention-packs; do
   assert_dir_exists "$INSTANCE/$path" "the instance carries its $path/"
 done
 
-# A driver's command has to arrive runnable, and it is the manifest that
-# says which file that is — nothing in the binary carries file modes.
-[ -x "$INSTANCE/drivers/openspec/run.sh" ] \
-  && pass "a scaffolded driver's command is still executable" \
-  || fail "a scaffolded driver's command is still executable"
+# A driver seeded into an instance would be a driver no fix could ever
+# reach again, which is precisely what this whole arrangement exists to
+# avoid. The shelf arrives empty.
+seeded="$(find "$INSTANCE/drivers" -mindepth 1 -maxdepth 1 -type d | tr '\n' ' ')"
+assert_eq "$seeded" "" "no driver is seeded into the instance, so none of them is beyond the reach of a fix"
 
 # The instance owns its drivers and scaffolding from here, so there is no
 # refresh-from-Archimedes step in either direction. Asserted as the absence

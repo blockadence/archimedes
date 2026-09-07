@@ -6,6 +6,53 @@ orchestrates *which* repos need mapping and in what order; it never knows how
 any given driver does its job. That split is the point: swapping the
 configured driver never requires touching orchestration.
 
+## Which drivers exist, and who owns them
+
+Two places, and the difference is who maintains what:
+
+- **This directory is yours.** Anything you put here is the instance's.
+  Nothing ever overwrites, refreshes or removes it, and no upgrade to
+  `archimedes` will touch it. It starts empty.
+- **Archimedes ships a few drivers inside the binary** — `openspec`,
+  `pocock`, `spec-kit` — and reads them out of it at the moment one runs.
+  They are never copied into an instance. That is deliberate: it is what
+  lets a bug fixed in one of them reach *your* instance, which already
+  exists, on your next `go install`. A driver that scaffolds a third-party
+  toolchain into someone else's repository and unwinds it afterwards is not
+  a thing you want a stale copy of.
+
+```
+archimedes drivers          # what this instance can run, and where each comes from
+```
+
+A name in this directory **wins** over a shipped one. So an instance that
+writes its own `spec-kit/` gets its own, always, and the listing marks it
+`shadows built-in` — a reminder that fixes to the shipped `spec-kit` no
+longer reach you, which is the deal you took when you took it over.
+
+### Editing a driver Archimedes ships
+
+Take it over first:
+
+```
+archimedes drivers adopt spec-kit
+```
+
+That copies the whole driver — command, manifest, and any helper the command
+sources — into `drivers/spec-kit/`, runnable, for you to edit. From then on
+it is yours by the rule above. To hand the name back to the version
+Archimedes maintains, delete `drivers/spec-kit/`.
+
+It is a one-time act, not a subscription: nothing re-syncs an adopted
+driver, in either direction, and adopting over one you already have is
+refused rather than resolved.
+
+**If your instance predates this arrangement** it may still hold copies of
+`openspec/`, `pocock/` and `spec-kit/` that were scaffolded into it. Those
+copies still run, and no fix made to the shipped drivers will ever reach
+them — `archimedes drivers` flags each one as `shadows built-in`. Delete the
+ones you never edited; keep (and own) the ones you did.
+
 ## Selecting a driver
 
 `repos.yaml`'s top-level `driver` field sets the instance-wide default,
@@ -35,11 +82,21 @@ no top-level `driver`) is a per-invocation way to set the same instance-wide
 default without editing the file. Leaving every level unset falls back to an
 interactive, human-in-the-loop session.
 
-Naming a driver that doesn't exist under `drivers/` — at either level — is a
-misconfiguration: the run fails immediately with an "unknown driver" error
-rather than silently falling back to the interactive session.
+`ARCHIMEDES_DRIVERS_DIR=<path>` moves *this* directory somewhere else for
+one invocation — useful for trying a driver you are writing without putting
+it in the instance yet. It moves the instance layer only: the drivers
+Archimedes ships stay underneath whatever it names, so pointing it at a
+scratch directory holding one driver still leaves the other three
+resolvable.
 
-Each driver lives in its own directory here, named after itself:
+Naming a driver neither this directory nor the binary supplies — at either
+level — is a misconfiguration: the run fails immediately with an "unknown
+driver" error naming both places it looked, rather than silently falling
+back to the interactive session.
+
+## Writing one of your own
+
+A driver lives in its own directory here, named after itself:
 
 ```
 drivers/
@@ -47,6 +104,23 @@ drivers/
     driver.yaml   # manifest
     <command>     # the executable named in the manifest, run.sh by convention
 ```
+
+The command has to be executable (`chmod +x`) — Archimedes runs it, it does
+not source it. Anything beside it that the command *sources* rather than
+runs should stay non-executable; `spec-kit`'s `repo-snapshot.sh` is the
+worked example.
+
+A driver is handed its own directory in the sense that files beside its
+command are there to be sourced or read — but not as durable storage. A
+shipped driver is unpacked somewhere fresh for each run and thrown away
+afterwards, so anything written beside the command is gone by the next one.
+State that has to survive belongs in the repo being mapped, or in the output
+path the driver was given.
+
+That unpacking uses the system temp directory. On a machine that mounts it
+`noexec`, the shipped drivers cannot run from it — point `TMPDIR` somewhere
+executable. Drivers in this directory are unaffected, so the symptom is that
+only the shipped ones fail.
 
 ## Manifest (`driver.yaml`)
 
@@ -104,8 +178,9 @@ modes are supported:
   file (`pocock`) gets this for free. One that has to scaffold a whole
   toolchain into the repo before it can produce anything (`spec-kit`) has to
   undo that scaffolding itself before exiting — see
-  `drivers/spec-kit/repo-snapshot.sh` for the snapshot-then-restore approach
-  that generalizes to any such tool.
+  the `spec-kit` driver's `repo-snapshot.sh` for the snapshot-then-restore
+  approach that generalizes to any such tool (`archimedes drivers adopt
+  spec-kit` puts a copy here to read).
 
 ## Trying one directly
 
@@ -115,7 +190,10 @@ Every driver can be exercised outside of a mapping pass:
 archimedes run-driver <name> <path-to-a-repo> <path-to-write-the-map-to>
 ```
 
-## Available drivers
+## The drivers Archimedes ships
+
+These come from the binary, not from this directory (see the ownership rule
+above). `archimedes drivers` lists whichever ones your install carries.
 
 - `openspec` — wraps the [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec)
   (`npm install -g @fission-ai/openspec`). Initializes OpenSpec in the target

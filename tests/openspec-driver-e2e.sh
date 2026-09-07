@@ -8,9 +8,6 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
-ROOT="$(cd "$HERE/.." && pwd)"
-export ARCHIMEDES_DRIVERS_DIR="$ROOT/template/drivers"
-
 if ! command -v openspec >/dev/null 2>&1; then
   echo "skip: openspec-driver-e2e.sh (openspec CLI not on PATH — npm install -g @fission-ai/openspec)"
   exit 0

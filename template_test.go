@@ -2,17 +2,21 @@ package archimedes_test
 
 import (
 	"io/fs"
+	"slices"
 	"testing"
 
 	"github.com/blockadence/archimedes"
 )
 
-// The template is prose and configuration maintained by hand at the top of
-// this repo; the binary only carries a copy of it. These tests are about
-// the carrying, not the content: the parts of the tree that an embed
-// directive is most likely to drop silently — dotfiles, the empty markers
-// that give an instance its directories, a driver's command — are the ones
-// asserted here.
+// The template and the shipped drivers are prose, YAML and bash maintained
+// by hand at the top of this repo; the binary only carries copies of them.
+// These tests are about the carrying, not the content: the parts of each
+// tree that an embed directive is most likely to drop silently — dotfiles,
+// the empty markers that give an instance its directories, a helper a
+// driver sources rather than runs — are the ones asserted here. So is the
+// line between the two trees, which is the whole of the ownership answer:
+// what the template seeds, an instance owns; what the binary carries stays
+// the tool's to fix.
 
 func TestTemplateCarriesTheTreeAHumanMaintains(t *testing.T) {
 	tmpl := archimedes.Template()
@@ -45,25 +49,57 @@ func TestTemplateCarriesDotfilesAndEmptyDirectoryMarkers(t *testing.T) {
 	}
 }
 
-func TestTemplateCarriesEveryDriverItShips(t *testing.T) {
+// The template seeds an instance and the instance owns what it seeds, so a
+// driver in there would be a driver no fix could ever reach again. An
+// instance's drivers/ starts as the operator's empty shelf.
+func TestTheTemplateSeedsNoDrivers(t *testing.T) {
 	tmpl := archimedes.Template()
 
 	entries, err := fs.ReadDir(tmpl, "drivers")
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, e := range entries {
+		if e.IsDir() {
+			t.Errorf("the template seeds a driver (%s): a seeded driver is one no fix can reach", e.Name())
+		}
+	}
+}
 
-	var drivers int
+// The drivers ride in the binary instead, so that fixing one here fixes it
+// for instances that already exist. Same failure mode as the template's:
+// what an embed directive drops, it drops silently.
+func TestTheBinaryCarriesEveryDriverItShips(t *testing.T) {
+	drivers := archimedes.Drivers()
+
+	entries, err := fs.ReadDir(drivers, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var found []string
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		drivers++
-		if _, err := fs.Stat(tmpl, "drivers/"+e.Name()+"/driver.yaml"); err != nil {
+		found = append(found, e.Name())
+		if _, err := fs.Stat(drivers, e.Name()+"/driver.yaml"); err != nil {
 			t.Errorf("driver %s has no manifest: %v", e.Name(), err)
 		}
 	}
-	if drivers == 0 {
-		t.Error("the template ships no drivers at all")
+
+	for _, want := range []string{"openspec", "pocock", "spec-kit"} {
+		if !slices.Contains(found, want) {
+			t.Errorf("the binary does not carry the %s driver (carries %v)", want, found)
+		}
+	}
+}
+
+// A driver is a directory, not a script: spec-kit's command sources a
+// helper beside it, and a copy carried without that helper would fail only
+// once it was already running inside somebody's repository.
+func TestTheBinaryCarriesWhatADriversCommandSourcesBesideIt(t *testing.T) {
+	if _, err := fs.Stat(archimedes.Drivers(), "spec-kit/repo-snapshot.sh"); err != nil {
+		t.Errorf("spec-kit's sourced helper is missing from the carried copy: %v", err)
 	}
 }

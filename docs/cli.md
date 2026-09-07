@@ -4,7 +4,8 @@ The tool, installed once per machine and independent of any instance. An
 instance is pure data (`repos.yaml`, `repos/*.md`, `work/`, `drivers/`,
 `scaffolding/`) — this binary is the only thing that acts on it, so every
 instance on a machine is served by one install and none of them carry a
-copy of anything.
+copy of anything. Not one file of an instance is a program: the drivers
+ship in here too (see "Two embedded trees" below).
 
 ## Build / install
 
@@ -23,28 +24,67 @@ Requires `git` and `gh` (authenticated); `sync-templates` additionally
 requires `multi-gitter`. Each subcommand checks for what it needs before it
 starts.
 
-## The instance template
+## Two embedded trees
 
-The module root is the repository root, and `template/` sits beside it at
-the top level. That is deliberate: `go:embed` cannot reach outside the
-package directory it appears in, so carrying the template in the binary
-meant either burying hand-maintained prose (`template/AGENTS.md`,
-`template/drivers/README.md`, the convention-pack examples) inside the Go
-package tree, or moving the module up to meet it. The module moved.
+The module root is the repository root, and `template/` and `drivers/` sit
+beside it at the top level. That is deliberate: `go:embed` cannot reach
+outside the package directory it appears in, so carrying either in the
+binary meant either burying hand-maintained prose and bash
+(`template/AGENTS.md`, `template/drivers/README.md`, the convention-pack
+examples, three drivers' worth of shell) inside the Go package tree, or
+moving the module up to meet them. The module moved.
 
-`template.go` at the root is the whole of the mechanism: one `//go:embed
-all:template` directive, exposed as `archimedes.Template()`. The template
-stays ordinary files, edited by editing them — nothing generates it, and no
-Go source holds a second copy. The `all:` prefix is load-bearing; without
-it the tree's dotfiles (`.gitignore`, and the `.gitkeep` markers that give
-an instance its `repos/` and `work/` directories) are silently dropped.
+`template.go` at the root is the whole of the mechanism: two `//go:embed
+all:` directives, exposed as `archimedes.Template()` and
+`archimedes.Drivers()`. Both trees stay ordinary files, edited by editing
+them — nothing generates them, and no Go source holds a second copy. The
+`all:` prefix is load-bearing; without it the template's dotfiles
+(`.gitignore`, and the `.gitkeep` markers that give an instance its
+`repos/` and `work/` directories) are silently dropped.
 
-One thing an embedded filesystem cannot carry is file modes, and an
-instance depends on exactly one: a driver's command has to arrive runnable.
-`internal/instance` restores it from what each `drivers/*/driver.yaml`
-declares its `command` to be, rather than from what a filename looks like —
-a driver's *sourced* helper (`drivers/spec-kit/repo-snapshot.sh`) is not a
-program and must stay inert.
+The two are carried for opposite reasons, and the difference is the whole of
+issue 29's answer:
+
+- **`template/` is seed data.** It is written into an instance once, by
+  `init`, and is that instance's from then on. Nothing refreshes it.
+- **`drivers/` is never written into an instance at all.** A driver is read
+  out of the binary at the moment it runs. That is what makes a fix to one
+  reach an instance that *already exists*: upgrading the tool is the whole
+  of the delivery, and there is no step that copies tooling into an
+  instance — the thing 15 retired and that this must not reintroduce under
+  another name.
+
+So `template/drivers/` holds a README and no drivers. A driver seeded into
+an instance would be a driver beyond the reach of any fix, which is exactly
+the state that had to be resolved.
+
+The rest of the template — `scaffolding/`'s PR and issue templates, the
+convention-pack examples, `AGENTS.md` — stays seed data, deliberately, and
+the docs say so where an operator will read it (`template/README.md`).
+Those carry an org's own wording and an instance's own conventions, so
+re-supplying them would overwrite the work rather than deliver a fix. The
+line is not "shipped versus not" but *inert content an operator tailors*
+versus *programs that run inside their repositories*, and only the second
+kind is worth a delivery route.
+
+The layering is `internal/driver`'s `Set`: the instance's own `drivers/`
+over the built-ins, most specific first. An operator's driver — written
+from scratch, or taken over with `drivers adopt` — always wins, so owning a
+driver means owning it, and the `drivers` listing marks such a name
+`shadows built-in` because fixes to the shipped one stop arriving there.
+`Set` answers with a *directory on disk* rather than with which layer won,
+unpacking a built-in to a temp dir for the duration of the run; past that
+point a built-in is an ordinary driver directory and there is one code path,
+not two. Unpacking per run rather than caching is deliberate: a cache would
+need invalidating on upgrade, and delivering upgrades is the point.
+
+One thing an embedded filesystem cannot carry is file modes, and a driver
+depends on exactly one: its command has to be runnable. `internal/driver`
+restores it from what each `driver.yaml` declares its `command` to be,
+rather than from what a filename looks like — a driver's *sourced* helper
+(`spec-kit/repo-snapshot.sh`) is not a program and must stay inert. It is
+the only mode anything restores; `internal/instance` needs none, because
+nothing in the template is a program.
 
 ## Adding a subcommand
 
@@ -133,6 +173,9 @@ doesn't.
 The bash suite under `tests/` exercises the shipped drivers end to end
 against this binary, and builds the same repo shape from
 `tests/gitfixture.sh`; keep the two in step.
+`tests/driver_ownership.sh` is where the instance/tool split is proved the
+only way that means anything: a copy of the binary somewhere else on disk,
+with no checkout of this repo in reach.
 
 ## Subcommands
 
@@ -141,6 +184,7 @@ against this binary, and builds the same repo shape from
 - `render-map` — regenerate `WORKSPACE-MAP.md`'s repo list
 - `context-map` — sequence a context-mapping pass across every repo
 - `run-driver` — invoke one context-mapping driver directly
+- `drivers` — list the drivers an instance can run, and where each is from
 - `spawn` — create the branch and worktree for one unit of work
 - `status` — live PR/branch state across every spawned worktree
 - `prune` — remove worktrees whose PR has merged or closed
@@ -154,9 +198,8 @@ against this binary, and builds the same repo shape from
 
 `init` is the one subcommand that runs before an instance exists, so it is
 also the only one with no `--root`: it takes the name to create and the
-parent directory to create it in. It writes the embedded template there,
-makes each driver's command runnable, and commits the result as the
-instance's first commit — a fresh history, so instance-specific (possibly
+parent directory to create it in. It writes the embedded template there and
+commits the result as the instance's first commit — a fresh history, so instance-specific (possibly
 sensitive) content never shares one with this repo. A destination that
 already exists is refused rather than merged into, and a run that fails
 part-way removes what it wrote, so the retry fails for the real reason
@@ -238,10 +281,35 @@ above so a hand-maintained `repos.yaml` survives the rewrite.
 output path, with no pass around it and nothing read from or recorded in
 `repos.yaml`. It exists because a driver is the part of an instance most
 likely to be written or debugged locally, and stepping through a whole
-mapping pass to exercise one is a poor way to do that. It resolves
-`drivers/` exactly as a pass does — `--root`, or `ARCHIMEDES_DRIVERS_DIR` —
-so the two can't disagree about which drivers they mean, and it keeps the
-driver's own output on stderr so stdout carries only where the map landed.
+mapping pass to exercise one is a poor way to do that. It keeps the driver's
+own output on stderr so stdout carries only where the map landed.
+
+`run-driver`, a mapping pass, and `drivers` all build their `driver.Set`
+through the one `driver.SetFor` — `--root` or `ARCHIMEDES_DRIVERS_DIR` for
+the instance layer, `archimedes.Drivers()` underneath — so none of them can
+disagree about what a name means. Anything that resolves a driver goes
+through there; a second answer to that question would mean a driver that
+works in a pass and is missing outside it, or a listing that promises what
+a run won't deliver. `ARCHIMEDES_DRIVERS_DIR` moves the *instance* layer,
+not the whole lookup: the built-ins stay underneath whatever it names, so
+pointing it at a scratch directory to test one driver does not make the
+other three vanish.
+
+One manifest reader (`driver.readManifest`) serves both layers, over an
+`fs.FS` so the embedded copy and a real directory go through the same
+parse. A manifest that loaded in a listing and failed in a run, or the
+reverse, would be a disagreement about what a driver is. Listing keeps a
+per-driver failure on that driver's entry rather than returning it, because
+`drivers` is the command an operator reaches for when something is already
+wrong, and one broken manifest must not cost them the report on the rest.
+
+`drivers` is that resolution reported rather than acted on: every name the
+three routes above could resolve, and which layer answers it. `drivers
+adopt <name>` copies a shipped driver into the instance's own `drivers/`,
+which is how a shipped driver gets edited. It is one-way and one-time —
+nothing re-syncs an adopted driver, and adopting over one already there is
+refused rather than resolved, since that copy may be the edit that was the
+reason for adopting.
 
 `sync-templates` and `sync-house-rules` (both in `internal/reposync`) push
 canonical control-repo content into the target repos as pull requests. The
