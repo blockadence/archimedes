@@ -6,6 +6,7 @@
 package spawn
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/gitutil"
 	"github.com/blockadence/archimedes/cli/internal/manifest"
 	"github.com/blockadence/archimedes/cli/internal/stackref"
+	"github.com/blockadence/archimedes/cli/internal/workspace"
 )
 
 // DefaultAgentCmd is the next-step hint's fallback when no agent CLI is
@@ -36,6 +38,14 @@ type Options struct {
 	// AgentCmd is the agent CLI the next-step hint should suggest. Empty
 	// falls back to DefaultAgentCmd.
 	AgentCmd string
+	// Workspace, when set, is the terminal workspace manager handed the
+	// finished worktree, so the unit of work lands in a pane already rooted
+	// there. Nil — the default — leaves spawn behaving exactly as it did
+	// before the integration existed.
+	Workspace *workspace.Integration
+	// Focus asks that manager to switch to the new workspace rather than
+	// opening it in the background. Ignored when Workspace is nil.
+	Focus bool
 }
 
 // StartPoint is the resolved git ref a new branch is created from, plus a
@@ -151,8 +161,46 @@ func Run(opts Options, out, progress io.Writer) error {
 
 	fmt.Fprintf(out, "Worktree ready: %s (%s)\n", wt, start.Note)
 	fmt.Fprintln(out, NextStepHint(wt, opts.AgentCmd))
+	openWorkspace(opts, repoPath, wt, out, progress)
 
 	return nil
+}
+
+// openWorkspace hands the finished worktree to the configured terminal
+// workspace manager, if there is one. Any failure is reported on progress
+// and dropped: by this point the branch, the worktree, its context, and
+// the status row all exist, so a workspace manager that isn't installed —
+// or whose server isn't running — must not turn a completed spawn into a
+// failed one the operator then has to clean up by hand.
+func openWorkspace(opts Options, repoPath, wt string, out, progress io.Writer) {
+	if opts.Workspace == nil {
+		return
+	}
+
+	req := workspace.Request{
+		RepoPath: repoPath,
+		Path:     wt,
+		// One slug can be spawned into several repos, so the repo name is
+		// part of the label — the same "<repo>:<slug>" shape --stack-on
+		// parses.
+		Label: opts.Repo + ":" + opts.Slug,
+		Focus: opts.Focus,
+	}
+	// Not having the tool installed is the expected state on most machines
+	// and says nothing is wrong, so it gets a note; a tool that is
+	// installed and still refused the call is a real problem and gets a
+	// warning. Reporting both the same way trains the operator to ignore
+	// the one that matters.
+	if err := opts.Workspace.Open(req); err != nil {
+		if errors.Is(err, workspace.ErrUnavailable) {
+			fmt.Fprintf(progress, "note: skipping the %s workspace: %v\n", opts.Workspace.Name, err)
+		} else {
+			fmt.Fprintf(progress, "warning: %s workspace not opened: %v\n", opts.Workspace.Name, err)
+		}
+		return
+	}
+
+	fmt.Fprintf(out, "Opened %s workspace: %s\n", opts.Workspace.Name, req.Label)
 }
 
 func unknownRepoError(name string) error {

@@ -39,7 +39,7 @@ func TestRunRenderMapUpdatesExistingFile(t *testing.T) {
 	want := "# Workspace Map\n\n## Repos\n\n" +
 		"- [service-a](../service-a) — base: `main`. Dossier: [repos/service-a.md](./repos/service-a.md)\n" +
 		"- [service-b](../service-b) — base: `develop`. Dossier: [repos/service-b.md](./repos/service-b.md)\n" +
-		"\n\n## Relationships\n\n- hand-written note.\n"
+		"\n## Relationships\n\n- hand-written note.\n"
 
 	if string(got) != want {
 		t.Errorf("WORKSPACE-MAP.md mismatch\n got: %q\nwant: %q", got, want)

@@ -2,12 +2,17 @@ package spawn_test
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/blockadence/archimedes/cli/internal/dossier"
 	"github.com/blockadence/archimedes/cli/internal/spawn"
 	"github.com/blockadence/archimedes/cli/internal/stackref"
+	"github.com/blockadence/archimedes/cli/internal/workspace"
 )
 
 func TestResolveStartPoint(t *testing.T) {
@@ -308,9 +313,9 @@ func TestRunDeliversHouseRules(t *testing.T) {
 	run(t, spawn.Options{Root: inst.root, Slug: slug, Repo: "target"})
 
 	wt := spawn.WorktreePath(inst.targetRepo, slug)
-	got, err := os.ReadFile(filepath.Join(wt, spawn.ContextDirName, spawn.HouseRulesFileName))
+	got, err := os.ReadFile(filepath.Join(wt, spawn.ContextDirName, dossier.HouseRulesFileName))
 	if err != nil {
-		t.Fatalf("%s was not delivered: %v", spawn.HouseRulesFileName, err)
+		t.Fatalf("%s was not delivered: %v", dossier.HouseRulesFileName, err)
 	}
 	if string(got) != rules+"\n" {
 		t.Errorf("house rules diverged from the dossier\n got: %q\nwant: %q", got, rules+"\n")
@@ -359,5 +364,117 @@ func TestRunGitProgressStaysOffResultStream(t *testing.T) {
 	}
 	if bytes.Contains(out.Bytes(), []byte("Preparing worktree")) {
 		t.Errorf("git progress leaked onto the result stream:\n%s", out.String())
+	}
+}
+
+// recordingIntegration is a stand-in for a real terminal workspace
+// manager: it captures what spawn asked for and returns openErr.
+func recordingIntegration(openErr error, got *workspace.Request) *workspace.Integration {
+	return &workspace.Integration{
+		Name: "fake",
+		Open: func(req workspace.Request) error {
+			*got = req
+			return openErr
+		},
+	}
+}
+
+func TestRunOpensAWorkspaceRootedAtTheNewWorktree(t *testing.T) {
+	inst := newInstance(t)
+	slug := "widget-fix"
+	inst.workSlug(t, slug)
+
+	var got workspace.Request
+	out := run(t, spawn.Options{
+		Root: inst.root, Slug: slug, Repo: "target",
+		Workspace: recordingIntegration(nil, &got),
+	})
+
+	wt := spawn.WorktreePath(inst.targetRepo, slug)
+	want := workspace.Request{RepoPath: inst.targetRepo, Path: wt, Label: "target:" + slug}
+	if got != want {
+		t.Errorf("workspace request\n got: %+v\nwant: %+v", got, want)
+	}
+	if !bytes.Contains([]byte(out), []byte("Opened fake workspace: target:"+slug)) {
+		t.Errorf("output did not report the opened workspace: %s", out)
+	}
+}
+
+func TestRunPassesFocusThroughToTheIntegration(t *testing.T) {
+	inst := newInstance(t)
+	slug := "widget-fix"
+	inst.workSlug(t, slug)
+
+	var got workspace.Request
+	run(t, spawn.Options{
+		Root: inst.root, Slug: slug, Repo: "target", Focus: true,
+		Workspace: recordingIntegration(nil, &got),
+	})
+
+	if !got.Focus {
+		t.Errorf("spawn --focus did not reach the integration: %+v", got)
+	}
+}
+
+// The worktree, its branch, and its materialized context all exist by the
+// time the integration is called. A missing or unhappy workspace manager
+// must therefore degrade to a warning, never turn a completed spawn into a
+// failed one that leaves the operator with half-built state.
+func TestRunSurvivesAWorkspaceThatCannotOpen(t *testing.T) {
+	inst := newInstance(t)
+	slug := "widget-fix"
+	inst.workSlug(t, slug)
+
+	var got workspace.Request
+	var out, progress bytes.Buffer
+	err := spawn.Run(spawn.Options{
+		Root: inst.root, Slug: slug, Repo: "target",
+		Workspace: recordingIntegration(errors.New("herdr is not on PATH"), &got),
+	}, &out, &progress)
+	if err != nil {
+		t.Fatalf("a failing workspace integration failed the spawn: %v", err)
+	}
+
+	wt := spawn.WorktreePath(inst.targetRepo, slug)
+	if _, statErr := os.Stat(wt); statErr != nil {
+		t.Errorf("worktree was not created: %v", statErr)
+	}
+	if !bytes.Contains(progress.Bytes(), []byte("herdr is not on PATH")) {
+		t.Errorf("the failure was swallowed instead of warned about: %s", progress.String())
+	}
+	if bytes.Contains(out.Bytes(), []byte("Opened")) {
+		t.Errorf("a failed open was reported as a success: %s", out.String())
+	}
+}
+
+// Not having the tool installed is the expected state on most machines and
+// says nothing is wrong; a tool that *is* installed and still refused the
+// call is a real problem worth a louder word. Reporting both identically
+// trains the operator to ignore the one that matters.
+func TestRunDistinguishesAnUninstalledToolFromAFailingOne(t *testing.T) {
+	inst := newInstance(t)
+
+	report := func(t *testing.T, slug string, openErr error) string {
+		t.Helper()
+		inst.workSlug(t, slug)
+		var got workspace.Request
+		var out, progress bytes.Buffer
+		if err := spawn.Run(spawn.Options{
+			Root: inst.root, Slug: slug, Repo: "target",
+			Workspace: recordingIntegration(openErr, &got),
+		}, &out, &progress); err != nil {
+			t.Fatalf("spawn.Run: %v", err)
+		}
+		return progress.String()
+	}
+
+	absent := report(t, "absent-tool", fmt.Errorf("%w: fake is not on PATH", workspace.ErrUnavailable))
+	if !strings.Contains(absent, "skipping") || strings.Contains(absent, "warning:") {
+		t.Errorf("an uninstalled tool should be a note, not a warning: %s", absent)
+	}
+
+	broken := report(t, "broken-tool", errors.New("server_not_running"))
+	if !strings.Contains(broken, "warning:") {
+		t.Errorf("an installed tool that refused the call should warn: %s", broken)
 	}
 }

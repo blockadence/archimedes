@@ -1,10 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-
 	"github.com/spf13/cobra"
 
 	"github.com/blockadence/archimedes/cli/internal/workspacemap"
@@ -35,20 +31,5 @@ func runRenderMap(root string) error {
 		return err
 	}
 
-	mapPath := filepath.Join(root, "WORKSPACE-MAP.md")
-	existing, err := os.ReadFile(mapPath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("reading %s: %w", mapPath, err)
-		}
-		existing = []byte(workspacemap.DefaultContent)
-	}
-
-	rendered := workspacemap.Render(string(existing), m.Repos)
-
-	if err := os.WriteFile(mapPath, []byte(rendered), 0o644); err != nil {
-		return fmt.Errorf("writing %s: %w", mapPath, err)
-	}
-
-	return nil
+	return workspacemap.Update(root, m.Repos)
 }
