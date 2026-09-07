@@ -1,0 +1,4 @@
+# What `archimedes notify` has already reported, so a scheduled pass only
+# tells you about conditions that are new. Per-machine and disposable:
+# delete it and the next pass reports the current backlog again.
+.archimedes-notify.json

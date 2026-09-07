@@ -7,10 +7,7 @@
 // can't drift between the code that writes it and the code that matches it.
 package stackref
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
 // Ref identifies the unit of work a branch is stacked on top of: which
 // repo's work it belongs to, and its slug (which is also its branch name).
@@ -30,6 +27,12 @@ func ParseFlag(value string) Ref {
 	return Ref{Repo: repo, Slug: slug}
 }
 
+// String is the "<repo>:<slug>" pair itself — what --stack-on takes, what
+// a note carries, and how any other reader names one unit of work in one
+// repo. Here rather than formatted at each call site for the same reason
+// the note's wording is: the pair's shape has one owner.
+func (r Ref) String() string { return r.Repo + ":" + r.Slug }
+
 // notePrefix opens every note describing a stacked branch. Anything else
 // ("based on main") describes a branch cut straight from its repo's base
 // branch.
@@ -37,7 +40,7 @@ const notePrefix = "stacked on "
 
 // Note is the status.md note recording that a branch was stacked on r.
 func Note(r Ref) string {
-	return fmt.Sprintf("%s%s:%s", notePrefix, r.Repo, r.Slug)
+	return notePrefix + r.String()
 }
 
 // ParseNote reads back what Note wrote. Every other note — including a

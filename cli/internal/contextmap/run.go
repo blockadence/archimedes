@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/blockadence/archimedes/cli/internal/driver"
-	"github.com/blockadence/archimedes/cli/internal/gitutil"
 	"github.com/blockadence/archimedes/cli/internal/manifest"
 )
 
@@ -61,18 +60,11 @@ type Options struct {
 // record of what happened. in is where an interactive session's "this one
 // is done" confirmation is read from.
 func Run(opts Options, out, progress io.Writer, in io.Reader) error {
-	// Absolutized up front: repo paths are resolved against the instance
-	// root, but git and drivers run with a working directory of their own,
-	// so a relative root would resolve against the wrong thing.
-	root, err := filepath.Abs(opts.Root)
+	root, m, err := loadInstance(opts.Root)
 	if err != nil {
-		return fmt.Errorf("resolving instance root %s: %w", opts.Root, err)
+		return err
 	}
 	manifestPath := filepath.Join(root, "repos.yaml")
-	m, err := manifest.Load(manifestPath)
-	if err != nil {
-		return fmt.Errorf("loading %s: %w", manifestPath, err)
-	}
 
 	contextFile := opts.ContextFile
 	if contextFile == "" {
@@ -95,52 +87,43 @@ func Run(opts Options, out, progress io.Writer, in io.Reader) error {
 		if !ok {
 			continue
 		}
-		path := filepath.Join(root, repo.Path)
-		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+		// A pass acts on each repo as it reaches it, so it inspects them
+		// one at a time rather than surveying up front: a repo mapped
+		// early is a dependency the next one's session should be primed
+		// with, and its own state is read after that happened.
+		turn := Inspect(root, contextFile, repo, progress)
+		// Unlike a survey, a pass can't work around either gap: there is
+		// nothing to hand a driver, and recording a repo mapped against a
+		// commit git wouldn't name is worse than stopping.
+		if turn.Err != nil {
+			return turn.Err
+		}
+		if !turn.Cloned() {
 			fmt.Fprintf(out, "Skipping %s, not cloned yet (run bootstrap first).\n", name)
 			continue
 		}
 
-		// Staleness is measured against the remote's base branch, not the
-		// local checkout, so a stale local clone can't make a repo look
-		// current.
-		if err := gitutil.RunOut(path, progress, "fetch", "origin", repo.BaseBranch, "-q"); err != nil {
-			return err
-		}
-		currentSHA, err := gitutil.Run(path, "rev-parse", "origin/"+repo.BaseBranch)
-		if err != nil {
-			return err
-		}
-
-		turn := repoTurn{
-			repo:       repo,
-			path:       path,
-			outputPath: filepath.Join(path, contextFile),
-			currentSHA: currentSHA,
-		}
-
-		assessment := Assess(repo.ContextModeledSHA, currentSHA, contextFile, isFile(turn.outputPath))
-		if !assessment.Stale {
-			fmt.Fprintf(out, "Up to date: %s (@ %s)\n", name, Short(currentSHA))
+		if !turn.Stale {
+			fmt.Fprintf(out, "Up to date: %s (@ %s)\n", name, Short(turn.CurrentSHA))
 			continue
 		}
 
-		fmt.Fprintf(out, "\n=== %s (%s) ===\n", name, assessment.Reason)
+		fmt.Fprintf(out, "\n=== %s (%s) ===\n", name, turn.Reason)
 		if opts.DryRun {
 			continue
 		}
 
 		if driverName := SelectDriver(repo.Driver, m.Driver, opts.Driver); driverName != "" {
-			fmt.Fprintf(out, "Running driver %q against %s...\n", driverName, turn.path)
-			if err := driver.Run(driversDir, driverName, turn.path, turn.outputPath, progress); err != nil {
+			fmt.Fprintf(out, "Running driver %q against %s...\n", driverName, turn.Path)
+			if err := driver.Run(driversDir, driverName, turn.Path, turn.OutputPath, progress); err != nil {
 				return err
 			}
-			fmt.Fprintf(out, "Wrote %s\n", turn.outputPath)
+			fmt.Fprintf(out, "Wrote %s\n", turn.OutputPath)
 		} else if err := interactiveSession(opts, m, root, turn, contextFile, out, confirm); err != nil {
 			return err
 		}
 
-		if err := manifest.SetRepoField(manifestPath, name, manifest.FieldContextModeledSHA, currentSHA); err != nil {
+		if err := manifest.SetRepoField(manifestPath, name, manifest.FieldContextModeledSHA, turn.CurrentSHA); err != nil {
 			return fmt.Errorf("recording %s as mapped: %w", name, err)
 		}
 	}
@@ -154,19 +137,6 @@ func Run(opts Options, out, progress io.Writer, in io.Reader) error {
 	return nil
 }
 
-// repoTurn is one repo's turn in the pass: everything resolved about it by
-// the time it's clear the repo needs mapping.
-type repoTurn struct {
-	repo manifest.Repo
-	// path is the repo's local checkout.
-	path string
-	// outputPath is where this repo's context map goes.
-	outputPath string
-	// currentSHA is its base branch's current commit — what the repo is
-	// recorded as mapped at once the map is built.
-	currentSHA string
-}
-
 // interactiveSession is the no-driver fallback: rather than build the map
 // itself, print everything the operator needs to run the session by hand —
 // where the repo is, which already-mapped dependencies to prime it with,
@@ -176,12 +146,12 @@ type repoTurn struct {
 // the session happened marks the repo as mapped. Nothing to read from means
 // nobody confirmed anything, so it stops rather than marking every repo
 // mapped on the strength of a session that never ran.
-func interactiveSession(opts Options, m *manifest.Manifest, root string, turn repoTurn, contextFile string, out io.Writer, confirm *bufio.Reader) error {
-	fmt.Fprintf(out, "Path: %s\n", turn.path)
+func interactiveSession(opts Options, m *manifest.Manifest, root string, turn RepoState, contextFile string, out io.Writer, confirm *bufio.Reader) error {
+	fmt.Fprintf(out, "Path: %s\n", turn.Path)
 
-	if len(turn.repo.DependsOn) > 0 {
+	if len(turn.Repo.DependsOn) > 0 {
 		fmt.Fprintln(out, "Depends on (already mapped, prime the session with these):")
-		for _, dep := range turn.repo.DependsOn {
+		for _, dep := range turn.Repo.DependsOn {
 			depPath := dep
 			// A dependency that isn't in repos.yaml already surfaced
 			// as an ordering warning; name it anyway rather than
@@ -199,19 +169,19 @@ func interactiveSession(opts Options, m *manifest.Manifest, root string, turn re
 	}
 	prompt := opts.ContextPrompt
 	if prompt == "" {
-		prompt = SessionPrompt(contextFile, turn.repo.DependsOn)
+		prompt = SessionPrompt(contextFile, turn.Repo.DependsOn)
 	}
 
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Run:")
-	fmt.Fprintf(out, "  cd %s && %s\n", turn.path, agentCmd)
+	fmt.Fprintf(out, "  cd %s && %s\n", turn.Path, agentCmd)
 	fmt.Fprintln(out, "First message:")
 	fmt.Fprintf(out, "  %s\n", prompt)
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "Press enter once that session is done, to record %s as mapped at %s... ", turn.repo.Name, Short(turn.currentSHA))
+	fmt.Fprintf(out, "Press enter once that session is done, to record %s as mapped at %s... ", turn.Repo.Name, Short(turn.CurrentSHA))
 
 	if _, err := confirm.ReadString('\n'); err != nil {
-		return fmt.Errorf("no confirmation available that %s was mapped: run this interactively, or configure a driver to map unattended", turn.repo.Name)
+		return fmt.Errorf("no confirmation available that %s was mapped: run this interactively, or configure a driver to map unattended", turn.Repo.Name)
 	}
 	return nil
 }

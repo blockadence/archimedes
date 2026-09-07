@@ -65,3 +65,9 @@ func TestParseNoteToleratesSurroundingWhitespace(t *testing.T) {
 		t.Errorf("ParseNote() = %+v, %v; want %+v, true", got, ok, want)
 	}
 }
+
+func TestStringIsTheRepoSlugPair(t *testing.T) {
+	if got, want := (stackref.Ref{Repo: "service-a", Slug: "widget-fix"}).String(), "service-a:widget-fix"; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}

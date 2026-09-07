@@ -41,6 +41,8 @@ Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
 - `prune` — port of `template/scripts/prune.sh`
 - `sync-templates` — port of `template/scripts/sync-templates.sh`
 - `sync-house-rules` — port of `template/scripts/sync-house-rules.sh`
+- `notify` — no script counterpart: the staleness and prune-eligibility
+  checks above, run on a schedule instead of by hand
 
 `bootstrap` discovers a GitHub org's repos, clones the ones not already
 checked out beside the instance, and scaffolds each one's `repos.yaml` entry
@@ -129,6 +131,50 @@ one place. Both take `--dry-run`.
 Neither shells out to anything but git through `internal/gitutil`; every
 other external command (`multi-gitter`, `gh`) goes through
 `reposync.ExecFunc`, the seam tests replace.
+
+`notify` asks the same two questions on a schedule instead of by hand: has
+a repo's context map gone stale, and has a worktree become prune-eligible.
+Each condition is reported once, when it becomes true, and again only if it
+clears and comes back — a map that goes staler while still unaddressed is
+not news twice.
+
+Nothing stays resident to make that work. A pass compares what holds now
+against a small state file beside `repos.yaml` and exits, so the thing that
+keeps running is an ordinary scheduler:
+
+```
+*/15 * * * * cd /path/to/instance && archimedes notify
+```
+
+That file is the memory a daemon would otherwise hold in RAM, and it's what
+lets a machine that was asleep for a week report each condition once rather
+than not at all. A pass with no news prints nothing, so a scheduler that
+mails a job's output mails only what's worth reading; `--seed` records
+what's true now without reporting any of it, for adopting the notifier on
+an instance whose backlog you already know about.
+
+Both conditions are read through the packages that own them —
+`contextmap.Survey` and `prune.Scan` — so a notification can't reach a
+different conclusion than the `context-map` or `prune` run made in response
+to it. That's what the `Survey`/`Inspect` split in `internal/contextmap`
+buys: `context-map` inspects each repo as it reaches it, since a repo
+mapped early is a dependency the next one's session gets primed with, while
+a watch surveys them all and acts on none. A merged unit of work something
+else is still stacked on isn't reported, because `prune` would refuse to
+remove it — it becomes news once the dependent is rebased, which is when
+there is something to do about it.
+
+Where a notification goes is the operator's business. With
+`ARCHIMEDES_NOTIFY_CMD` (or `--command`) set, each one is handed to
+whatever they already run — `terminal-notifier`, `notify-send`, `ntfy`, a
+webhook — invoked via `sh` with the event in its environment
+(`ARCHIMEDES_EVENT_TITLE`, `_MESSAGE`, `_KIND`, `_SUBJECT`, `_DETAIL`,
+`_REMEDY`) and its text on stdin; with none set it is printed. Event data
+never reaches the hook as part of the command string, so a repo or branch
+name can't become shell on the machine watching it. A hook that fails
+leaves its condition out of the state file and fails the pass: the
+scheduler learns the notifier is broken, and the condition is still owed
+rather than filed away as news broken to someone who never heard it.
 
 ### Terminal workspace integration (opt-in)
 
