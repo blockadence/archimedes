@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pmezard/go-difflib/difflib"
+	"github.com/aymanbagabas/go-udiff"
 
 	"github.com/blockadence/archimedes/cli/internal/dossier"
 	"github.com/blockadence/archimedes/cli/internal/gitutil"
@@ -135,31 +135,13 @@ func sameContent(current, want string) bool {
 
 // unifiedDiff renders the pending change the way the dry run of the shell
 // script did (`diff -u`), so the operator sees what a real run would commit.
+// A repo with no HOUSE_RULES.md yet passes current as "", which diffs as a
+// clean addition.
 func unifiedDiff(current, want string) string {
-	diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
-		A:        diffLines(current),
-		B:        diffLines(want),
-		FromFile: dossier.HouseRulesFileName + " (in repo)",
-		ToFile:   dossier.HouseRulesFileName + " (from dossier)",
-		Context:  3,
-	})
-	if err != nil {
-		// Diffing is presentation, not the operation: fall back to showing
-		// the content that would be written rather than failing the run.
-		return want
-	}
-	return diff
-}
-
-// diffLines splits content for difflib. The trailing newline is trimmed
-// first, and absent content yields no lines at all, so a file that doesn't
-// exist yet diffs as a clean addition rather than as a change to one
-// phantom blank line.
-func diffLines(content string) []string {
-	if content == "" {
-		return nil
-	}
-	return difflib.SplitLines(strings.TrimSuffix(content, "\n"))
+	return udiff.Unified(
+		dossier.HouseRulesFileName+" (in repo)",
+		dossier.HouseRulesFileName+" (from dossier)",
+		current, want)
 }
 
 func commitAndPush(repoPath, targetFile, content string, progress io.Writer) error {
