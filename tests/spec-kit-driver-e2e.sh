@@ -17,17 +17,17 @@ source "$HERE/helpers.sh"
 
 if [ "${ARCHIMEDES_TEST_LIVE_DRIVERS:-0}" != "1" ]; then
   echo "skip: spec-kit-driver-e2e.sh (makes a real claude -p call -- set ARCHIMEDES_TEST_LIVE_DRIVERS=1 to run it)"
-  exit 0
+  exit 77
 fi
 
 if ! command -v specify >/dev/null 2>&1; then
   echo "skip: spec-kit-driver-e2e.sh (specify CLI not on PATH -- uv tool install specify-cli --from git+https://github.com/github/spec-kit.git)"
-  exit 0
+  exit 77
 fi
 
 if ! command -v claude >/dev/null 2>&1; then
   echo "skip: spec-kit-driver-e2e.sh (claude CLI not on PATH)"
-  exit 0
+  exit 77
 fi
 
 build_archimedes || exit 1

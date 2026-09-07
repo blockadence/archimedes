@@ -19,7 +19,15 @@ permissions:
   contents: write
 
 jobs:
+  # The gate. This is release.yml's only defense against publishing twelve
+  # binaries nothing ran a test on, and it is deliberately the same job a
+  # push runs rather than a copy of it: one definition, so there is no
+  # second recipe to drift.
+  test:
+    uses: ./.github/workflows/test.yml
+
   release:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

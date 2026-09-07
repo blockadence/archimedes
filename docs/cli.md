@@ -128,6 +128,10 @@ Tag and push; `.github/workflows/release.yml` does the rest.
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
+The workflow runs the test suites first (`needs: test`, calling the same
+job a push runs) and publishes only if they pass, so a tag on a red tree
+produces no release, no assets, and no half-uploaded matrix.
+
 `cli/gh-extension-precompile` builds the platform matrix, creates the
 release, and attaches the binaries. A tag containing a `-` (`v0.2.0-rc.1`)
 publishes as a prerelease, which `gh extension install` will not hand to
@@ -274,6 +278,42 @@ the result" lives in one place. Helpers that more than one subcommand needs
 worktree or branch — belong there too. Tests are exempt: a test that builds
 a git fixture drives git directly, so a bug in `gitutil` can't hide itself
 by also breaking the fixture.
+
+## Tests
+
+Two suites, two commands, from a checkout:
+
+```
+go test ./...            # the Go suite
+./tests/run-all.sh       # the bash suite (drivers, packaging, scaffolding)
+```
+
+Neither needs the network or a credential: the Go tests build their git
+fixtures on disk, and the bash tests build the CLI once and drive it against
+fixtures that are their own origins.
+
+`.github/workflows/test.yml` runs exactly these two commands on every push,
+and `release.yml` calls that same job as a gate — a tag whose tests fail
+publishes nothing. The workflow is deliberately not a third recipe: if the
+commands above change, that file changes with them.
+
+A test file that cannot run says so and exits 77, and `run-all.sh` counts it
+as skipped and names it in the summary rather than folding it into "0
+failed" — the distinction between a suite that passed and a suite that
+mostly didn't run. Two files are opt-in that way, because they make a real,
+billed `claude -p` call: `tests/pocock-driver-e2e.sh` and
+`tests/spec-kit-driver-e2e.sh`, both behind `ARCHIMEDES_TEST_LIVE_DRIVERS=1`
+and both run by hand rather than by CI.
+
+```
+ARCHIMEDES_TEST_LIVE_DRIVERS=1 ./tests/run-all.sh   # includes the live e2e files
+```
+
+The third file that guards itself, `tests/openspec-driver-e2e.sh`, needs
+only the `openspec` CLI (`npm install -g @fission-ai/openspec`), which the
+workflow installs so that it runs there too — pinned to a version there,
+since that install is the one part of a release gate that reaches the
+network, and an upstream reword should not be able to hold up a tag.
 
 ## Test fixtures
 

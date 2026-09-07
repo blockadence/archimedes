@@ -1,0 +1,61 @@
+# The suites, run by the machine instead of by whoever remembered.
+#
+# This file is used twice and defined once. A push runs it as a check, and
+# release.yml calls this same job as the gate a tag has to clear before it
+# publishes anything -- so "the check is green" and "the release may go out"
+# cannot come apart, which is what happens when a release workflow merely
+# runs alongside a test workflow rather than depending on it.
+#
+# The two steps at the bottom are the two commands a developer runs in a
+# checkout, verbatim (docs/cli.md, "Tests"). A CI-only recipe here would be
+# a second suite, free to pass while the real one fails.
+name: test
+
+on:
+  push:
+    # Branches only. A tag push reaches these tests through release.yml's
+    # gate; matching tags here as well would just run the suite twice.
+    branches: ["**"]
+  workflow_call:
+
+# Nothing here writes anything; release.yml, which calls this, holds the
+# `contents: write` its own publishing job needs.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # openspec-driver-e2e.sh skips itself when this CLI isn't on PATH, and
+      # a driver e2e test that skips on every CI run is not coverage. This is
+      # the driver CLI that costs nothing to install: no credentials, no
+      # billed calls, `openspec init --tools none` and a local report.
+      #
+      # Pinned, unlike the `npm install -g @fission-ai/openspec` a developer
+      # runs, because this step is the one part of the gate that reaches the
+      # network: an upstream release that reworded `openspec context` would
+      # otherwise block a tag from publishing for reasons that have nothing
+      # to do with this repo. Bump it deliberately.
+      - name: Install the openspec CLI the openspec driver drives
+        run: npm install -g @fission-ai/openspec@1.12.0
+
+      - name: Go suite
+        run: go test ./...
+
+      # What this runner does NOT exercise, plainly: the two opt-in e2e
+      # files, tests/pocock-driver-e2e.sh and tests/spec-kit-driver-e2e.sh.
+      # Both make a real, billed `claude -p` call, so they stay behind
+      # ARCHIMEDES_TEST_LIVE_DRIVERS=1 and are run by hand against a
+      # credentialed machine -- the same way the drivers themselves are.
+      # They report themselves skipped rather than passing, and run-all.sh
+      # names every skipped file in its summary, so this step's log says
+      # which files actually ran rather than only that none failed.
+      - name: Bash suite
+        run: ./tests/run-all.sh

@@ -3,14 +3,15 @@
 # `archimedes run-driver` seam a context-mapping pass uses, against a
 # throwaway git repo. Requires the `openspec` CLI on PATH (npm install -g
 # @fission-ai/openspec); skips with a clear message if it isn't available
-# rather than failing the suite.
+# rather than failing the suite -- exit 77, which run-all.sh counts as a
+# skip and names in its summary rather than folding into "0 failed".
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
 if ! command -v openspec >/dev/null 2>&1; then
   echo "skip: openspec-driver-e2e.sh (openspec CLI not on PATH — npm install -g @fission-ai/openspec)"
-  exit 0
+  exit 77
 fi
 
 build_archimedes || exit 1
