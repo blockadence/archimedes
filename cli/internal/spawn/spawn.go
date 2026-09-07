@@ -112,29 +112,24 @@ func NextStepHint(worktreePath, agentCmd string) string {
 // for the caller. The Result names what was created; it is only meaningful
 // when the returned error is nil.
 func Run(opts Options, out, progress io.Writer) (Result, error) {
-	// Absolutize up front. Every path below derives from this, and git is
-	// run with its working directory set to the target repo — so a relative
-	// root would resolve worktree paths against the repo instead of the
-	// instance, nesting the worktree inside the checkout it belongs beside.
-	root, err := filepath.Abs(opts.Root)
+	// LoadInstance absolutizes the root before reading repos.yaml. Every
+	// path below derives from that, and git is run with its working
+	// directory set to the target repo — so a relative root would resolve
+	// worktree paths against the repo instead of the instance, nesting the
+	// worktree inside the checkout it belongs beside.
+	root, m, err := manifest.LoadInstance(opts.Root)
 	if err != nil {
-		return Result{}, fmt.Errorf("resolving instance root %s: %w", opts.Root, err)
+		return Result{}, err
 	}
 
-	manifestPath := filepath.Join(root, "repos.yaml")
-	m, err := manifest.Load(manifestPath)
-	if err != nil {
-		return Result{}, fmt.Errorf("loading %s: %w", manifestPath, err)
-	}
-
-	repo, ok := m.Find(opts.Repo)
-	if !ok {
+	// Spawning into a repo nobody has cloned is the same dead end as
+	// spawning into one nobody has listed: there is no checkout to branch
+	// from, and bootstrap is what produces one either way.
+	checkout := m.Checkout(root, opts.Repo)
+	if !checkout.Ready() {
 		return Result{}, unknownRepoError(opts.Repo)
 	}
-	repoPath := filepath.Join(root, repo.Path)
-	if info, err := os.Stat(repoPath); err != nil || !info.IsDir() {
-		return Result{}, unknownRepoError(opts.Repo)
-	}
+	repo, repoPath := checkout.Repo, checkout.Path
 
 	if err := gitutil.RunOut(repoPath, progress, "fetch", "origin"); err != nil {
 		return Result{}, err

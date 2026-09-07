@@ -58,14 +58,14 @@ func SyncHouseRules(opts HouseRulesOptions, out, progress io.Writer, run ExecFun
 		return err
 	}
 
-	repo, ok := m.Find(opts.Repo)
-	if !ok {
+	checkout := m.Checkout(root, opts.Repo)
+	if !checkout.Listed {
 		return fmt.Errorf("unknown repo: %s", opts.Repo)
 	}
-	repoPath := filepath.Join(root, repo.Path)
-	if info, err := os.Stat(repoPath); err != nil || !info.IsDir() {
-		return fmt.Errorf("unknown repo checkout: %s (run bootstrap first)", repoPath)
+	if !checkout.Cloned {
+		return fmt.Errorf("unknown repo checkout: %s (run bootstrap first)", checkout.Path)
 	}
+	repo, repoPath := checkout.Repo, checkout.Path
 
 	// The dossier parse is shared with the per-worktree delivery in
 	// internal/spawn, so a house rule only ever needs editing in one place.

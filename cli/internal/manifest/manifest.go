@@ -83,8 +83,16 @@ func (m *Manifest) Resolve(root, name string) (Repo, error) {
 	if !ok {
 		return Repo{}, fmt.Errorf("unknown repo: %s", name)
 	}
+	return r.resolved(root), nil
+}
+
+// resolved turns the relative Path repos.yaml records into one usable as a
+// path, against root (the instance directory that file sits in). Checkout
+// resolves through it too, so the two can't disagree about where a repo's
+// checkout belongs.
+func (r Repo) resolved(root string) Repo {
 	r.Path = filepath.Join(root, r.Path)
-	return r, nil
+	return r
 }
 
 // SetRepoField writes value to one repo's field in the repos.yaml at path.
