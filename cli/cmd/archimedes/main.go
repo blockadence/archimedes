@@ -5,15 +5,17 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/blockadence/archimedes/cli/internal/cmd"
 )
 
 func main() {
+	// fang has already rendered whatever came back, styled, on its way
+	// out — so this only decides the exit status. Printing the error
+	// again here would show every failure twice, and the second copy is
+	// the one that mangles a multi-line message.
 	if err := cmd.Execute(context.Background()); err != nil {
-		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
