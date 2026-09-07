@@ -2,11 +2,13 @@ package spawn_test
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/spawn"
+	"github.com/blockadence/archimedes/cli/internal/workspace"
 )
 
 func TestParseStackRef(t *testing.T) {
@@ -375,5 +377,85 @@ func TestRunGitProgressStaysOffResultStream(t *testing.T) {
 	}
 	if bytes.Contains(out.Bytes(), []byte("Preparing worktree")) {
 		t.Errorf("git progress leaked onto the result stream:\n%s", out.String())
+	}
+}
+
+// recordingIntegration is a stand-in for a real terminal workspace
+// manager: it captures what spawn asked for and returns openErr.
+func recordingIntegration(openErr error, got *workspace.Request) *workspace.Integration {
+	return &workspace.Integration{
+		Name: "fake",
+		Open: func(req workspace.Request) error {
+			*got = req
+			return openErr
+		},
+	}
+}
+
+func TestRunOpensAWorkspaceRootedAtTheNewWorktree(t *testing.T) {
+	inst := newInstance(t)
+	slug := "widget-fix"
+	inst.workSlug(t, slug)
+
+	var got workspace.Request
+	out := run(t, spawn.Options{
+		Root: inst.root, Slug: slug, Repo: "target",
+		Workspace: recordingIntegration(nil, &got),
+	})
+
+	wt := spawn.WorktreePath(inst.targetRepo, slug)
+	want := workspace.Request{Repo: inst.targetRepo, Path: wt, Label: "target:" + slug}
+	if got != want {
+		t.Errorf("workspace request\n got: %+v\nwant: %+v", got, want)
+	}
+	if !bytes.Contains([]byte(out), []byte("Opened fake workspace: target:"+slug)) {
+		t.Errorf("output did not report the opened workspace: %s", out)
+	}
+}
+
+func TestRunPassesFocusThroughToTheIntegration(t *testing.T) {
+	inst := newInstance(t)
+	slug := "widget-fix"
+	inst.workSlug(t, slug)
+
+	var got workspace.Request
+	run(t, spawn.Options{
+		Root: inst.root, Slug: slug, Repo: "target", Focus: true,
+		Workspace: recordingIntegration(nil, &got),
+	})
+
+	if !got.Focus {
+		t.Errorf("spawn --focus did not reach the integration: %+v", got)
+	}
+}
+
+// The worktree, its branch, and its materialized context all exist by the
+// time the integration is called. A missing or unhappy workspace manager
+// must therefore degrade to a warning, never turn a completed spawn into a
+// failed one that leaves the operator with half-built state.
+func TestRunSurvivesAWorkspaceThatCannotOpen(t *testing.T) {
+	inst := newInstance(t)
+	slug := "widget-fix"
+	inst.workSlug(t, slug)
+
+	var got workspace.Request
+	var out, progress bytes.Buffer
+	err := spawn.Run(spawn.Options{
+		Root: inst.root, Slug: slug, Repo: "target",
+		Workspace: recordingIntegration(errors.New("herdr is not on PATH"), &got),
+	}, &out, &progress)
+	if err != nil {
+		t.Fatalf("a failing workspace integration failed the spawn: %v", err)
+	}
+
+	wt := spawn.WorktreePath(inst.targetRepo, slug)
+	if _, statErr := os.Stat(wt); statErr != nil {
+		t.Errorf("worktree was not created: %v", statErr)
+	}
+	if !bytes.Contains(progress.Bytes(), []byte("herdr is not on PATH")) {
+		t.Errorf("the failure was swallowed instead of warned about: %s", progress.String())
+	}
+	if bytes.Contains(out.Bytes(), []byte("Opened")) {
+		t.Errorf("a failed open was reported as a success: %s", out.String())
 	}
 }

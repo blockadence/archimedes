@@ -14,6 +14,7 @@ import (
 
 	"github.com/blockadence/archimedes/cli/internal/gitutil"
 	"github.com/blockadence/archimedes/cli/internal/manifest"
+	"github.com/blockadence/archimedes/cli/internal/workspace"
 )
 
 // DefaultAgentCmd is the next-step hint's fallback when no agent CLI is
@@ -54,6 +55,14 @@ type Options struct {
 	// AgentCmd is the agent CLI the next-step hint should suggest. Empty
 	// falls back to DefaultAgentCmd.
 	AgentCmd string
+	// Workspace, when set, is the terminal workspace manager handed the
+	// finished worktree, so the unit of work lands in a pane already rooted
+	// there. Nil — the default — leaves spawn behaving exactly as it did
+	// before the integration existed.
+	Workspace *workspace.Integration
+	// Focus asks that manager to switch to the new workspace rather than
+	// opening it in the background. Ignored when Workspace is nil.
+	Focus bool
 }
 
 // StartPoint is the resolved git ref a new branch is created from, plus a
@@ -83,6 +92,13 @@ func ResolveStartPoint(baseBranch, baseOverride string, stack StackRef) StartPoi
 // nesting inside it.
 func WorktreePath(repoPath, slug string) string {
 	return repoPath + "-worktrees/" + slug
+}
+
+// WorkspaceLabel names a unit of work's workspace in the workspace
+// manager's UI. One slug can be spawned into several repos, so the repo is
+// part of the name — the same "<repo>:<slug>" shape --stack-on parses.
+func WorkspaceLabel(repo, slug string) string {
+	return repo + ":" + slug
 }
 
 // NextStepHint is the "what to do now" line printed after a successful
@@ -169,8 +185,34 @@ func Run(opts Options, out, progress io.Writer) error {
 
 	fmt.Fprintf(out, "Worktree ready: %s (%s)\n", wt, start.Note)
 	fmt.Fprintln(out, NextStepHint(wt, opts.AgentCmd))
+	openWorkspace(opts, repoPath, wt, out, progress)
 
 	return nil
+}
+
+// openWorkspace hands the finished worktree to the configured terminal
+// workspace manager, if there is one. Any failure is reported on progress
+// and dropped: by this point the branch, the worktree, its context, and
+// the status row all exist, so a workspace manager that isn't installed —
+// or whose server isn't running — must not turn a completed spawn into a
+// failed one the operator then has to clean up by hand.
+func openWorkspace(opts Options, repoPath, wt string, out, progress io.Writer) {
+	if opts.Workspace == nil {
+		return
+	}
+
+	req := workspace.Request{
+		Repo:  repoPath,
+		Path:  wt,
+		Label: WorkspaceLabel(opts.Repo, opts.Slug),
+		Focus: opts.Focus,
+	}
+	if err := opts.Workspace.Open(req); err != nil {
+		fmt.Fprintf(progress, "warning: %s workspace not opened: %v\n", opts.Workspace.Name, err)
+		return
+	}
+
+	fmt.Fprintf(out, "Opened %s workspace: %s\n", opts.Workspace.Name, req.Label)
 }
 
 func unknownRepoError(name string) error {

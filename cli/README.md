@@ -45,6 +45,43 @@ own base branch). It then materializes the unit of work's reference material
 plus the target repo's house rules into the worktree's `.archimedes/`, under
 the no-commit guarantee (see `internal/spawn/materialize.go`).
 
+### Terminal workspace integration (opt-in)
+
+`spawn` can also hand the finished worktree to a terminal workspace
+manager, so a new unit of work arrives in a pane already rooted at its own
+checkout instead of needing a manual `cd`. It is off unless you turn it on:
+
+```
+export ARCHIMEDES_WORKSPACE=herdr   # instance-wide, in your shell profile
+archimedes spawn widget-fix target --workspace herdr   # or just this once
+archimedes spawn widget-fix target --workspace off     # ...or not this once
+archimedes spawn widget-fix target --focus             # and switch to it
+```
+
+[herdr](https://herdr.dev) is the one integration implemented today
+(`internal/workspace`). It's invoked as `herdr worktree open`, adopting the
+checkout git already made rather than creating a second one, and labelled
+`<repo>:<slug>` — the same shape `--stack-on` parses — because one slug can
+be spawned into several repos. herdr also opens a workspace for the parent
+repo if it doesn't already have one; that's its own worktree model, not
+something spawn asks for.
+
+Without `--focus` the new workspace opens in the background, so a spawn
+never yanks you out of what you were doing — including a sweep that spawns
+one slug across several repos in a row.
+
+The integration is best-effort by construction. By the time it runs, the
+branch, the worktree, its materialized context, and its status row all
+exist, so a workspace manager that isn't installed, or whose server isn't
+running, degrades to a warning on stderr and a successful spawn. The one
+thing that is an error is naming an integration that doesn't exist: a typo
+fails loudly rather than silently withholding the pane you asked for.
+
+Adding another workspace manager means adding a case to
+`workspace.Select` and an `Opener` beside `openHerdr`. Everything above
+`internal/workspace` — `spawn`, the flags, the warning path — is written
+against the `Integration` type, not against herdr.
+
 `status` reads every `work/<slug>/status.md`, looks up each row's live PR
 state via `gh pr list`, and prints the same fixed-width table the shell
 script did (or `--json` for a machine-readable report). A row's PR lookup
