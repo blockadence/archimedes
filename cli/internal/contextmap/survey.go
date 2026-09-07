@@ -1,7 +1,6 @@
 package contextmap
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,103 +9,121 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/manifest"
 )
 
-// RepoState is one repo's mapping state at a moment: where its checkout
-// is, what its base branch currently points at, and whether the map on
-// disk is still good for that commit.
+// SHALookup resolves the commit a repo's base branch is at, as seen from
+// the checkout at repoPath.
 //
-// The three states a repo can be in are distinguished by which fields are
-// set rather than by an enum, because each answers a different question:
-// Err says the repo couldn't be assessed, Cloned says there's nothing to
-// assess yet, and only past both of those does Assessment mean anything.
-type RepoState struct {
-	Repo manifest.Repo
-	// Path is the repo's local checkout, empty until bootstrap clones it.
-	Path string
-	// CurrentSHA is the base branch's current commit on the remote.
-	CurrentSHA string
-	// OutputPath is where this repo's context map goes.
-	OutputPath string
-	// Err is why this repo couldn't be assessed — a fetch that failed, a
-	// checkout git doesn't recognize — and is nil when it could.
-	Err error
-	Assessment
+// It exists so that "is this repo's map still current?" can be asked
+// without also deciding how current the answer has to be. A mapping pass is
+// about to spend a driver run on the answer, so it fetches first
+// (FetchedSHA); a read-only reader wants an answer now and shouldn't drag
+// the network into a screen refresh, so it reads what the checkout already
+// has (LocalSHA).
+type SHALookup func(repoPath, baseBranch string) (string, error)
+
+// LocalSHA is the offline SHALookup: it reads origin/<baseBranch> exactly
+// as the checkout last fetched it, without touching the network. A repo
+// nobody has fetched in a while can therefore under-report staleness, which
+// is the safe direction — it stays quiet about a mapping pass that's due
+// rather than inventing one.
+func LocalSHA(repoPath, baseBranch string) (string, error) {
+	return gitutil.Run(repoPath, "rev-parse", "origin/"+baseBranch)
 }
 
-// Cloned reports whether the repo is on disk to be assessed at all.
-func (s RepoState) Cloned() bool { return s.Path != "" }
+// FetchedSHA is the authoritative SHALookup: it fetches the base branch
+// before reading it, so staleness is measured against the remote rather
+// than against a local clone that may be behind — a stale checkout can't
+// make a repo look current. git's own output goes to progress, since a
+// fetch is slow enough that the operator wants to see it happening.
+func FetchedSHA(progress io.Writer) SHALookup {
+	return func(repoPath, baseBranch string) (string, error) {
+		if err := gitutil.RunOut(repoPath, progress, "fetch", "origin", baseBranch, "-q"); err != nil {
+			return "", err
+		}
+		return gitutil.Run(repoPath, "rev-parse", "origin/"+baseBranch)
+	}
+}
 
-// NeedsMapping reports whether this repo is one a pass would map: cloned,
-// assessable, and not already current.
-func (s RepoState) NeedsMapping() bool { return s.Cloned() && s.Err == nil && s.Stale }
-
-// Inspect assesses whether repo's context map is still good for its base
-// branch's current commit, without mapping anything.
+// RepoState is one repo's context-map state: where it lives, what it was
+// last mapped at, where its base branch has got to, and the resulting
+// verdict.
 //
-// Staleness is measured against the remote's base branch, not the local
-// checkout, so a stale local clone can't make a repo look current — which
-// is why this fetches, and why it belongs to the pass rather than to
-// Assess, which stays pure. git's own output goes to progress.
-//
-// A repo that isn't cloned yet, and a repo whose git commands fail, both
-// come back described rather than as a returned error: a survey of an
-// instance is worth more complete-with-gaps than abandoned at the first
-// repo nobody has cloned. Callers that can't proceed past either — Run,
-// which is about to hand the repo to a driver — check for themselves.
-func Inspect(root, contextFile string, repo manifest.Repo, progress io.Writer) RepoState {
-	state := RepoState{Repo: repo}
+// Three of those are conditional on the ones before them, so read them in
+// order: an entry that isn't Cloned has nothing to assess, and one whose
+// Err is set couldn't be assessed. Assessment is only meaningful once both
+// are clear — in particular a zero Assessment on such an entry means
+// "unanswered", not "current".
+type RepoState struct {
+	Name string
+	// Path is the repo's checkout, resolved against the instance root.
+	Path string
+	// ContextPath is where this repo's map lives (or would live).
+	ContextPath string
+	BaseBranch  string
+	// Cloned reports whether Path is a directory yet: an entry can be in
+	// repos.yaml before bootstrap has cloned it.
+	Cloned bool
+	// MappedSHA is the base-branch commit repos.yaml records the map as
+	// built against; empty means never mapped.
+	MappedSHA string
+	// CurrentSHA is where the base branch actually is, per the SHALookup.
+	// Empty when it couldn't be read.
+	CurrentSHA string
+	// Assessment is the verdict, from the same Assess every mapping pass
+	// uses. Only meaningful when Cloned is true and Err is nil.
+	Assessment
+	// Err is why CurrentSHA couldn't be read — an unfetchable remote, a
+	// base branch that doesn't exist there. Reported rather than returned,
+	// so one unreadable repo doesn't take the whole survey down with it.
+	Err error
+}
 
+// State resolves one repo against the instance at root and asks whether its
+// context map is still current for its base branch's commit. It reads; it
+// never maps anything or writes anything back.
+func State(root string, repo manifest.Repo, contextFile string, sha SHALookup) RepoState {
 	path := filepath.Join(root, repo.Path)
-	if info, err := os.Stat(path); err != nil || !info.IsDir() {
-		return state
+	state := RepoState{
+		Name:        repo.Name,
+		Path:        path,
+		ContextPath: filepath.Join(path, contextFile),
+		BaseBranch:  repo.BaseBranch,
+		MappedSHA:   repo.ContextModeledSHA,
 	}
-	state.Path = path
-	state.OutputPath = filepath.Join(path, contextFile)
 
-	if err := gitutil.RunOut(path, progress, "fetch", "origin", repo.BaseBranch, "-q"); err != nil {
-		state.Err = err
+	info, err := os.Stat(path)
+	state.Cloned = err == nil && info.IsDir()
+	if !state.Cloned {
 		return state
 	}
-	currentSHA, err := gitutil.Run(path, "rev-parse", "origin/"+repo.BaseBranch)
+
+	current, err := sha(path, repo.BaseBranch)
 	if err != nil {
 		state.Err = err
 		return state
 	}
 
-	state.CurrentSHA = currentSHA
-	state.Assessment = Assess(repo.ContextModeledSHA, currentSHA, contextFile, isFile(state.OutputPath))
+	state.CurrentSHA = current
+	state.Assessment = Assess(repo.ContextModeledSHA, current, contextFile, isFile(state.ContextPath))
 	return state
 }
 
-// Survey inspects every repo in the instance at root, in the dependency
-// order a mapping pass would visit them, and reports what it found:
-// which maps are stale, which are current, and which repos couldn't be
-// assessed. It invokes no driver, launches no session, and writes nothing
-// — it is what --dry-run reports on and what a watch (internal/notify)
-// reads to notice a map going stale.
+// Survey assesses every repo in m, in the same dependency order a mapping
+// pass would visit them in, and returns Order's warning alongside so a bad
+// depends_on is as visible to a reader as it is to a pass.
 //
-// contextFile is where each repo's map lives relative to its own root;
-// empty means DefaultContextFile.
-func Survey(root, contextFile string, progress io.Writer) ([]RepoState, error) {
-	root, m, err := manifest.LoadInstance(root)
-	if err != nil {
-		return nil, err
-	}
-	if contextFile == "" {
-		contextFile = DefaultContextFile
-	}
-
+// It is the read-only half of what Run does: same ordering, same
+// per-repo verdict, no fetching or mapping unless sha does it.
+func Survey(root string, m *manifest.Manifest, contextFile string, sha SHALookup) (states []RepoState, warning string) {
 	order, warning := Order(m.Repos)
-	if warning != "" {
-		fmt.Fprintln(progress, warning)
-	}
 
-	states := make([]RepoState, 0, len(order))
+	states = make([]RepoState, 0, len(order))
 	for _, name := range order {
 		repo, ok := m.Find(name)
 		if !ok {
 			continue
 		}
-		states = append(states, Inspect(root, contextFile, repo, progress))
+		states = append(states, State(root, repo, contextFile, sha))
 	}
-	return states, nil
+
+	return states, warning
 }

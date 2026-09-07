@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/blockadence/archimedes/cli/internal/contextmap"
+	"github.com/blockadence/archimedes/cli/internal/manifest"
 	"github.com/blockadence/archimedes/cli/internal/prune"
 	"github.com/blockadence/archimedes/cli/internal/stackref"
 )
@@ -155,20 +156,36 @@ type Snapshot struct {
 // Carrying on is the right call for something a scheduler runs unattended:
 // the alternative is dropping every other repo's news over one bad remote.
 func Conditions(root, contextFile string, prState prune.PRStateFunc, progress io.Writer) (Snapshot, error) {
-	states, err := contextmap.Survey(root, contextFile, progress)
+	root, m, err := manifest.LoadInstance(root)
 	if err != nil {
 		return Snapshot{}, err
+	}
+	if contextFile == "" {
+		contextFile = contextmap.DefaultContextFile
+	}
+
+	// FetchedSHA rather than LocalSHA: a watch is the one reader with no
+	// human waiting on it, and a map only counts as stale against where
+	// the base branch actually is. Reading whatever the checkout last
+	// fetched would leave a repo nobody has fetched in weeks looking
+	// current, which is exactly the silence this is meant to break.
+	states, warning := contextmap.Survey(root, m, contextFile, contextmap.FetchedSHA(progress))
+	if warning != "" {
+		fmt.Fprintln(progress, warning)
 	}
 
 	var snap Snapshot
 	for _, s := range states {
-		stale := Event{Kind: ContextStale, Subject: s.Repo.Name}
+		stale := Event{Kind: ContextStale, Subject: s.Name}
+		if !s.Cloned {
+			continue
+		}
 		if s.Err != nil {
-			fmt.Fprintf(progress, "note: could not assess %s: %v\n", s.Repo.Name, s.Err)
+			fmt.Fprintf(progress, "note: could not assess %s: %v\n", s.Name, s.Err)
 			snap.Unverified = append(snap.Unverified, stale.Key())
 			continue
 		}
-		if !s.NeedsMapping() {
+		if !s.Stale {
 			continue
 		}
 		stale.Detail = s.Reason

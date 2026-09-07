@@ -32,8 +32,11 @@ tracking/spawning/pruning the worktrees used to execute it.`,
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newPruneCmd())
 	root.AddCommand(newNotifyCmd())
+	root.AddCommand(newDashboardCmd())
+	root.AddCommand(newServeMCPCmd())
 	root.AddCommand(newSyncTemplatesCmd())
 	root.AddCommand(newSyncHouseRulesCmd())
+	root.AddCommand(newApplyConventionPackCmd())
 
 	return root
 }

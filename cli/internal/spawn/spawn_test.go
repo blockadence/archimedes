@@ -84,7 +84,7 @@ func TestNextStepHint(t *testing.T) {
 func run(t *testing.T, opts spawn.Options) string {
 	t.Helper()
 	var out, progress bytes.Buffer
-	if err := spawn.Run(opts, &out, &progress); err != nil {
+	if _, err := spawn.Run(opts, &out, &progress); err != nil {
 		t.Fatalf("spawn.Run: %v\nprogress:\n%s", err, progress.String())
 	}
 	return out.String()
@@ -341,7 +341,7 @@ func TestRunUnknownRepoErrors(t *testing.T) {
 	inst.workSlug(t, "widget-fix")
 
 	var out, progress bytes.Buffer
-	err := spawn.Run(spawn.Options{Root: inst.root, Slug: "widget-fix", Repo: "does-not-exist"}, &out, &progress)
+	_, err := spawn.Run(spawn.Options{Root: inst.root, Slug: "widget-fix", Repo: "does-not-exist"}, &out, &progress)
 	if err == nil {
 		t.Fatal("expected an error for an unknown repo, got nil")
 	}
@@ -353,7 +353,7 @@ func TestRunGitProgressStaysOffResultStream(t *testing.T) {
 	inst.workSlug(t, slug)
 
 	var out, progress bytes.Buffer
-	if err := spawn.Run(spawn.Options{Root: inst.root, Slug: slug, Repo: "target"}, &out, &progress); err != nil {
+	if _, err := spawn.Run(spawn.Options{Root: inst.root, Slug: slug, Repo: "target"}, &out, &progress); err != nil {
 		t.Fatalf("spawn.Run: %v", err)
 	}
 
@@ -427,7 +427,7 @@ func TestRunSurvivesAWorkspaceThatCannotOpen(t *testing.T) {
 
 	var got workspace.Request
 	var out, progress bytes.Buffer
-	err := spawn.Run(spawn.Options{
+	_, err := spawn.Run(spawn.Options{
 		Root: inst.root, Slug: slug, Repo: "target",
 		Workspace: recordingIntegration(errors.New("herdr is not on PATH"), &got),
 	}, &out, &progress)
@@ -459,7 +459,7 @@ func TestRunDistinguishesAnUninstalledToolFromAFailingOne(t *testing.T) {
 		inst.workSlug(t, slug)
 		var got workspace.Request
 		var out, progress bytes.Buffer
-		if err := spawn.Run(spawn.Options{
+		if _, err := spawn.Run(spawn.Options{
 			Root: inst.root, Slug: slug, Repo: "target",
 			Workspace: recordingIntegration(openErr, &got),
 		}, &out, &progress); err != nil {
@@ -476,5 +476,33 @@ func TestRunDistinguishesAnUninstalledToolFromAFailingOne(t *testing.T) {
 	broken := report(t, "broken-tool", errors.New("server_not_running"))
 	if !strings.Contains(broken, "warning:") {
 		t.Errorf("an installed tool that refused the call should warn: %s", broken)
+	}
+}
+
+func TestRunReportsWhatItCreated(t *testing.T) {
+	inst := newInstance(t)
+	slug := "widget-fix"
+	inst.workSlug(t, slug)
+
+	var out, progress bytes.Buffer
+	got, err := spawn.Run(spawn.Options{Root: inst.root, Slug: slug, Repo: "target"}, &out, &progress)
+	if err != nil {
+		t.Fatalf("spawn.Run: %v\nprogress:\n%s", err, progress.String())
+	}
+
+	want := spawn.Result{
+		Slug:     slug,
+		Repo:     "target",
+		Branch:   slug,
+		Worktree: spawn.WorktreePath(inst.targetRepo, slug),
+		StartRef: "origin/main",
+		Note:     "based on main",
+	}
+	if got != want {
+		t.Errorf("result mismatch\n got: %#v\nwant: %#v", got, want)
+	}
+	// Whatever the result reports must be what's on disk, not a guess.
+	if !strings.Contains(out.String(), got.Worktree) {
+		t.Errorf("result worktree %q absent from the printed output:\n%s", got.Worktree, out.String())
 	}
 }
