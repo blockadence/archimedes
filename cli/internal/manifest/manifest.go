@@ -11,10 +11,27 @@ import (
 )
 
 // Repo is one entry under repos.yaml's top-level "repos" list.
+//
+// Bootstrap fills in Name, Path and BaseBranch from what the forge already
+// knows. The rest are the operator's to declare afterwards — bootstrap
+// scaffolds them present-but-unset so the keys are there to edit — and are
+// empty until then.
 type Repo struct {
 	Name       string `yaml:"name"`
 	Path       string `yaml:"path"`
 	BaseBranch string `yaml:"base_branch"`
+	// DependsOn names the other repos in this instance a unit of work
+	// here tends to reach into.
+	DependsOn []string `yaml:"depends_on"`
+	// ContextModeledSHA records the commit the repo's dossier was last
+	// written against.
+	ContextModeledSHA string `yaml:"context_modeled_sha"`
+	// ConventionPack names the shared build/lint convention this repo
+	// follows (convention-packs/<name>.yaml).
+	ConventionPack string `yaml:"convention_pack"`
+	// Driver names the context-mapping driver to run for this repo
+	// (drivers/<name>), overriding the instance-wide default.
+	Driver string `yaml:"driver"`
 }
 
 // Manifest is the parsed contents of repos.yaml.

@@ -2,19 +2,31 @@
 // from an instance's repos.yaml, leaving everything else in the file (most
 // importantly the hand-written "## Relationships" section) untouched.
 //
-// This is a line-for-line port of template/scripts/render-map.sh's awk
-// pass: replace every line between the "## Repos" heading and the next
-// "## Relationships" heading, except blank lines, which are left in place.
-// That quirk (a holdover from the original script) is preserved so output
-// matches byte-for-byte.
+// This is a port of template/scripts/render-map.sh's awk pass: replace
+// every line between the "## Repos" heading and the next "## Relationships"
+// heading.
+//
+// It differs from that awk in one respect. The script left blank lines
+// inside the replaced region in place while dropping everything else, so
+// each pass preserved the blank line the previous pass had emitted and
+// added another — a file re-rendered N times carried N blank lines before
+// "## Relationships". Rendering here is idempotent instead: the region is
+// replaced wholesale, so re-running against an already-rendered map is a
+// no-op. This matters more than it used to, now that bootstrap regenerates
+// the map on every run.
 package workspacemap
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/blockadence/archimedes/cli/internal/manifest"
 )
+
+// FileName is the generated map's filename inside an instance.
+const FileName = "WORKSPACE-MAP.md"
 
 // DefaultContent is written when WORKSPACE-MAP.md doesn't exist yet.
 const DefaultContent = "# Workspace Map\n\n## Repos\n\n## Relationships\n"
@@ -44,22 +56,44 @@ func Render(existing string, repos []manifest.Repo) string {
 	}
 	block := strings.Join(blockLines, "\n")
 
-	out := make([]string, 0, len(lines)+2)
+	out := make([]string, 0, len(lines)+3)
 	skip := false
 	for _, line := range lines {
 		if strings.HasPrefix(line, reposHeading) {
-			out = append(out, line, "", block)
+			out = append(out, line, "", block, "")
 			skip = true
 			continue
 		}
 		if strings.HasPrefix(line, relationshipsHeading) {
 			skip = false
 		}
-		if skip && line != "" {
+		if skip {
 			continue
 		}
 		out = append(out, line)
 	}
 
 	return strings.Join(out, "\n") + "\n"
+}
+
+// Update rewrites root's WORKSPACE-MAP.md generated repo block from repos,
+// creating the file from DefaultContent when the instance doesn't have one
+// yet. Everything outside the block — most importantly the hand-written
+// "## Relationships" section — is carried over untouched.
+func Update(root string, repos []manifest.Repo) error {
+	path := filepath.Join(root, FileName)
+
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("reading %s: %w", path, err)
+		}
+		existing = []byte(DefaultContent)
+	}
+
+	if err := os.WriteFile(path, []byte(Render(string(existing), repos)), 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+
+	return nil
 }

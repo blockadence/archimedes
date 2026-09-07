@@ -59,6 +59,13 @@ func CommonDir(repoPath string) (string, error) {
 	return filepath.Join(repoPath, out), nil
 }
 
+// Clone clones url into dest, with git's progress streamed to progress
+// rather than captured — a clone is slow enough that the caller's user
+// wants to see it happening.
+func Clone(url, dest string, progress io.Writer) error {
+	return RunOut("", progress, "clone", url, dest)
+}
+
 // RemoveWorktree force-removes the git worktree at wt from the repo
 // checked out at repoPath, mirroring `git worktree remove --force`.
 func RemoveWorktree(repoPath, wt string) error {

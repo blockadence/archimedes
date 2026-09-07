@@ -32,10 +32,26 @@ by also breaking the fixture.
 
 Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
 
+- `bootstrap` — port of `template/scripts/bootstrap.sh`
 - `render-map` — port of `template/scripts/render-map.sh`
 - `spawn` — port of `template/scripts/spawn.sh`
 - `status` — port of `template/scripts/status.sh`
 - `prune` — port of `template/scripts/prune.sh`
+
+`bootstrap` discovers a GitHub org's repos, clones the ones not already
+checked out beside the instance, and scaffolds each one's `repos.yaml` entry
+and dossier stub before regenerating `WORKSPACE-MAP.md`. Every step is
+idempotent, since re-running as the org grows is the normal case: an entry
+already listed, a checkout already present, and a dossier already written are
+each left exactly as they are, so a run that discovers nothing new leaves the
+instance byte-for-byte unchanged.
+
+Scaffolded entries spell out every per-repo field, including the ones nothing
+sets yet (`convention_pack`, `driver`, `depends_on`, `context_modeled_sha`) —
+declaring a convention pack is filling in a key that's already there rather
+than remembering its name. `repos.yaml` is edited as a YAML node tree rather
+than re-marshalled, so its comments and any fields the CLI doesn't model
+survive the rewrite.
 
 `spawn` creates the branch and worktree for one unit of work in one target
 repo. It always fetches first, so a branch starts from current remote state
