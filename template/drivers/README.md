@@ -1,10 +1,10 @@
 # Drivers
 
 A driver is whatever actually produces a repo's context map — an AI coding
-agent, a wrapped third-party CLI, a script. `archimedes context-map`
-orchestrates *which* repos need mapping and in what order; it never knows how
-any given driver does its job. That split is the point: swapping the
-configured driver never requires touching orchestration.
+agent, a wrapped third-party CLI, a script. `context-map` orchestrates
+*which* repos need mapping and in what order; it never knows how any given
+driver does its job. That split is the point: swapping the configured driver
+never requires touching orchestration.
 
 ## Which drivers exist, and who owns them
 
@@ -17,13 +17,13 @@ Two places, and the difference is who maintains what:
   `pocock`, `spec-kit` — and reads them out of it at the moment one runs.
   They are never copied into an instance. That is deliberate: it is what
   lets a bug fixed in one of them reach *your* instance, which already
-  exists, on your next `go install`. A driver that scaffolds a third-party
-  toolchain into someone else's repository and unwinds it afterwards is not
-  a thing you want a stale copy of.
+  exists, the next time you upgrade the tool — however you installed it. A
+  driver that scaffolds a third-party toolchain into someone else's
+  repository and unwinds it afterwards is not a thing you want a stale copy
+  of.
 
-```
-archimedes drivers          # what this instance can run, and where each comes from
-```
+The `drivers` listing shows what this instance can run, and where each one
+comes from.
 
 A name in this directory **wins** over a shipped one. So an instance that
 writes its own `spec-kit/` gets its own, always, and the listing marks it
@@ -34,14 +34,10 @@ longer reach you, which is the deal you took when you took it over.
 
 Take it over first:
 
-```
-archimedes drivers adopt spec-kit
-```
-
-That copies the whole driver — command, manifest, and any helper the command
-sources — into `drivers/spec-kit/`, runnable, for you to edit. From then on
-it is yours by the rule above. To hand the name back to the version
-Archimedes maintains, delete `drivers/spec-kit/`.
+`drivers adopt spec-kit` copies the whole driver — command, manifest, and
+any helper the command sources — into `drivers/spec-kit/`, runnable, for you
+to edit. From then on it is yours by the rule above. To hand the name back
+to the version Archimedes maintains, delete `drivers/spec-kit/`.
 
 It is a one-time act, not a subscription: nothing re-syncs an adopted
 driver, in either direction, and adopting over one you already have is
@@ -50,8 +46,8 @@ refused rather than resolved.
 **If your instance predates this arrangement** it may still hold copies of
 `openspec/`, `pocock/` and `spec-kit/` that were scaffolded into it. Those
 copies still run, and no fix made to the shipped drivers will ever reach
-them — `archimedes drivers` flags each one as `shadows built-in`. Delete the
-ones you never edited; keep (and own) the ones you did.
+them — the `drivers` listing flags each one as `shadows built-in`. Delete
+the ones you never edited; keep (and own) the ones you did.
 
 ## Selecting a driver
 
@@ -135,8 +131,8 @@ command: run.sh            # path to the executable, relative to this directory
 modes are supported:
 
 - **path-parameterized** — the driver accepts an explicit output location and
-  writes exactly there. `archimedes run-driver <name> <repo-path>
-  <output-path>` invokes it as:
+  writes exactly there. `run-driver <name> <repo-path> <output-path>`
+  invokes it as:
 
   ```
   <driver-dir>/<command> <repo-path> <output-path>
@@ -151,8 +147,8 @@ modes are supported:
 - **fixed-location** — the driver can't be told where to write; it always
   writes into whatever repo it's run in, at a fixed path relative to that
   repo's root. The manifest must also declare `fixed_path` (e.g.
-  `CONTEXT.md`). `archimedes run-driver <name> <repo-path> <output-path>`
-  invokes it as:
+  `CONTEXT.md`). `run-driver <name> <repo-path> <output-path>` invokes it
+  as:
 
   ```
   <driver-dir>/<command> <repo-path>
@@ -179,21 +175,18 @@ modes are supported:
   toolchain into the repo before it can produce anything (`spec-kit`) has to
   undo that scaffolding itself before exiting — see
   the `spec-kit` driver's `repo-snapshot.sh` for the snapshot-then-restore
-  approach that generalizes to any such tool (`archimedes drivers adopt
-  spec-kit` puts a copy here to read).
+  approach that generalizes to any such tool (`drivers adopt spec-kit`
+  puts a copy here to read).
 
 ## Trying one directly
 
-Every driver can be exercised outside of a mapping pass:
-
-```
-archimedes run-driver <name> <path-to-a-repo> <path-to-write-the-map-to>
-```
+Every driver can be exercised outside of a mapping pass, with
+`run-driver <name> <path-to-a-repo> <path-to-write-the-map-to>`.
 
 ## The drivers Archimedes ships
 
 These come from the binary, not from this directory (see the ownership rule
-above). `archimedes drivers` lists whichever ones your install carries.
+above). The `drivers` listing shows whichever ones your install carries.
 
 - `openspec` — wraps the [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec)
   (`npm install -g @fission-ai/openspec`). Initializes OpenSpec in the target
