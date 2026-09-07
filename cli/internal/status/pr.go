@@ -51,3 +51,32 @@ func parsePRList(data []byte) PR {
 
 	return PR{Number: strconv.Itoa(prs[0].Number), State: prs[0].State}
 }
+
+// GHMerged is the real MergedLookup: it asks gh directly whether
+// headBranch has a merged pull request. `gh pr list` defaults to open pull
+// requests only, so the state is asked for explicitly — a merged branch is
+// exactly what wouldn't come back otherwise. Any failure (unresolvable
+// remote, gh not installed, no network, no auth) reports "not merged", so
+// an unanswerable lookup never turns into a rebase flag.
+func GHMerged(repoPath, headBranch string) bool {
+	slug, err := gitutil.GHSlug(repoPath)
+	if err != nil {
+		return false
+	}
+
+	out, err := exec.Command("gh", "pr", "list", "--repo", slug, "--head", headBranch, "--state", "merged", "--json", "number").Output()
+	if err != nil {
+		return false
+	}
+	return hasPR(out)
+}
+
+// hasPR reports whether a `gh pr list --json` payload holds at least one
+// pull request.
+func hasPR(data []byte) bool {
+	var prs []struct{}
+	if err := json.Unmarshal(data, &prs); err != nil {
+		return false
+	}
+	return len(prs) > 0
+}

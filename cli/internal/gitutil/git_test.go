@@ -124,3 +124,64 @@ func TestRemoveBranchToleratesAlreadyGone(t *testing.T) {
 		t.Errorf("expected RemoveBranch to tolerate a missing branch, got: %v", err)
 	}
 }
+
+// commitFile writes name into repo and commits it, moving the checked-out
+// branch forward one commit.
+func commitFile(t *testing.T, repo, name string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(repo, name), []byte(name+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, repo, "add", "-A")
+	mustGit(t, repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", name)
+}
+
+func TestHasRef(t *testing.T) {
+	repo := makeRepo(t, t.TempDir())
+	mustGit(t, repo, "branch", "feature", "main")
+
+	tests := []struct {
+		name string
+		ref  string
+		want bool
+	}{
+		{"local branch", "feature", true},
+		{"remote-tracking branch", "origin/main", true},
+		{"missing branch", "no-such-branch", false},
+		{"missing remote-tracking branch", "origin/no-such-branch", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := gitutil.HasRef(repo, tt.ref); got != tt.want {
+				t.Errorf("HasRef(%q) = %v, want %v", tt.ref, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsAncestor(t *testing.T) {
+	repo := makeRepo(t, t.TempDir())
+	mustGit(t, repo, "checkout", "-q", "-b", "feature")
+	commitFile(t, repo, "feature.txt")
+
+	tests := []struct {
+		name                 string
+		ancestor, descendant string
+		want                 bool
+	}{
+		{"base is reachable from branch built on it", "main", "feature", true},
+		{"branch is not reachable from its base", "feature", "main", false},
+		{"a ref is its own ancestor", "main", "main", true},
+		{"an unresolvable ref is nobody's ancestor", "no-such-branch", "main", false},
+		{"nothing is an ancestor of an unresolvable ref", "main", "no-such-branch", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := gitutil.IsAncestor(repo, tt.ancestor, tt.descendant); got != tt.want {
+				t.Errorf("IsAncestor(%q, %q) = %v, want %v", tt.ancestor, tt.descendant, got, tt.want)
+			}
+		})
+	}
+}

@@ -69,26 +69,36 @@ func TestLoadMissingFile(t *testing.T) {
 	}
 }
 
-func TestRepoPath(t *testing.T) {
-	m := &manifest.Manifest{Repos: []manifest.Repo{
-		{Name: "service-a", Path: "../service-a", BaseBranch: "main"},
-	}}
-
-	got, err := m.RepoPath("/instances/demo", "service-a")
-	if err != nil {
-		t.Fatalf("RepoPath returned error: %v", err)
+// loadSample writes a two-repo repos.yaml and loads it.
+func loadSample(t *testing.T) *manifest.Manifest {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "repos.yaml")
+	content := "repos:\n  - name: service-a\n    path: repos/service-a\n    base_branch: main\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if want := filepath.Join("/instances/demo", "../service-a"); got != want {
-		t.Errorf("RepoPath() = %q, want %q", got, want)
+	m, err := manifest.Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	return m
+}
+
+func TestResolve(t *testing.T) {
+	got, err := loadSample(t).Resolve("/instances/demo", "service-a")
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if want := "/instances/demo/repos/service-a"; got.Path != want {
+		t.Errorf("Resolve().Path = %q, want %q", got.Path, want)
+	}
+	if got.BaseBranch != "main" {
+		t.Errorf("Resolve().BaseBranch = %q, want %q", got.BaseBranch, "main")
 	}
 }
 
-func TestRepoPathUnknownRepoErrors(t *testing.T) {
-	m := &manifest.Manifest{Repos: []manifest.Repo{
-		{Name: "service-a", Path: "../service-a", BaseBranch: "main"},
-	}}
-
-	if _, err := m.RepoPath("/instances/demo", "service-z"); err == nil {
+func TestResolveUnknownRepoErrors(t *testing.T) {
+	if _, err := loadSample(t).Resolve("/instances/demo", "service-z"); err == nil {
 		t.Fatal("expected error for unknown repo, got nil")
 	}
 }

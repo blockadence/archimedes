@@ -7,30 +7,14 @@ import (
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/spawn"
+	"github.com/blockadence/archimedes/cli/internal/stackref"
 )
-
-func TestParseStackRef(t *testing.T) {
-	cases := []struct {
-		in   string
-		want spawn.StackRef
-	}{
-		{"", spawn.StackRef{}},
-		{"target:widget-fix", spawn.StackRef{Repo: "target", Slug: "widget-fix"}},
-		{"target", spawn.StackRef{Repo: "target"}},
-		{"target:widget:fix", spawn.StackRef{Repo: "target", Slug: "widget:fix"}},
-	}
-	for _, tc := range cases {
-		if got := spawn.ParseStackRef(tc.in); got != tc.want {
-			t.Errorf("ParseStackRef(%q) = %+v, want %+v", tc.in, got, tc.want)
-		}
-	}
-}
 
 func TestResolveStartPoint(t *testing.T) {
 	cases := []struct {
 		name                     string
 		baseBranch, baseOverride string
-		stack                    spawn.StackRef
+		stack                    stackref.Ref
 		wantRef, wantNote        string
 	}{
 		{
@@ -50,14 +34,14 @@ func TestResolveStartPoint(t *testing.T) {
 			name:         "stack ref wins over base override",
 			baseBranch:   "main",
 			baseOverride: "release/1.2",
-			stack:        spawn.StackRef{Repo: "target", Slug: "widget-fix"},
+			stack:        stackref.Ref{Repo: "target", Slug: "widget-fix"},
 			wantRef:      "widget-fix",
 			wantNote:     "stacked on target:widget-fix",
 		},
 		{
 			name:       "stack presence is keyed on Repo, not Slug",
 			baseBranch: "main",
-			stack:      spawn.StackRef{Repo: "target"},
+			stack:      stackref.Ref{Repo: "target"},
 			wantRef:    "",
 			wantNote:   "stacked on target:",
 		},
@@ -171,7 +155,7 @@ func TestRunStackedOnAnotherSlug(t *testing.T) {
 	inst.workSlug(t, stacked)
 	out := run(t, spawn.Options{
 		Root: inst.root, Slug: stacked, Repo: "target",
-		Stack: spawn.StackRef{Repo: "target", Slug: base},
+		Stack: stackref.Ref{Repo: "target", Slug: base},
 	})
 
 	stackedWT := spawn.WorktreePath(inst.targetRepo, stacked)

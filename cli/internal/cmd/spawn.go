@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/blockadence/archimedes/cli/internal/spawn"
+	"github.com/blockadence/archimedes/cli/internal/stackref"
 )
 
 // agentCmdEnvVar names the environment variable that overrides the agent
@@ -27,7 +28,7 @@ a possibly-stale local checkout. The unit of work's reference material
 		Args: cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts.Slug, opts.Repo = args[0], args[1]
-			opts.Stack = spawn.ParseStackRef(stackOn)
+			opts.Stack = stackref.ParseFlag(stackOn)
 			opts.AgentCmd = os.Getenv(agentCmdEnvVar)
 			return spawn.Run(opts, c.OutOrStdout(), c.ErrOrStderr())
 		},
