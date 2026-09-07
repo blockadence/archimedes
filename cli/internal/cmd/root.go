@@ -25,6 +25,7 @@ tracking/spawning/pruning the worktrees used to execute it.`,
 		SilenceUsage: true,
 	}
 
+	root.AddCommand(newBootstrapCmd())
 	root.AddCommand(newRenderMapCmd())
 	root.AddCommand(newSpawnCmd())
 	root.AddCommand(newStatusCmd())
