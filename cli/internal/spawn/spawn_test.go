@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blockadence/archimedes/cli/internal/dossier"
 	"github.com/blockadence/archimedes/cli/internal/spawn"
 	"github.com/blockadence/archimedes/cli/internal/workspace"
 )
@@ -328,9 +329,9 @@ func TestRunDeliversHouseRules(t *testing.T) {
 	run(t, spawn.Options{Root: inst.root, Slug: slug, Repo: "target"})
 
 	wt := spawn.WorktreePath(inst.targetRepo, slug)
-	got, err := os.ReadFile(filepath.Join(wt, spawn.ContextDirName, spawn.HouseRulesFileName))
+	got, err := os.ReadFile(filepath.Join(wt, spawn.ContextDirName, dossier.HouseRulesFileName))
 	if err != nil {
-		t.Fatalf("%s was not delivered: %v", spawn.HouseRulesFileName, err)
+		t.Fatalf("%s was not delivered: %v", dossier.HouseRulesFileName, err)
 	}
 	if string(got) != rules+"\n" {
 		t.Errorf("house rules diverged from the dossier\n got: %q\nwant: %q", got, rules+"\n")

@@ -3,6 +3,7 @@ package manifest_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/manifest"
@@ -11,7 +12,8 @@ import (
 func TestLoad(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "repos.yaml")
-	content := `repos:
+	content := `driver: openspec
+repos:
   - name: service-a
     path: ../service-a
     base_branch: main
@@ -22,6 +24,7 @@ func TestLoad(t *testing.T) {
     base_branch: develop
     depends_on: [service-a]
     context_modeled_sha: abc123
+    driver: pocock
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -32,15 +35,26 @@ func TestLoad(t *testing.T) {
 		t.Fatalf("Load returned error: %v", err)
 	}
 
+	if m.Driver != "openspec" {
+		t.Errorf("instance-wide driver = %q, want %q", m.Driver, "openspec")
+	}
+
 	want := []manifest.Repo{
-		{Name: "service-a", Path: "../service-a", BaseBranch: "main"},
-		{Name: "service-b", Path: "../service-b", BaseBranch: "develop"},
+		{Name: "service-a", Path: "../service-a", BaseBranch: "main", DependsOn: []string{}},
+		{
+			Name:              "service-b",
+			Path:              "../service-b",
+			BaseBranch:        "develop",
+			DependsOn:         []string{"service-a"},
+			ContextModeledSHA: "abc123",
+			Driver:            "pocock",
+		},
 	}
 	if len(m.Repos) != len(want) {
 		t.Fatalf("got %d repos, want %d", len(m.Repos), len(want))
 	}
 	for i := range want {
-		if m.Repos[i] != want[i] {
+		if !reflect.DeepEqual(m.Repos[i], want[i]) {
 			t.Errorf("repo %d: got %+v, want %+v", i, m.Repos[i], want[i])
 		}
 	}

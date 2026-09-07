@@ -3,6 +3,7 @@ module github.com/blockadence/archimedes/cli
 go 1.25.4
 
 require (
+	github.com/aymanbagabas/go-udiff v0.4.1
 	github.com/charmbracelet/fang v1.0.0
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1

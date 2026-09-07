@@ -32,10 +32,30 @@ by also breaking the fixture.
 
 Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
 
+- `bootstrap` — port of `template/scripts/bootstrap.sh`
 - `render-map` — port of `template/scripts/render-map.sh`
+- `context-map` — port of `template/scripts/context-map-all.sh` (plus
+  `run-driver.sh`, as `internal/driver`)
 - `spawn` — port of `template/scripts/spawn.sh`
 - `status` — port of `template/scripts/status.sh`
 - `prune` — port of `template/scripts/prune.sh`
+- `sync-templates` — port of `template/scripts/sync-templates.sh`
+- `sync-house-rules` — port of `template/scripts/sync-house-rules.sh`
+
+`bootstrap` discovers a GitHub org's repos, clones the ones not already
+checked out beside the instance, and scaffolds each one's `repos.yaml` entry
+and dossier stub before regenerating `WORKSPACE-MAP.md`. Every step is
+idempotent, since re-running as the org grows is the normal case: an entry
+already listed, a checkout already present, and a dossier already written are
+each left exactly as they are, so a run that discovers nothing new leaves the
+instance byte-for-byte unchanged.
+
+Scaffolded entries spell out every per-repo field, including the ones nothing
+sets yet (`convention_pack`, `driver`, `depends_on`, `context_modeled_sha`) —
+declaring a convention pack is filling in a key that's already there rather
+than remembering its name. `repos.yaml` is edited as a YAML node tree rather
+than re-marshalled, so its comments and any fields the CLI doesn't model
+survive the rewrite.
 
 `spawn` creates the branch and worktree for one unit of work in one target
 repo. It always fetches first, so a branch starts from current remote state
@@ -44,6 +64,46 @@ same precedence the script used (`--stack-on` over `--base` over the repo's
 own base branch). It then materializes the unit of work's reference material
 plus the target repo's house rules into the worktree's `.archimedes/`, under
 the no-commit guarantee (see `internal/spawn/materialize.go`).
+
+`status` reads every `work/<slug>/status.md`, looks up each row's live PR
+state via `gh pr list`, and prints the same fixed-width table the shell
+script did (or `--json` for a machine-readable report). A row's PR lookup
+degrading to "no PR" — a missing `gh` auth, no network, an unset repo — never
+fails the rest of the report, matching the original script's `|| echo '{}'`
+fallback.
+
+`prune` removes worktrees, branches, and status rows for units of work whose
+PR has merged or closed. It's a dry run unless `--force` is passed, and it
+refuses to remove a branch still acting as another unit of work's stacked
+base.
+
+`context-map` sequences a mapping pass across every repo, dependency/base
+repos first, skipping any repo already current for its base branch's latest
+commit (`--dry-run` reports that plan without acting on it). It splits the
+same two ways the scripts did: `internal/contextmap` decides *which* repos
+need mapping and in what order, `internal/driver` knows *how* to invoke one
+driver — so swapping the configured driver never touches orchestration, and
+neither half hardcodes any particular driver. Which driver runs is resolved
+most-specific-first: a repo's own `driver` field, then `repos.yaml`'s
+top-level one, then `ARCHIMEDES_DRIVER`; with none set, each repo becomes an
+interactive session the operator confirms. Recording a repo as mapped goes
+through `manifest.SetRepoField`, sharing the node-tree editing described
+above so a hand-maintained `repos.yaml` survives the rewrite.
+
+`sync-templates` and `sync-house-rules` (both in `internal/reposync`) push
+canonical control-repo content into the target repos as pull requests. The
+templates are identical everywhere, so that sync stays a thin wrapper around
+`multi-gitter`'s fan-out — the repo list comes straight from `repos.yaml`,
+and the per-repo change is a generated mod script `multi-gitter` runs inside
+each clone. House rules are specific to one repo, so that sync works
+directly on that repo's existing local clone with plain git plus `gh`,
+reading the content from the same dossier section `spawn` delivers into a
+worktree (`internal/dossier`), so a house rule is still only ever edited in
+one place. Both take `--dry-run`.
+
+Neither shells out to anything but git through `internal/gitutil`; every
+other external command (`multi-gitter`, `gh`) goes through
+`reposync.ExecFunc`, the seam tests replace.
 
 ### Terminal workspace integration (opt-in)
 
@@ -86,15 +146,3 @@ Adding another workspace manager means adding a case to
 `workspace.Select` and an `Opener` beside `openHerdr`. Everything above
 `internal/workspace` — `spawn`, the flags, the warning path — is written
 against the `Integration` type, not against herdr.
-
-`status` reads every `work/<slug>/status.md`, looks up each row's live PR
-state via `gh pr list`, and prints the same fixed-width table the shell
-script did (or `--json` for a machine-readable report). A row's PR lookup
-degrading to "no PR" — a missing `gh` auth, no network, an unset repo — never
-fails the rest of the report, matching the original script's `|| echo '{}'`
-fallback.
-
-`prune` removes worktrees, branches, and status rows for units of work whose
-PR has merged or closed. It's a dry run unless `--force` is passed, and it
-refuses to remove a branch still acting as another unit of work's stacked
-base.
