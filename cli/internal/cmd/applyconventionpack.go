@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -57,16 +56,17 @@ func runApplyConventionPack(out, errOut io.Writer, root, repoName string) error 
 		return fmt.Errorf("loading %s: %w", manifestPath, err)
 	}
 
-	// Resolve reports an unknown repo as "unknown repo: <name>"; where it
-	// should have been listed is worth saying too, since declaring a
-	// convention pack means editing that same entry.
-	repo, err := m.Resolve(root, repoName)
-	if err != nil {
-		return fmt.Errorf("%w (not in repos.yaml)", err)
+	// Both shortfalls name where the repo should have been: declaring a
+	// convention pack means editing that same repos.yaml entry, and a repo
+	// listed there but never cloned has nothing to scaffold onto yet.
+	checkout := m.Checkout(root, repoName)
+	if !checkout.Listed {
+		return fmt.Errorf("unknown repo: %s (not in repos.yaml)", repoName)
 	}
-	if info, err := os.Stat(repo.Path); err != nil || !info.IsDir() {
+	if !checkout.Cloned {
 		return fmt.Errorf("%s is in repos.yaml but not cloned yet (run archimedes bootstrap)", repoName)
 	}
+	repo := checkout.Repo
 	if repo.ConventionPack == "" {
 		return fmt.Errorf("%s has no convention_pack set in repos.yaml, nothing to do", repoName)
 	}

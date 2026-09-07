@@ -88,10 +88,10 @@ func Run(opts Options, out, progress io.Writer) error {
 			added++
 		}
 
-		target := filepath.Join(root, entry.Path)
-		if info, err := os.Stat(target); err != nil || !info.IsDir() {
+		checkout := manifest.CheckoutOf(root, entry)
+		if !checkout.Cloned {
 			fmt.Fprintf(out, "cloning %s\n", entry.Name)
-			if err := gitutil.Clone(r.SSHURL, target, progress); err != nil {
+			if err := gitutil.Clone(r.SSHURL, checkout.Path, progress); err != nil {
 				return err
 			}
 		}

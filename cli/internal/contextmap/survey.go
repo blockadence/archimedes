@@ -2,7 +2,6 @@ package contextmap
 
 import (
 	"io"
-	"os"
 	"path/filepath"
 
 	"github.com/blockadence/archimedes/cli/internal/gitutil"
@@ -81,22 +80,20 @@ type RepoState struct {
 // context map is still current for its base branch's commit. It reads; it
 // never maps anything or writes anything back.
 func State(root string, repo manifest.Repo, contextFile string, sha SHALookup) RepoState {
-	path := filepath.Join(root, repo.Path)
+	checkout := manifest.CheckoutOf(root, repo)
 	state := RepoState{
 		Name:        repo.Name,
-		Path:        path,
-		ContextPath: filepath.Join(path, contextFile),
+		Path:        checkout.Path,
+		ContextPath: filepath.Join(checkout.Path, contextFile),
 		BaseBranch:  repo.BaseBranch,
 		MappedSHA:   repo.ContextModeledSHA,
+		Cloned:      checkout.Cloned,
 	}
-
-	info, err := os.Stat(path)
-	state.Cloned = err == nil && info.IsDir()
 	if !state.Cloned {
 		return state
 	}
 
-	current, err := sha(path, repo.BaseBranch)
+	current, err := sha(checkout.Path, repo.BaseBranch)
 	if err != nil {
 		state.Err = err
 		return state
