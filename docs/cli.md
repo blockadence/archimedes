@@ -94,23 +94,27 @@ three build routes ran, most authoritative first:
 
 1. **A release build links the tag in**, with a `-ldflags` `-X` against
    `internal/version.stamped`. `.github/release-build.sh` is the only thing
-   that passes it. This is the route the criterion is about.
-2. **`go install <module>/cmd/archimedes@v1.2.3` links nothing**, but the
-   module system records the version it fetched, and `debug.ReadBuildInfo`
-   hands it back.
-3. **A build from a working tree has neither**, and reports the commit the
-   Go toolchain stamped: `dev (a1b2c3d)`, or `dev (a1b2c3d, dirty)` when
-   the tree had uncommitted edits and so matches no commit at all.
+   that passes it. This is the route the criterion is about, and the only
+   one available to a downloaded artifact.
+2. **Otherwise the module system answers for itself**, and since Go 1.24 it
+   answers for more than it used to: `go install <module>@v1.2.3` reports
+   that version, and a plain `go build` from a checkout reports a
+   pseudo-version synthesized from the commit —
+   `v0.0.0-20260907224930-f96985b1261c+dirty`, carrying the sha and a
+   `+dirty` marker for a modified tree. It is passed through exactly as
+   given: it is built from the same VCS stamps anything here would use, and
+   is already the better answer than one reassembled by hand.
+3. **Failing both, `dev`.** `(devel)` is the module system saying it has
+   nothing to give, and passing *that* through would be reporting a
+   placeholder as a version, which is the thing this exists to stop.
 
-The module system says `(devel)` when it has no version to give, which is
-every build made from a working tree. Passing that through would be
-reporting a placeholder as a version — the thing this exists to stop — so
-it falls to (3) instead. One wrinkle worth knowing, since this project is
-worked on in worktrees: the toolchain only stamps a commit when it
-recognises the directory as a checkout, and it looks for a `.git`
-*directory*, so a build made inside a git worktree reports a bare `dev`.
-Nothing works around it — neither route that installs the tool comes
-through there.
+(3) is narrower than it looks, and worth knowing exactly because this
+project is worked on in worktrees: it means a build whose toolchain
+recorded nothing at all — `-buildvcs=false`, or a build made inside a git
+worktree, which Go does not recognise as a checkout because it looks for a
+`.git` *directory* and a worktree's is a file. In an ordinary checkout you
+get (2). Nothing works around the worktree case; neither route that
+installs the tool comes through there.
 
 The version is not only for `--version`. `serve-mcp` reports it to the
 agent tool on the other end of the protocol, which has even less ability to
