@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -50,10 +49,8 @@ Dry run by default: lists candidates without touching anything. Pass
 // slug and head branch (production callers pass prune.LookupPRState; tests
 // inject a fake so they don't need a real gh session).
 func runPrune(out io.Writer, root, slugFilter string, force bool, ghState prune.PRStateFunc) error {
-	for _, bin := range []string{"git", "gh"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			return fmt.Errorf("missing dependency: %s", bin)
-		}
+	if err := requireBinaries("git", "gh"); err != nil {
+		return err
 	}
 
 	manifestPath := filepath.Join(root, "repos.yaml")

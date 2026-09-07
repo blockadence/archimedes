@@ -4,6 +4,7 @@ go 1.25.4
 
 require (
 	github.com/charmbracelet/fang v1.0.0
+	github.com/pmezard/go-difflib v1.0.0
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
 )

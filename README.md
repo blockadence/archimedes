@@ -89,9 +89,9 @@ additionally requires [`multi-gitter`](https://github.com/lindell/multi-gitter).
 
 A `archimedes` binary is being built at [`cli/`](./cli) to replace the
 vendored bash scripts below with one globally-installed tool (see
-[`cli/README.md`](./cli/README.md)). It currently has one subcommand,
-`render-map`, ported from `render-map.sh`; the rest follow the same
-pattern one at a time.
+[`cli/README.md`](./cli/README.md)). `render-map`, `spawn`, `status`,
+`prune`, `sync-templates`, and `sync-house-rules` are ported; the rest
+follow the same pattern one at a time.
 
 ## Scripts (in `template/scripts/`, vendored into each instance)
 

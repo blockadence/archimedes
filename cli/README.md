@@ -36,6 +36,8 @@ Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
 - `spawn` — port of `template/scripts/spawn.sh`
 - `status` — port of `template/scripts/status.sh`
 - `prune` — port of `template/scripts/prune.sh`
+- `sync-templates` — port of `template/scripts/sync-templates.sh`
+- `sync-house-rules` — port of `template/scripts/sync-house-rules.sh`
 
 `spawn` creates the branch and worktree for one unit of work in one target
 repo. It always fetches first, so a branch starts from current remote state
@@ -56,3 +58,18 @@ fallback.
 PR has merged or closed. It's a dry run unless `--force` is passed, and it
 refuses to remove a branch still acting as another unit of work's stacked
 base.
+
+`sync-templates` and `sync-house-rules` (both in `internal/reposync`) push
+canonical control-repo content into the target repos as pull requests. The
+templates are identical everywhere, so that sync stays a thin wrapper around
+`multi-gitter`'s fan-out — the repo list comes straight from `repos.yaml`,
+and the per-repo change is a generated mod script `multi-gitter` runs inside
+each clone. House rules are specific to one repo, so that sync works
+directly on that repo's existing local clone with plain git plus `gh`,
+reading the content from the same dossier section `spawn` delivers into a
+worktree (`internal/dossier`), so a house rule is still only ever edited in
+one place. Both take `--dry-run`.
+
+Neither shells out to anything but git through `internal/gitutil`; every
+other external command (`multi-gitter`, `gh`) goes through
+`reposync.ExecFunc`, the seam tests replace.
