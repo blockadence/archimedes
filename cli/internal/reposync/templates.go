@@ -102,7 +102,7 @@ func shellQuote(s string) string {
 // progress receives multi-gitter's own output; out receives the lines meant
 // for the caller.
 func SyncTemplates(opts TemplatesOptions, out, progress io.Writer, run ExecFunc) error {
-	root, m, err := loadInstance(opts.Root)
+	root, m, err := manifest.LoadInstance(opts.Root)
 	if err != nil {
 		return err
 	}

@@ -87,7 +87,7 @@ func Inspect(root, contextFile string, repo manifest.Repo, progress io.Writer) R
 // contextFile is where each repo's map lives relative to its own root;
 // empty means DefaultContextFile.
 func Survey(root, contextFile string, progress io.Writer) ([]RepoState, error) {
-	root, m, err := loadInstance(root)
+	root, m, err := manifest.LoadInstance(root)
 	if err != nil {
 		return nil, err
 	}
@@ -109,23 +109,4 @@ func Survey(root, contextFile string, progress io.Writer) ([]RepoState, error) {
 		states = append(states, Inspect(root, contextFile, repo, progress))
 	}
 	return states, nil
-}
-
-// loadInstance resolves an instance root to an absolute path and reads its
-// repos.yaml. The path is absolutized up front because repo paths are
-// recorded relative to the instance while git and drivers run with working
-// directories of their own, so a relative root would resolve against the
-// wrong thing.
-func loadInstance(rootOption string) (root string, m *manifest.Manifest, err error) {
-	root, err = filepath.Abs(rootOption)
-	if err != nil {
-		return "", nil, fmt.Errorf("resolving instance root %s: %w", rootOption, err)
-	}
-
-	manifestPath := filepath.Join(root, "repos.yaml")
-	m, err = manifest.Load(manifestPath)
-	if err != nil {
-		return "", nil, fmt.Errorf("loading %s: %w", manifestPath, err)
-	}
-	return root, m, nil
 }

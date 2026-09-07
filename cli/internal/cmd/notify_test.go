@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/notify"
-	"github.com/blockadence/archimedes/cli/internal/prune"
 )
 
 func TestNotifyOptionsPrefersTheFlagOverTheEnvironment(t *testing.T) {
@@ -81,12 +80,10 @@ func TestRunNotifyResolvesPRStateThroughTheManifest(t *testing.T) {
 	if !strings.Contains(out, "Ready to prune: service-a:widget-fix") {
 		t.Errorf("missing the merged unit of work, got:\n%s", out)
 	}
-	if !strings.Contains(out, "archimedes prune widget-fix --force") {
+	if !strings.Contains(out, "archimedes prune widget-fix") {
 		t.Errorf("notification should name what to run about it, got:\n%s", out)
 	}
 	if _, err := os.Stat(wt); err != nil {
 		t.Errorf("a watch must not remove anything, stat worktree = %v", err)
 	}
 }
-
-var _ prune.PRStateFunc = prune.LookupPRState

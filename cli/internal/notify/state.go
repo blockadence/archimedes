@@ -15,6 +15,28 @@ type State struct {
 	Firing map[string]Event `json:"firing"`
 }
 
+// Record folds one pass's snapshot into the state to write back: every
+// condition firing now, plus any the previous pass recorded that this one
+// could not verify.
+//
+// The carry-forward is what keeps a network blip from re-breaking old
+// news. A condition missing from a pass means one of two things — it
+// cleared, or nobody could tell — and only the first should let it notify
+// again. Without this, one unreachable remote or one expired gh session
+// would erase the record and re-announce the whole backlog on the next
+// pass that worked, which is how a notifier gets muted.
+func Record(previous State, snap Snapshot) State {
+	recorded := StateOf(snap.Firing)
+	for _, key := range snap.Unverified {
+		if was, known := previous.Firing[key]; known {
+			if _, firing := recorded.Firing[key]; !firing {
+				recorded.Firing[key] = was
+			}
+		}
+	}
+	return recorded
+}
+
 // StateOf records every condition in current as firing — the state to
 // write back once this pass has delivered what it owed.
 func StateOf(current []Event) State {

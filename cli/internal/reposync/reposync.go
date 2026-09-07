@@ -19,31 +19,8 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"path/filepath"
 	"strings"
-
-	"github.com/blockadence/archimedes/cli/internal/manifest"
 )
-
-// loadInstance resolves an instance root to an absolute path and reads its
-// manifest — the prologue both syncs share. The path is absolutized up
-// front because git runs with its working directory set to a target repo,
-// so a relative root would resolve against the checkout instead of the
-// instance.
-func loadInstance(rootOption string) (root string, m *manifest.Manifest, err error) {
-	root, err = filepath.Abs(rootOption)
-	if err != nil {
-		return "", nil, fmt.Errorf("resolving instance root %s: %w", rootOption, err)
-	}
-
-	manifestPath := filepath.Join(root, "repos.yaml")
-	m, err = manifest.Load(manifestPath)
-	if err != nil {
-		return "", nil, fmt.Errorf("loading %s: %w", manifestPath, err)
-	}
-
-	return root, m, nil
-}
 
 // ExecFunc runs an external command with its output going to stdout and
 // stderr. It's the seam tests replace to keep multi-gitter and gh out of

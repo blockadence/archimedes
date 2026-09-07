@@ -153,6 +153,18 @@ mails a job's output mails only what's worth reading; `--seed` records
 what's true now without reporting any of it, for adopting the notifier on
 an instance whose backlog you already know about.
 
+Reasoning from absence is what makes that work, and also what it has to be
+careful about: a condition that stops being reported has either cleared or
+gone unasked-about, and only the first should let it notify again. So a
+pass names the repos whose remote wouldn't answer and the units of work
+`gh` wouldn't report on, and carries their recorded conditions forward
+untouched. Without that, one expired `gh` session or one flaky network
+would erase the record and re-announce the whole backlog on the next pass
+that worked — which is how a notifier gets muted. It is also why
+`prune.LookupPRState` reports *why* it came back with no pull request:
+prune only needs the safe answer ("no PR, don't touch it"), but a watch
+needs to know whether anyone actually asked.
+
 Both conditions are read through the packages that own them —
 `contextmap.Survey` and `prune.Scan` — so a notification can't reach a
 different conclusion than the `context-map` or `prune` run made in response

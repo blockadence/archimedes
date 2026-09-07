@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/blockadence/archimedes/cli/internal/gitutil"
 	"github.com/blockadence/archimedes/cli/internal/manifest"
 	"github.com/blockadence/archimedes/cli/internal/prune"
@@ -12,10 +14,13 @@ import (
 // subcommand that reads PR state off a status.md row (prune, notify), so
 // they can't disagree about which repository a row refers to.
 //
-// A repo the manifest doesn't know, or whose origin can't be read, comes
-// back as "NONE": no PR to act on. That matches lib.sh, and it is the safe
-// direction — a lookup failure must never be mistaken for permission to
-// prune something.
+// Either way the state is "NONE" — no PR to act on — because that matches
+// lib.sh and is the safe direction: a lookup failure must never be
+// mistaken for permission to prune something. The two are told apart by
+// the error instead. A repo the manifest doesn't know is a settled answer
+// (there is nothing here to prune); an origin that can't be read is a
+// question that went unanswered, and a caller that draws conclusions from
+// silence needs to know which it got.
 //
 // Slugs are cached because one repo typically owns several rows and the
 // answer can't change within a run.
@@ -31,7 +36,7 @@ func repoPRState(root string, m *manifest.Manifest, lookup prune.PRStateFunc) pr
 		slug, cached := slugs[repo]
 		if !cached {
 			if slug, err = gitutil.GHSlug(entry.Path); err != nil {
-				return "NONE", nil
+				return "NONE", fmt.Errorf("reading %s's origin remote: %w", repo, err)
 			}
 			slugs[repo] = slug
 		}

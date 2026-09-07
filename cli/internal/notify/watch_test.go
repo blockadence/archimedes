@@ -2,6 +2,7 @@ package notify_test
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -240,12 +241,12 @@ func TestConditionsLeavesOutAWorktreeStillActingAsAStackBase(t *testing.T) {
 	inst.spawned(t, "widget-fix", "based on main")
 	inst.spawned(t, "widget-followup", "stacked on app:widget-fix")
 
-	events, err := notify.Conditions(inst.root, "", prState(map[string]string{"widget-fix": "MERGED"}), io.Discard)
+	snap, err := notify.Conditions(inst.root, "", prState(map[string]string{"widget-fix": "MERGED"}), io.Discard)
 	if err != nil {
 		t.Fatalf("Conditions: %v", err)
 	}
 
-	for _, e := range events {
+	for _, e := range snap.Firing {
 		if e.Kind == notify.PruneEligible {
 			t.Errorf("reported %s as prune-eligible, but prune would refuse to remove a branch still stacked on", e.Subject)
 		}
@@ -298,5 +299,93 @@ func write(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// failedLookup is a PR lookup that can't answer at all — an expired gh
+// session, a rate limit, no network. It reports "NONE" like every other
+// failure path, but says why, which is the whole difference between "this
+// has no pull request" and "nobody could tell".
+func failedLookup(_, _ string) (string, error) {
+	return "NONE", errors.New("gh: could not authenticate")
+}
+
+func TestWatchDoesNotRebreakPruneNewsAPassCouldNotVerify(t *testing.T) {
+	inst := newInstance(t)
+	inst.spawned(t, "widget-fix", "based on main")
+	merged := notify.Options{PRState: prState(map[string]string{"widget-fix": "MERGED"})}
+
+	first, err := inst.watch(t, merged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(first, "Ready to prune: app:widget-fix") {
+		t.Fatalf("first pass:\n%s", first)
+	}
+
+	// gh can't answer: the condition is neither confirmed nor cleared.
+	if _, err := inst.watch(t, notify.Options{PRState: failedLookup}); err != nil {
+		t.Fatalf("a pass that couldn't reach gh: %v", err)
+	}
+
+	// gh answers again. The worktree has been prune-eligible the whole
+	// time and the operator was already told.
+	again, err := inst.watch(t, merged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != "" {
+		t.Errorf("output = %q, want silence: an unanswerable lookup is not the condition clearing", again)
+	}
+}
+
+func TestWatchDoesNotRebreakStaleNewsAPassCouldNotVerify(t *testing.T) {
+	inst := newInstance(t)
+	if _, err := inst.watch(t, notify.Options{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The checkout stops being a git repo mid-life: fetch and rev-parse
+	// have nothing to answer with.
+	hidden := filepath.Join(inst.repo, ".git")
+	if err := os.Rename(hidden, hidden+"-away"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := inst.watch(t, notify.Options{}); err != nil {
+		t.Fatalf("a pass that couldn't assess a repo: %v", err)
+	}
+	if err := os.Rename(hidden+"-away", hidden); err != nil {
+		t.Fatal(err)
+	}
+
+	again, err := inst.watch(t, notify.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != "" {
+		t.Errorf("output = %q, want silence: the map has been stale and reported the whole time", again)
+	}
+}
+
+func TestWatchStillClearsAConditionAPassPositivelyResolved(t *testing.T) {
+	inst := newInstance(t)
+	if _, err := inst.watch(t, notify.Options{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Carrying unverified conditions forward must not turn into never
+	// forgetting anything: a repo that was mapped really has cleared.
+	inst.mapped(t)
+	if _, err := inst.watch(t, notify.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	inst.commit(t, "feature.go", "package app\n")
+
+	again, err := inst.watch(t, notify.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(again, "Context map stale: app") {
+		t.Errorf("output = %q, want the repo to notify again once it is genuinely stale again", again)
 	}
 }

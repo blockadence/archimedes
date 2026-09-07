@@ -49,6 +49,20 @@ const (
 	EnvMessage = "ARCHIMEDES_EVENT_MESSAGE"
 )
 
+// The commands a notification tells the operator to run about a condition.
+// They are this package's one piece of CLI knowledge — everything else it
+// reports, it reads through the package that owns it — so they are named
+// here rather than formatted inline where the conditions are collected.
+//
+// The prune remedy deliberately stops at prune's dry run. Adding --force
+// would act on every merged row under that slug, which is more than the
+// one repo:slug the notification names, and prune already puts the
+// confirmation step exactly there.
+const (
+	remedyContextMap = "archimedes context-map"
+	remedyPrune      = "archimedes prune %s"
+)
+
 // Event is one condition that is true about the instance right now: what
 // kind of condition it is, what it is about, why it holds, and what to run
 // about it.

@@ -60,7 +60,7 @@ type Options struct {
 // record of what happened. in is where an interactive session's "this one
 // is done" confirmation is read from.
 func Run(opts Options, out, progress io.Writer, in io.Reader) error {
-	root, m, err := loadInstance(opts.Root)
+	root, m, err := manifest.LoadInstance(opts.Root)
 	if err != nil {
 		return err
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 var (
 	staleApp    = notify.Event{Kind: notify.ContextStale, Subject: "app", Detail: "never mapped", Remedy: "archimedes context-map"}
 	staleShared = notify.Event{Kind: notify.ContextStale, Subject: "shared", Detail: "stale, aaaaaaaa -> bbbbbbbb", Remedy: "archimedes context-map"}
-	prunable    = notify.Event{Kind: notify.PruneEligible, Subject: "app:widget-fix", Detail: "MERGED", Remedy: "archimedes prune widget-fix --force"}
+	prunable    = notify.Event{Kind: notify.PruneEligible, Subject: "app:widget-fix", Detail: "MERGED", Remedy: "archimedes prune widget-fix"}
 )
 
 func keys(events []notify.Event) []string {
@@ -42,7 +43,7 @@ func TestSinceReturnsOnlyWhatWasNotAlreadyFiring(t *testing.T) {
 
 	fired := notify.Since(previous, []notify.Event{staleApp, staleShared, prunable})
 
-	if got, want := keys(fired), []string{staleShared.Key(), prunable.Key()}; !equal(got, want) {
+	if got, want := keys(fired), []string{staleShared.Key(), prunable.Key()}; !slices.Equal(got, want) {
 		t.Errorf("fired = %v, want %v (app was already firing)", got, want)
 	}
 }
@@ -119,7 +120,7 @@ func TestToWriterPrintsWhatHappenedAndWhatToRun(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"app:widget-fix", "MERGED", "archimedes prune widget-fix --force"} {
+	for _, want := range []string{"app:widget-fix", "MERGED", "archimedes prune widget-fix"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("printed notification %q missing %q", out, want)
 		}
@@ -165,14 +166,41 @@ func TestToCommandReportsAHookThatFailed(t *testing.T) {
 	}
 }
 
-func equal(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
+func TestRecordCarriesForwardWhatAPassCouldNotVerify(t *testing.T) {
+	previous := notify.StateOf([]notify.Event{staleApp, prunable})
+	// app answered and is still stale; nobody could ask about the
+	// worktree at all.
+	snap := notify.Snapshot{Firing: []notify.Event{staleApp}, Unverified: []string{prunable.Key()}}
+
+	recorded := notify.Record(previous, snap)
+
+	if fired := notify.Since(recorded, []notify.Event{staleApp, prunable}); len(fired) != 0 {
+		t.Errorf("fired = %v, want nothing: neither condition is news the operator hasn't had", keys(fired))
 	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
+}
+
+func TestRecordForgetsAConditionAPassPositivelyResolved(t *testing.T) {
+	previous := notify.StateOf([]notify.Event{staleApp, prunable})
+	// Both answered; only the worktree still holds.
+	snap := notify.Snapshot{Firing: []notify.Event{prunable}}
+
+	recorded := notify.Record(previous, snap)
+
+	if fired := notify.Since(recorded, []notify.Event{staleApp}); len(fired) != 1 {
+		t.Errorf("fired = %v, want app to be news again: this pass saw for itself that it had cleared", keys(fired))
 	}
-	return true
+}
+
+func TestRecordDoesNotResurrectAStaleDetailForACurrentlyFiringCondition(t *testing.T) {
+	moved := staleApp
+	moved.Detail = "stale, aaaaaaaa -> cccccccc"
+	previous := notify.StateOf([]notify.Event{staleApp})
+
+	// Firing and unverified at once can't happen from one collector, but
+	// the record must not let the older copy win if it ever does.
+	recorded := notify.Record(previous, notify.Snapshot{Firing: []notify.Event{moved}, Unverified: []string{moved.Key()}})
+
+	if got := recorded.Firing[moved.Key()].Detail; got != moved.Detail {
+		t.Errorf("recorded detail = %q, want this pass's %q", got, moved.Detail)
+	}
 }

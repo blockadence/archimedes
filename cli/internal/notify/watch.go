@@ -68,23 +68,22 @@ func Watch(opts Options, out, progress io.Writer) error {
 		statePath = filepath.Join(root, DefaultStateFile)
 	}
 
-	current, err := Conditions(root, opts.ContextFile, opts.PRState, progress)
+	previous, err := LoadState(statePath)
 	if err != nil {
 		return err
 	}
-	recorded := StateOf(current)
+	snap, err := Conditions(root, opts.ContextFile, opts.PRState, progress)
+	if err != nil {
+		return err
+	}
+	recorded := Record(previous, snap)
 
 	if opts.Seed {
 		if err := SaveState(statePath, recorded); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "Recorded %d open condition(s) in %s without notifying about any of them.\n", len(current), statePath)
+		fmt.Fprintf(out, "Recorded %d open condition(s) in %s without notifying about any of them.\n", len(recorded.Firing), statePath)
 		return nil
-	}
-
-	previous, err := LoadState(statePath)
-	if err != nil {
-		return err
 	}
 
 	deliver := ToWriter(out)
@@ -96,7 +95,7 @@ func Watch(opts Options, out, progress io.Writer) error {
 		deliver = ToCommand(run, opts.Command)
 	}
 
-	fired := Since(previous, current)
+	fired := Since(previous, snap.Firing)
 	failures := 0
 	for _, e := range fired {
 		if err := deliver(e); err != nil {
@@ -117,12 +116,29 @@ func Watch(opts Options, out, progress io.Writer) error {
 		return err
 	}
 	if len(fired) > failures {
-		fmt.Fprintf(out, "\n%d new, %d open condition(s) in total.\n", len(fired)-failures, len(current))
+		fmt.Fprintf(out, "\n%d new, %d open condition(s) in total.\n", len(fired)-failures, len(recorded.Firing))
 	}
 	if failures > 0 {
 		return fmt.Errorf("%d of %d notifications could not be delivered; they stay unreported and will be retried next pass", failures, len(fired))
 	}
 	return nil
+}
+
+// Snapshot is everything one pass could determine about an instance: the
+// conditions that hold, and the subjects it could reach no verdict on at
+// all.
+//
+// The second half exists because a watch reasons from absence — a
+// condition that stops being reported is a condition that cleared — and
+// absence has two causes. Naming the ones nobody could ask about is what
+// keeps an unreachable remote from being read as good news.
+type Snapshot struct {
+	// Firing is every condition that holds right now.
+	Firing []Event
+	// Unverified holds the keys of the conditions this pass couldn't
+	// decide: a repo whose remote wouldn't answer, a unit of work whose
+	// pull request state gh wouldn't report.
+	Unverified []string
 }
 
 // Conditions collects everything currently worth notifying about in the
@@ -134,37 +150,48 @@ func Watch(opts Options, out, progress io.Writer) error {
 // conclusion than the `context-map` or `prune` run the operator makes in
 // response to it.
 //
-// A repo that couldn't be assessed at all (an unfetchable remote, a
-// checkout git doesn't recognize) is reported on progress and left out.
-// Silence about one repo is the right failure for a pass a scheduler runs
-// unattended: the alternative is either inventing a condition or dropping
-// every other repo's news over one bad remote.
-func Conditions(root, contextFile string, prState prune.PRStateFunc, progress io.Writer) ([]Event, error) {
+// A repo or a unit of work that couldn't be assessed at all is reported on
+// progress and comes back under Unverified rather than failing the pass.
+// Carrying on is the right call for something a scheduler runs unattended:
+// the alternative is dropping every other repo's news over one bad remote.
+func Conditions(root, contextFile string, prState prune.PRStateFunc, progress io.Writer) (Snapshot, error) {
 	states, err := contextmap.Survey(root, contextFile, progress)
 	if err != nil {
-		return nil, err
+		return Snapshot{}, err
 	}
 
-	var events []Event
+	var snap Snapshot
 	for _, s := range states {
+		stale := Event{Kind: ContextStale, Subject: s.Repo.Name}
 		if s.Err != nil {
 			fmt.Fprintf(progress, "note: could not assess %s: %v\n", s.Repo.Name, s.Err)
+			snap.Unverified = append(snap.Unverified, stale.Key())
 			continue
 		}
 		if !s.NeedsMapping() {
 			continue
 		}
-		events = append(events, Event{
-			Kind:    ContextStale,
-			Subject: s.Repo.Name,
-			Detail:  s.Reason,
-			Remedy:  "archimedes context-map",
-		})
+		stale.Detail = s.Reason
+		stale.Remedy = remedyContextMap
+		snap.Firing = append(snap.Firing, stale)
 	}
 
-	items, err := prune.Scan(filepath.Join(root, "work"), "", prState)
+	// prune.Scan folds a failed lookup into "no pull request", which is
+	// the safe reading for prune but indistinguishable from a settled one
+	// here, so the failures are noted on the way past.
+	watched := func(repo, headBranch string) (string, error) {
+		state, err := prState(repo, headBranch)
+		if err != nil {
+			fmt.Fprintf(progress, "note: could not look up %s:%s's pull request: %v\n", repo, headBranch, err)
+			snap.Unverified = append(snap.Unverified,
+				Event{Kind: PruneEligible, Subject: stackref.Ref{Repo: repo, Slug: headBranch}.String()}.Key())
+		}
+		return state, err
+	}
+
+	items, err := prune.Scan(filepath.Join(root, "work"), "", watched)
 	if err != nil {
-		return nil, err
+		return Snapshot{}, err
 	}
 	for _, it := range items {
 		// A merged unit of work something else is still stacked on is not
@@ -174,13 +201,13 @@ func Conditions(root, contextFile string, prState prune.PRStateFunc, progress io
 		if !it.Prunable() {
 			continue
 		}
-		events = append(events, Event{
+		snap.Firing = append(snap.Firing, Event{
 			Kind:    PruneEligible,
 			Subject: stackref.Ref{Repo: it.Repo, Slug: it.Slug}.String(),
 			Detail:  it.PRState,
-			Remedy:  fmt.Sprintf("archimedes prune %s --force", it.Slug),
+			Remedy:  fmt.Sprintf(remedyPrune, it.Slug),
 		})
 	}
 
-	return events, nil
+	return snap, nil
 }
