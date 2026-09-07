@@ -23,17 +23,6 @@ func moduleRoot(t *testing.T) string {
 	return filepath.Join(filepath.Dir(file), "..", "..")
 }
 
-func git(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v (in %s): %v\n%s", args, dir, err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
-
 func TestNewBuildsACloneOfABareOriginWithOneCommitPushed(t *testing.T) {
 	dir := t.TempDir()
 
@@ -48,21 +37,21 @@ func TestNewBuildsACloneOfABareOriginWithOneCommitPushed(t *testing.T) {
 	if repo.Branch != "main" {
 		t.Errorf("Branch = %q, want the default main", repo.Branch)
 	}
-	if got := git(t, repo.Origin, "rev-parse", "--is-bare-repository"); got != "true" {
+	if got := testrepo.GitOut(t, repo.Origin, "rev-parse", "--is-bare-repository"); got != "true" {
 		t.Errorf("origin is-bare-repository = %q, want true", got)
 	}
-	if got := git(t, repo.Clone, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
+	if got := testrepo.GitOut(t, repo.Clone, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
 		t.Errorf("clone is on %q, want main", got)
 	}
 	// The commit is on the remote, not just locally: the pass under test
 	// is usually fetching and diffing against origin/<base branch>.
-	if local, remote := git(t, repo.Clone, "rev-parse", "HEAD"), git(t, repo.Clone, "rev-parse", "origin/main"); local != remote {
+	if local, remote := testrepo.GitOut(t, repo.Clone, "rev-parse", "HEAD"), testrepo.GitOut(t, repo.Clone, "rev-parse", "origin/main"); local != remote {
 		t.Errorf("HEAD %s != origin/main %s, want the initial commit pushed", local, remote)
 	}
-	if got := git(t, repo.Clone, "show", "--name-only", "--format=", "HEAD"); got != "README.md" {
+	if got := testrepo.GitOut(t, repo.Clone, "show", "--name-only", "--format=", "HEAD"); got != "README.md" {
 		t.Errorf("initial commit touched %q, want a README.md seed", got)
 	}
-	if got := git(t, repo.Clone, "status", "--porcelain"); got != "" {
+	if got := testrepo.GitOut(t, repo.Clone, "status", "--porcelain"); got != "" {
 		t.Errorf("clone has uncommitted changes:\n%s", got)
 	}
 }
@@ -75,10 +64,10 @@ func TestNewHonorsTheBranchTheSpecAsksFor(t *testing.T) {
 	if repo.Branch != "trunk" {
 		t.Errorf("Branch = %q, want trunk", repo.Branch)
 	}
-	if got := git(t, repo.Clone, "rev-parse", "--abbrev-ref", "HEAD"); got != "trunk" {
+	if got := testrepo.GitOut(t, repo.Clone, "rev-parse", "--abbrev-ref", "HEAD"); got != "trunk" {
 		t.Errorf("clone is on %q, want trunk", got)
 	}
-	if got := git(t, repo.Origin, "rev-parse", "--abbrev-ref", "HEAD"); got != "trunk" {
+	if got := testrepo.GitOut(t, repo.Origin, "rev-parse", "--abbrev-ref", "HEAD"); got != "trunk" {
 		t.Errorf("origin HEAD is %q, want trunk", got)
 	}
 }
@@ -91,7 +80,7 @@ func TestNewSeedsTheFilesTheSpecNames(t *testing.T) {
 		"docs/why.md": "because\n",
 	}})
 
-	tracked := strings.Split(git(t, repo.Clone, "ls-tree", "-r", "--name-only", "HEAD"), "\n")
+	tracked := strings.Split(testrepo.GitOut(t, repo.Clone, "ls-tree", "-r", "--name-only", "HEAD"), "\n")
 	want := []string{".gitignore", "docs/why.md"}
 	if len(tracked) != len(want) {
 		t.Fatalf("tracked files = %v, want exactly %v", tracked, want)
@@ -101,7 +90,7 @@ func TestNewSeedsTheFilesTheSpecNames(t *testing.T) {
 			t.Errorf("tracked files = %v, want %v", tracked, want)
 		}
 	}
-	if got := git(t, repo.Clone, "show", "HEAD:docs/why.md"); got != "because" {
+	if got := testrepo.GitOut(t, repo.Clone, "show", "HEAD:docs/why.md"); got != "because" {
 		t.Errorf("docs/why.md = %q, want the seeded content", got)
 	}
 }
@@ -119,7 +108,7 @@ func TestNewPutsEachHalfWhereTheSpecSays(t *testing.T) {
 	if want := filepath.Join(dir, "app-origin.git"); repo.Origin != want {
 		t.Errorf("Origin = %q, want %q", repo.Origin, want)
 	}
-	if got := git(t, repo.Clone, "rev-parse", "--show-toplevel"); !strings.HasSuffix(got, "app-seed") {
+	if got := testrepo.GitOut(t, repo.Clone, "rev-parse", "--show-toplevel"); !strings.HasSuffix(got, "app-seed") {
 		t.Errorf("clone toplevel = %q, want it at app-seed", got)
 	}
 }
@@ -129,12 +118,12 @@ func TestNewLeavesTheCloneCommittableWithoutTheMachinesGitConfig(t *testing.T) {
 
 	repo := testrepo.New(t, testrepo.Spec{Dir: dir, Name: "app"})
 
-	if got := git(t, repo.Clone, "log", "-1", "--format=%ae"); got != "t@t" {
+	if got := testrepo.GitOut(t, repo.Clone, "log", "-1", "--format=%ae"); got != "t@t" {
 		t.Errorf("initial commit author = %q, want the fixture's own identity", got)
 	}
 	// A test that commits more on top must not have to repeat -c user.email.
-	git(t, repo.Clone, "commit", "-q", "--allow-empty", "-m", "more")
-	if got := git(t, repo.Clone, "log", "-1", "--format=%ae"); got != "t@t" {
+	testrepo.Git(t, repo.Clone, "commit", "-q", "--allow-empty", "-m", "more")
+	if got := testrepo.GitOut(t, repo.Clone, "log", "-1", "--format=%ae"); got != "t@t" {
 		t.Errorf("follow-up commit author = %q, want the identity the fixture configured", got)
 	}
 }

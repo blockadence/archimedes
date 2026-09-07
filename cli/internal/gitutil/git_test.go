@@ -2,9 +2,7 @@ package gitutil_test
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/gitutil"
@@ -24,31 +22,9 @@ func makeRepo(t *testing.T, tmp string) string {
 func makeRemote(t *testing.T, originURL string) string {
 	t.Helper()
 	dir := t.TempDir()
-	mustGit(t, dir, "init", "-q")
-	mustGit(t, dir, "remote", "add", "origin", originURL)
+	testrepo.Git(t, dir, "init", "-q")
+	testrepo.Git(t, dir, "remote", "add", "origin", originURL)
 	return dir
-}
-
-// mustGit runs git in dir and fails the test if it doesn't succeed.
-func mustGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-}
-
-// gitOutput runs git in dir and returns its stdout.
-func gitOutput(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git %v: %v", args, err)
-	}
-	return string(out)
 }
 
 func TestGHSlug(t *testing.T) {
@@ -77,7 +53,7 @@ func TestGHSlug(t *testing.T) {
 
 func TestGHSlugNoRemoteErrors(t *testing.T) {
 	dir := t.TempDir()
-	mustGit(t, dir, "init", "-q")
+	testrepo.Git(t, dir, "init", "-q")
 
 	if _, err := gitutil.GHSlug(dir); err == nil {
 		t.Fatal("expected error when origin remote is missing, got nil")
@@ -89,7 +65,7 @@ func TestRemoveWorktreeAndBranch(t *testing.T) {
 	repo := makeRepo(t, tmp)
 
 	wt := filepath.Join(tmp, "widget-fix-worktree")
-	mustGit(t, repo, "worktree", "add", wt, "-b", "widget-fix", "main")
+	testrepo.Git(t, repo, "worktree", "add", wt, "-b", "widget-fix", "main")
 
 	if err := gitutil.RemoveWorktree(repo, wt); err != nil {
 		t.Fatalf("RemoveWorktree: %v", err)
@@ -101,7 +77,7 @@ func TestRemoveWorktreeAndBranch(t *testing.T) {
 	if err := gitutil.RemoveBranch(repo, "widget-fix"); err != nil {
 		t.Fatalf("RemoveBranch: %v", err)
 	}
-	out := strings.TrimSpace(gitOutput(t, repo, "branch", "--list", "widget-fix"))
+	out := testrepo.GitOut(t, repo, "branch", "--list", "widget-fix")
 	if out != "" {
 		t.Errorf("expected branch widget-fix to be gone, git branch --list returned %q", out)
 	}
@@ -122,13 +98,13 @@ func commitFile(t *testing.T, repo, name string) {
 	if err := os.WriteFile(filepath.Join(repo, name), []byte(name+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mustGit(t, repo, "add", "-A")
-	mustGit(t, repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", name)
+	testrepo.Git(t, repo, "add", "-A")
+	testrepo.Git(t, repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", name)
 }
 
 func TestHasRef(t *testing.T) {
 	repo := makeRepo(t, t.TempDir())
-	mustGit(t, repo, "branch", "feature", "main")
+	testrepo.Git(t, repo, "branch", "feature", "main")
 
 	tests := []struct {
 		name string
@@ -152,7 +128,7 @@ func TestHasRef(t *testing.T) {
 
 func TestIsAncestor(t *testing.T) {
 	repo := makeRepo(t, t.TempDir())
-	mustGit(t, repo, "checkout", "-q", "-b", "feature")
+	testrepo.Git(t, repo, "checkout", "-q", "-b", "feature")
 	commitFile(t, repo, "feature.txt")
 
 	tests := []struct {

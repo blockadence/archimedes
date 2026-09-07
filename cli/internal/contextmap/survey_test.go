@@ -8,6 +8,7 @@ import (
 
 	"github.com/blockadence/archimedes/cli/internal/contextmap"
 	"github.com/blockadence/archimedes/cli/internal/manifest"
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
 // fixedSHA answers every repo with the same commit, for the tests that care
@@ -94,11 +95,11 @@ func TestLocalSHAReadsTheCheckoutWithoutFetching(t *testing.T) {
 	// origin/main the checkout already has, not the one on the remote.
 	before := inst.sha(t, "alpha")
 	other := filepath.Join(inst.tmp, "other")
-	gitOK(t, inst.tmp, "clone", "-q", filepath.Join(inst.tmp, "alpha.git"), other)
+	testrepo.Git(t, inst.tmp, "clone", "-q", filepath.Join(inst.tmp, "alpha.git"), other)
 	mustWriteFile(t, filepath.Join(other, "NEW.md"), "new\n")
-	gitOK(t, other, "add", "-A")
-	gitOK(t, other, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "second")
-	gitOK(t, other, "push", "-q", "origin", "main")
+	testrepo.Git(t, other, "add", "-A")
+	testrepo.Git(t, other, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "second")
+	testrepo.Git(t, other, "push", "-q", "origin", "main")
 
 	got, err := contextmap.LocalSHA(inst.repoPaths["alpha"], "main")
 	if err != nil {

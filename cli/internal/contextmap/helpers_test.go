@@ -1,36 +1,13 @@
 package contextmap_test
 
 import (
-	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/manifest"
 	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
-
-// gitOK runs git in dir, failing the test on error.
-func gitOK(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v (in %s): %v\n%s", args, dir, err, out)
-	}
-}
-
-func gitOut(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git %v (in %s): %v", args, dir, err)
-	}
-	return string(bytes.TrimSpace(out))
-}
 
 func mustWriteFile(t *testing.T, path, content string) {
 	t.Helper()
@@ -98,7 +75,7 @@ func (i instance) installPathDriver(t *testing.T, name string) {
 // sha reads the base-branch commit a repo's origin currently points at.
 func (i instance) sha(t *testing.T, name string) string {
 	t.Helper()
-	return gitOut(t, i.repoPaths[name], "rev-parse", "origin/main")
+	return testrepo.GitOut(t, i.repoPaths[name], "rev-parse", "origin/main")
 }
 
 // recordedSHA reads back what repos.yaml says a repo was last mapped at.

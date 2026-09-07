@@ -4,6 +4,11 @@
 // rev-parse origin/<base>, worktree, and push paths testable against real
 // git without touching the network.
 //
+// It also provides the runner that building such a fixture needs anyway —
+// Git and GitOut, which run one git command and fail the test if it doesn't
+// succeed — so a test package that drives git a step further than New does
+// has one place to get that from rather than its own copy.
+//
 // It is test-only scaffolding. Nothing under cmd/ or the production side of
 // internal/ may import it — see the guard test in this package.
 //
@@ -15,7 +20,6 @@ package testrepo
 import (
 	"cmp"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -86,14 +90,14 @@ func New(t testing.TB, spec Spec) Repo {
 		t.Fatal(err)
 	}
 
-	git(t, "", "init", "-q", "--bare", "-b", repo.Branch, repo.Origin)
-	git(t, "", "clone", "-q", repo.Origin, repo.Clone)
+	Git(t, "", "init", "-q", "--bare", "-b", repo.Branch, repo.Origin)
+	Git(t, "", "clone", "-q", repo.Origin, repo.Clone)
 	// A fixed identity, and no signing, so committing here — now and in
 	// whatever the test commits on top — doesn't depend on the machine's
 	// git config.
-	git(t, repo.Clone, "config", "user.email", "t@t")
-	git(t, repo.Clone, "config", "user.name", "t")
-	git(t, repo.Clone, "config", "commit.gpgsign", "false")
+	Git(t, repo.Clone, "config", "user.email", "t@t")
+	Git(t, repo.Clone, "config", "user.name", "t")
+	Git(t, repo.Clone, "config", "commit.gpgsign", "false")
 
 	for name, content := range files {
 		path := filepath.Join(repo.Clone, name)
@@ -105,20 +109,9 @@ func New(t testing.TB, spec Spec) Repo {
 		}
 	}
 
-	git(t, repo.Clone, "add", "-A")
-	git(t, repo.Clone, "commit", "-q", "-m", "init")
-	git(t, repo.Clone, "push", "-q", "origin", repo.Branch)
+	Git(t, repo.Clone, "add", "-A")
+	Git(t, repo.Clone, "commit", "-q", "-m", "init")
+	Git(t, repo.Clone, "push", "-q", "origin", repo.Branch)
 
 	return repo
-}
-
-// git runs one git command in dir, failing the test with its output if it
-// doesn't succeed.
-func git(t testing.TB, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v (in %q): %v\n%s", args, dir, err, out)
-	}
 }

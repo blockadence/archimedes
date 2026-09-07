@@ -2,7 +2,6 @@ package status
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -18,29 +17,20 @@ func squashMergedStack(t *testing.T) string {
 	t.Helper()
 	clone := testrepo.New(t, testrepo.Spec{Dir: t.TempDir(), Name: "service-a"}).Clone
 
-	git(t, clone, "checkout", "-q", "-b", "auth-api")
+	testrepo.Git(t, clone, "checkout", "-q", "-b", "auth-api")
 	commit(t, clone, "api.go", "api\n", "add the api")
-	git(t, clone, "checkout", "-q", "-b", "auth-ui")
+	testrepo.Git(t, clone, "checkout", "-q", "-b", "auth-ui")
 	commit(t, clone, "ui.go", "ui\n", "add the ui")
 
 	// The squash: the same file content lands on main under a new commit
 	// message — and so a new SHA — leaving auth-api's own commit nowhere
 	// in main's history.
-	git(t, clone, "checkout", "-q", "main")
+	testrepo.Git(t, clone, "checkout", "-q", "main")
 	commit(t, clone, "api.go", "api\n", "add the api (#7)")
-	git(t, clone, "push", "-q", "origin", "main")
-	git(t, clone, "fetch", "-q", "origin")
+	testrepo.Git(t, clone, "push", "-q", "origin", "main")
+	testrepo.Git(t, clone, "fetch", "-q", "origin")
 
 	return clone
-}
-
-func git(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
 }
 
 func commit(t *testing.T, repo, name, body, message string) {
@@ -48,8 +38,8 @@ func commit(t *testing.T, repo, name, body, message string) {
 	if err := os.WriteFile(filepath.Join(repo, name), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	git(t, repo, "add", "-A")
-	git(t, repo, "commit", "-q", "-m", message)
+	testrepo.Git(t, repo, "add", "-A")
+	testrepo.Git(t, repo, "commit", "-q", "-m", message)
 }
 
 // stackedRow runs a one-row report over repo against real git, with note
@@ -77,8 +67,8 @@ func TestLocalRefsFlagsAndClearsAStackedRebase(t *testing.T) {
 		t.Errorf("expected rebase target origin/main, got %q", row.RebaseOnto)
 	}
 
-	git(t, repo, "checkout", "-q", "auth-ui")
-	git(t, repo, "rebase", "-q", "origin/main")
+	testrepo.Git(t, repo, "checkout", "-q", "auth-ui")
+	testrepo.Git(t, repo, "rebase", "-q", "origin/main")
 
 	if row := stackedRow(repo, stackedOnAuthAPI, merged); row.NeedsRebase {
 		t.Fatalf("expected the flag to clear once auth-ui was rebased, got: %#v", row)
@@ -86,10 +76,10 @@ func TestLocalRefsFlagsAndClearsAStackedRebase(t *testing.T) {
 
 	// Someone else lands something. Being behind main is not what this
 	// flag reports, so it must stay clear.
-	git(t, repo, "checkout", "-q", "main")
+	testrepo.Git(t, repo, "checkout", "-q", "main")
 	commit(t, repo, "unrelated.go", "unrelated\n", "something else")
-	git(t, repo, "push", "-q", "origin", "main")
-	git(t, repo, "fetch", "-q", "origin")
+	testrepo.Git(t, repo, "push", "-q", "origin", "main")
+	testrepo.Git(t, repo, "fetch", "-q", "origin")
 
 	if row := stackedRow(repo, stackedOnAuthAPI, merged); row.NeedsRebase {
 		t.Errorf("expected the flag to stay clear after origin/main moved on, got: %#v", row)
@@ -116,11 +106,11 @@ func TestLocalRefsLeavesABaseThatLandedAsItselfAlone(t *testing.T) {
 	repo := squashMergedStack(t)
 	// Undo the squash and merge auth-api into main under its own commits
 	// instead, the way a merge commit or fast-forward would.
-	git(t, repo, "checkout", "-q", "main")
-	git(t, repo, "reset", "-q", "--hard", "origin/main~1")
-	git(t, repo, "merge", "-q", "--no-ff", "-m", "merge auth-api", "auth-api")
-	git(t, repo, "push", "-q", "--force", "origin", "main")
-	git(t, repo, "fetch", "-q", "origin")
+	testrepo.Git(t, repo, "checkout", "-q", "main")
+	testrepo.Git(t, repo, "reset", "-q", "--hard", "origin/main~1")
+	testrepo.Git(t, repo, "merge", "-q", "--no-ff", "-m", "merge auth-api", "auth-api")
+	testrepo.Git(t, repo, "push", "-q", "--force", "origin", "main")
+	testrepo.Git(t, repo, "fetch", "-q", "origin")
 
 	if row := stackedRow(repo, stackedOnAuthAPI, merged); row.NeedsRebase {
 		t.Errorf("expected no flag: auth-api's commits are on origin/main as themselves, so auth-ui isn't duplicating anything; got: %#v", row)

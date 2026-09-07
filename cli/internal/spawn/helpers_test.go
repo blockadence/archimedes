@@ -1,43 +1,19 @@
 package spawn_test
 
 import (
-	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
-// gitOK runs git in dir, failing the test on error.
-func gitOK(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v (in %s): %v\n%s", args, dir, err, out)
-	}
-}
-
 // gitCommit commits everything staged in dir with a fixed identity, so
 // tests don't depend on the machine's git config.
 func gitCommit(t *testing.T, dir, message string, extraArgs ...string) {
 	t.Helper()
 	args := append([]string{"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", message}, extraArgs...)
-	gitOK(t, dir, args...)
-}
-
-// gitOut runs git in dir and returns trimmed stdout, failing the test on error.
-func gitOut(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git %v (in %s): %v", args, dir, err)
-	}
-	return string(bytes.TrimSpace(out))
+	testrepo.Git(t, dir, args...)
 }
 
 func mustMkdirAll(t *testing.T, path string) {

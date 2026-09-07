@@ -78,6 +78,19 @@ it, and it drives git directly rather than through `internal/gitutil` under
 the same exemption every git fixture has: a bug in `gitutil` must not be
 able to hide itself by also breaking the fixture.
 
+A test that drives git a step further than `New` does — committing on top,
+pushing a second branch, reading back a ref — uses the same package's runner
+rather than wrapping `exec.Command("git", ...)` itself:
+
+```go
+testrepo.Git(t, repo.Clone, "checkout", "-q", "-b", "auth-api")   // for effect
+testrepo.GitOut(t, repo.Clone, "rev-parse", "origin/main")        // for output
+```
+
+Both fail the test with git's own output if the command doesn't succeed.
+`GitOut` returns stdout with surrounding whitespace trimmed, since git
+terminates nearly everything it prints with a newline no caller wants.
+
 The bash suite under `tests/` exercises the shipped drivers end to end
 against this binary, and builds the same repo shape from
 `tests/gitfixture.sh`; keep the two in step.

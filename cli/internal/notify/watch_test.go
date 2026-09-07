@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -42,9 +41,9 @@ func newInstance(t *testing.T) instance {
 func (i instance) commit(t *testing.T, name, content string) {
 	t.Helper()
 	write(t, filepath.Join(i.repo, name), content)
-	git(t, i.repo, "add", "-A")
-	git(t, i.repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "change")
-	git(t, i.repo, "push", "-q", "origin", "main")
+	testrepo.Git(t, i.repo, "add", "-A")
+	testrepo.Git(t, i.repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "change")
+	testrepo.Git(t, i.repo, "push", "-q", "origin", "main")
 }
 
 // spawned writes the status.md row spawn records for one unit of work.
@@ -59,7 +58,7 @@ func (i instance) spawned(t *testing.T, slug, note string) {
 // current commit, and writes the map that pass would have produced.
 func (i instance) mapped(t *testing.T) {
 	t.Helper()
-	sha := strings.TrimSpace(gitOut(t, i.repo, "rev-parse", "origin/main"))
+	sha := testrepo.GitOut(t, i.repo, "rev-parse", "origin/main")
 	if err := manifest.SetRepoField(filepath.Join(i.root, "repos.yaml"), "app", manifest.FieldContextModeledSHA, sha); err != nil {
 		t.Fatal(err)
 	}
@@ -269,26 +268,6 @@ func TestWatchWritesItsStateWhereItIsTold(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(inst.root, notify.DefaultStateFile)); err == nil {
 		t.Error("an explicit state path was overridden by the default one")
 	}
-}
-
-func git(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v (in %s): %v\n%s", args, dir, err, out)
-	}
-}
-
-func gitOut(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git %v (in %s): %v", args, dir, err)
-	}
-	return string(out)
 }
 
 func write(t *testing.T, path, content string) {

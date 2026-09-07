@@ -3,7 +3,6 @@ package cmd
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -28,7 +27,7 @@ func setupInstance(t *testing.T, root, repoName, slug, note string) (repoPath, w
 	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	run(t, repoPath, "git", "worktree", "add", wt, "-b", slug, "main")
+	testrepo.Git(t, repoPath, "worktree", "add", wt, "-b", slug, "main")
 
 	reposYAML := "repos:\n  - name: " + repoName + "\n    path: ./" + repoName + "\n    base_branch: main\n"
 	if err := os.WriteFile(filepath.Join(root, "repos.yaml"), []byte(reposYAML), 0o644); err != nil {
@@ -46,15 +45,6 @@ func setupInstance(t *testing.T, root, repoName, slug, note string) (repoPath, w
 	}
 
 	return repoPath, wt
-}
-
-func run(t *testing.T, dir string, name string, args ...string) {
-	t.Helper()
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
-	}
 }
 
 func TestRunPruneDryRunListsCandidateWithoutRemoving(t *testing.T) {
@@ -93,11 +83,7 @@ func TestRunPruneForceRemovesWorktreeBranchAndStatusRow(t *testing.T) {
 		t.Errorf("expected worktree to be removed, stat err = %v", err)
 	}
 
-	branches, err := exec.Command("git", "-C", repoPath, "branch", "--list", "widget-fix").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(branches)) != "" {
+	if branches := testrepo.GitOut(t, repoPath, "branch", "--list", "widget-fix"); branches != "" {
 		t.Errorf("expected branch widget-fix to be gone, got %q", branches)
 	}
 
@@ -147,11 +133,7 @@ func TestRunPruneRefusesToRemoveAStackedBase(t *testing.T) {
 	if _, err := os.Stat(wt); err != nil {
 		t.Errorf("expected stacked-on worktree to survive, stat err = %v", err)
 	}
-	branches, err := exec.Command("git", "-C", repoPath, "branch", "--list", "widget-fix").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(branches)) == "" {
+	if branches := testrepo.GitOut(t, repoPath, "branch", "--list", "widget-fix"); branches == "" {
 		t.Errorf("expected branch widget-fix to survive since shim-fix stacks on it")
 	}
 
