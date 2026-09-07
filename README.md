@@ -85,23 +85,24 @@ Install the tool once, globally (needs a Go toolchain, and `$GOBIN` —
 `~/go/bin` by default — on your `PATH`):
 
 ```
-(cd cli && go install ./cmd/archimedes)
+go install github.com/blockadence/archimedes/cmd/archimedes@latest
 ```
 
 Then scaffold an instance and point it at your org:
 
 ```
-./scripts/init.sh <instance-name> <parent-dir-for-your-repos>
+archimedes init <instance-name> <parent-dir-for-your-repos>
 cd <parent-dir-for-your-repos>/<instance-name>
 archimedes bootstrap <github-org>      # discovers + clones repos via `gh`
 archimedes context-map --dry-run       # see the planned + stale/fresh order
 ```
 
-`init.sh` is the one step that still comes from a checkout of this repo: it
-copies the template's starting data into the new instance and gives it its
-own git history. Everything after that is the installed binary acting on
-that data, so an instance is never refreshed from here, and a second
-instance on the same machine uses the same install.
+Nothing here needs a clone of this repo. `init` carries the template's
+starting data inside the binary and gives the new instance its own git
+history, so instance-specific content never shares a history with
+Archimedes; everything after that is the same install acting on that data.
+An instance is never refreshed from here, and a second instance on the same
+machine uses the same install.
 
 Running it requires `git` and `gh` (authenticated). `sync-templates`
 additionally requires
@@ -111,7 +112,8 @@ additionally requires
 
 Earlier instances carry a vendored `scripts/` directory and were refreshed
 from a checkout of this repo with `update-from-archimedes.sh`. Both are
-gone. Install the binary as above, then delete the copy:
+gone, as is the `scripts/init.sh` that scaffolded an instance — `archimedes
+init` above is that step now. Install the binary as above, then delete the copy:
 
 ```
 cd <your-instance> && git rm -r scripts && git commit -m "Retire vendored scripts"
@@ -126,8 +128,12 @@ instance is data only, and upgrading means upgrading the binary.
 
 Run from inside an instance, or from anywhere with `--root <instance>`.
 `archimedes <subcommand> --help` for the full flag list; the design notes
-behind each one are in [`cli/README.md`](./cli/README.md).
+behind each one are in [`docs/cli.md`](./docs/cli.md).
 
+- `init <instance-name> <dest-parent-dir>` — scaffold a new instance from
+  the template carried in the binary, on its own fresh git history. The one
+  command that runs before an instance exists, and the only one that needs
+  no instance to point at.
 - `bootstrap <github-org>` — discover org repos via `gh repo list`, clone
   what's missing, scaffold `repos.yaml` and per-repo dossier stubs.
 - `render-map` — regenerate `WORKSPACE-MAP.md`'s repo list from
@@ -195,7 +201,7 @@ spawned worktree with its PR state and any rebase it's owed, alongside each
 repo's context-map staleness — refreshing in place instead of printing once.
 It is purely additive, a second way to look at what `status` and
 `context-map --dry-run` already report, reading the same code they do. See
-[`cli/README.md`](./cli/README.md#dashboard-optional).
+[`docs/cli.md`](./docs/cli.md#dashboard-optional).
 
 `notify` reports the two things you would otherwise have to remember to go
 and check — a repo whose context map has gone stale, a worktree whose PR has
@@ -205,7 +211,7 @@ state file beside `repos.yaml` and exits, so a cron or launchd entry is the
 whole mechanism, and a pass with nothing new prints nothing.
 `ARCHIMEDES_NOTIFY_CMD` hands each notification to whatever notifier you
 already run; with it unset they are printed, which is all cron needs to
-turn them into mail. See [`cli/README.md`](./cli/README.md).
+turn them into mail. See [`docs/cli.md`](./docs/cli.md).
 
 `spawn` can additionally open the new worktree as a workspace in a
 terminal workspace manager ([herdr](https://herdr.dev) today), so a unit of
@@ -214,7 +220,7 @@ you opt in with `ARCHIMEDES_WORKSPACE=herdr` or `--workspace herdr`
 (`--focus` to switch to the new workspace rather than open it in the
 background), and a workspace manager that isn't installed or isn't running
 degrades to a note — the worktree is created either way. See
-[`cli/README.md`](./cli/README.md#terminal-workspace-integration-opt-in).
+[`docs/cli.md`](./docs/cli.md#terminal-workspace-integration-opt-in).
 
 `serve-mcp` serves one instance over the Model Context Protocol, so an
 MCP-capable agent tool can list tracked repos, read worktree and PR status,
@@ -222,7 +228,7 @@ check context-map staleness, and spawn a unit of work as structured tool
 calls rather than shelling out to the CLI and parsing its tables. It is a
 second way in, not a replacement: every tool delegates to the same code the
 equivalent subcommand does. See
-[`cli/README.md`](./cli/README.md#mcp-server).
+[`docs/cli.md`](./docs/cli.md#mcp-server).
 
 ## Language-tooling convention packs
 

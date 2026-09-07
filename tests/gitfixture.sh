@@ -2,7 +2,7 @@
 # The one throwaway-repo fixture the bash tests share: a bare "origin" plus
 # a clone of it carrying one commit, already pushed to main — the shape that
 # makes a test's fetch/rev-parse/push work against real git with no network.
-# The Go tests build the same shape with cli/internal/testrepo.
+# The Go tests build the same shape with internal/testrepo.
 #
 # Sourcing this file defines one function and nothing else: it sets no shell
 # options and declares no test-reporting helpers, so a test keeps its own

@@ -20,5 +20,5 @@ Thumbs.db
 /tmp/
 
 # Go CLI build output
-/cli/archimedes
-/cli/archimedes.exe
+/archimedes
+/archimedes.exe
