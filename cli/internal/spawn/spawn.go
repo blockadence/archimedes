@@ -6,6 +6,7 @@
 package spawn
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -92,13 +93,6 @@ func ResolveStartPoint(baseBranch, baseOverride string, stack StackRef) StartPoi
 // nesting inside it.
 func WorktreePath(repoPath, slug string) string {
 	return repoPath + "-worktrees/" + slug
-}
-
-// WorkspaceLabel names a unit of work's workspace in the workspace
-// manager's UI. One slug can be spawned into several repos, so the repo is
-// part of the name — the same "<repo>:<slug>" shape --stack-on parses.
-func WorkspaceLabel(repo, slug string) string {
-	return repo + ":" + slug
 }
 
 // NextStepHint is the "what to do now" line printed after a successful
@@ -202,13 +196,25 @@ func openWorkspace(opts Options, repoPath, wt string, out, progress io.Writer) {
 	}
 
 	req := workspace.Request{
-		Repo:  repoPath,
-		Path:  wt,
-		Label: WorkspaceLabel(opts.Repo, opts.Slug),
+		RepoPath: repoPath,
+		Path:     wt,
+		// One slug can be spawned into several repos, so the repo name is
+		// part of the label — the same "<repo>:<slug>" shape --stack-on
+		// parses.
+		Label: opts.Repo + ":" + opts.Slug,
 		Focus: opts.Focus,
 	}
+	// Not having the tool installed is the expected state on most machines
+	// and says nothing is wrong, so it gets a note; a tool that is
+	// installed and still refused the call is a real problem and gets a
+	// warning. Reporting both the same way trains the operator to ignore
+	// the one that matters.
 	if err := opts.Workspace.Open(req); err != nil {
-		fmt.Fprintf(progress, "warning: %s workspace not opened: %v\n", opts.Workspace.Name, err)
+		if errors.Is(err, workspace.ErrUnavailable) {
+			fmt.Fprintf(progress, "note: skipping the %s workspace: %v\n", opts.Workspace.Name, err)
+		} else {
+			fmt.Fprintf(progress, "warning: %s workspace not opened: %v\n", opts.Workspace.Name, err)
+		}
 		return
 	}
 

@@ -21,18 +21,20 @@ const HerdrName = "herdr"
 
 // ErrUnavailable reports that a configured integration's tool isn't usable
 // on this machine — the ordinary state of affairs anywhere the operator
-// hasn't installed it. Callers match it with errors.Is to distinguish "not
-// set up here" from "set up, but the call failed".
+// hasn't installed it. It exists so that condition is a named category
+// rather than an opaque exec failure, distinguishable with errors.Is from
+// "installed, but the call failed".
 var ErrUnavailable = errors.New("workspace integration unavailable")
 
 // Request is one "put a terminal here" ask: the worktree a workspace
 // should be rooted at, plus the labelling that lets a human pick it out
-// from the other units of work already open.
+// from the other units of work already open. Every field but Focus is
+// required.
 type Request struct {
-	// Repo is the main checkout Path is a linked worktree of. A workspace
-	// manager identifies a worktree relative to the repo that owns it, not
-	// by path alone.
-	Repo string
+	// RepoPath is the main checkout Path is a linked worktree of. A
+	// workspace manager identifies a worktree relative to the repo that
+	// owns it, not by path alone.
+	RepoPath string
 	// Path is the worktree directory the workspace is rooted at.
 	Path string
 	// Label names the workspace in the integration's own UI.
@@ -73,19 +75,17 @@ func Select(name string) (*Integration, error) {
 // herdrArgs builds the `herdr worktree open` invocation for req. It's
 // `open` rather than `create` because git has already made the checkout by
 // this point — herdr adopts the worktree that exists instead of creating a
-// second one of its own. --cwd names the repo that owns the worktree:
-// herdr resolves --path against that repo's worktree list, so without it
-// the lookup runs against whatever directory the CLI happens to be in and
-// comes back "worktree path not found".
+// second one of its own.
+//
+// --cwd names the repo that owns the worktree, and is not optional here.
+// The herdr CLI hands the request to a server over a socket rather than
+// resolving it locally, so the caller's own working directory is not in
+// play: omitting --cwd resolves --path against the server's session
+// context and comes back "worktree path not found" even when the CLI is
+// run from inside the repo. It has to be the main checkout — the linked
+// worktree's own path is rejected.
 func herdrArgs(req Request) []string {
-	args := []string{"worktree", "open"}
-	if req.Repo != "" {
-		args = append(args, "--cwd", req.Repo)
-	}
-	args = append(args, "--path", req.Path)
-	if req.Label != "" {
-		args = append(args, "--label", req.Label)
-	}
+	args := []string{"worktree", "open", "--cwd", req.RepoPath, "--path", req.Path, "--label", req.Label}
 	if req.Focus {
 		return append(args, "--focus")
 	}

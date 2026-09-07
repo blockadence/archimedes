@@ -89,9 +89,18 @@ additionally requires [`multi-gitter`](https://github.com/lindell/multi-gitter).
 
 A `archimedes` binary is being built at [`cli/`](./cli) to replace the
 vendored bash scripts below with one globally-installed tool (see
-[`cli/README.md`](./cli/README.md)). It currently has one subcommand,
-`render-map`, ported from `render-map.sh`; the rest follow the same
-pattern one at a time.
+[`cli/README.md`](./cli/README.md)). It has `render-map`, `spawn`,
+`status`, and `prune` so far, ported one at a time from the scripts of the
+same name; the rest follow the same pattern.
+
+`spawn` can additionally open the new worktree as a workspace in a
+terminal workspace manager ([herdr](https://herdr.dev) today), so a unit of
+work arrives in a pane already rooted at its own checkout. It is off unless
+you opt in with `ARCHIMEDES_WORKSPACE=herdr` or `--workspace herdr`
+(`--focus` to switch to the new workspace rather than open it in the
+background), and a workspace manager that isn't installed or isn't running
+degrades to a note — the worktree is created either way. See
+[`cli/README.md`](./cli/README.md#terminal-workspace-integration-opt-in).
 
 ## Scripts (in `template/scripts/`, vendored into each instance)
 

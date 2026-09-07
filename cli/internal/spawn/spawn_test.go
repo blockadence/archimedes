@@ -3,8 +3,10 @@ package spawn_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/spawn"
@@ -404,7 +406,7 @@ func TestRunOpensAWorkspaceRootedAtTheNewWorktree(t *testing.T) {
 	})
 
 	wt := spawn.WorktreePath(inst.targetRepo, slug)
-	want := workspace.Request{Repo: inst.targetRepo, Path: wt, Label: "target:" + slug}
+	want := workspace.Request{RepoPath: inst.targetRepo, Path: wt, Label: "target:" + slug}
 	if got != want {
 		t.Errorf("workspace request\n got: %+v\nwant: %+v", got, want)
 	}
@@ -457,5 +459,37 @@ func TestRunSurvivesAWorkspaceThatCannotOpen(t *testing.T) {
 	}
 	if bytes.Contains(out.Bytes(), []byte("Opened")) {
 		t.Errorf("a failed open was reported as a success: %s", out.String())
+	}
+}
+
+// Not having the tool installed is the expected state on most machines and
+// says nothing is wrong; a tool that *is* installed and still refused the
+// call is a real problem worth a louder word. Reporting both identically
+// trains the operator to ignore the one that matters.
+func TestRunDistinguishesAnUninstalledToolFromAFailingOne(t *testing.T) {
+	inst := newInstance(t)
+
+	report := func(t *testing.T, slug string, openErr error) string {
+		t.Helper()
+		inst.workSlug(t, slug)
+		var got workspace.Request
+		var out, progress bytes.Buffer
+		if err := spawn.Run(spawn.Options{
+			Root: inst.root, Slug: slug, Repo: "target",
+			Workspace: recordingIntegration(openErr, &got),
+		}, &out, &progress); err != nil {
+			t.Fatalf("spawn.Run: %v", err)
+		}
+		return progress.String()
+	}
+
+	absent := report(t, "absent-tool", fmt.Errorf("%w: fake is not on PATH", workspace.ErrUnavailable))
+	if !strings.Contains(absent, "skipping") || strings.Contains(absent, "warning:") {
+		t.Errorf("an uninstalled tool should be a note, not a warning: %s", absent)
+	}
+
+	broken := report(t, "broken-tool", errors.New("server_not_running"))
+	if !strings.Contains(broken, "warning:") {
+		t.Errorf("an installed tool that refused the call should warn: %s", broken)
 	}
 }

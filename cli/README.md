@@ -72,10 +72,15 @@ one slug across several repos in a row.
 
 The integration is best-effort by construction. By the time it runs, the
 branch, the worktree, its materialized context, and its status row all
-exist, so a workspace manager that isn't installed, or whose server isn't
-running, degrades to a warning on stderr and a successful spawn. The one
-thing that is an error is naming an integration that doesn't exist: a typo
-fails loudly rather than silently withholding the pane you asked for.
+exist, so nothing that happens here can fail a spawn — the operator would
+only be left cleaning up state that was already complete. A tool that isn't
+installed is reported as a `note:` on stderr, since that's the expected
+state on most machines and says nothing is wrong; a tool that *is*
+installed and still refused the call (its server isn't running, say) gets a
+`warning:` carrying whatever it said for itself. The one thing that is a
+hard error is naming an integration that doesn't exist — a typo fails
+loudly, before any git work, rather than silently withholding the pane you
+asked for.
 
 Adding another workspace manager means adding a case to
 `workspace.Select` and an `Opener` beside `openHerdr`. Everything above

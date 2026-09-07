@@ -80,9 +80,9 @@ func TestHerdrOpensTheExistingWorktreeInTheBackground(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = integration.Open(workspace.Request{
-		Repo:  "/instance/target-repo",
-		Path:  "/instance/target-repo-worktrees/widget-fix",
-		Label: "target:widget-fix",
+		RepoPath: "/instance/target-repo",
+		Path:     "/instance/target-repo-worktrees/widget-fix",
+		Label:    "target:widget-fix",
 	})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -103,7 +103,7 @@ func TestHerdrFocusesWhenAsked(t *testing.T) {
 	argvLog := stubHerdr(t, 0, "")
 
 	integration, _ := workspace.Select("herdr")
-	if err := integration.Open(workspace.Request{Repo: "/repo", Path: "/wt", Label: "l", Focus: true}); err != nil {
+	if err := integration.Open(workspace.Request{RepoPath: "/repo", Path: "/wt", Label: "l", Focus: true}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 
@@ -120,7 +120,7 @@ func TestHerdrMissingBinaryIsUnavailableNotFatal(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 
 	integration, _ := workspace.Select("herdr")
-	err := integration.Open(workspace.Request{Path: "/wt"})
+	err := integration.Open(workspace.Request{RepoPath: "/repo", Path: "/wt", Label: "l"})
 	if !errors.Is(err, workspace.ErrUnavailable) {
 		t.Errorf("got %v, want an error matching ErrUnavailable", err)
 	}
@@ -132,7 +132,7 @@ func TestHerdrFailureReportsWhatHerdrSaid(t *testing.T) {
 	stubHerdr(t, 1, `{"error":"server_not_running"}`)
 
 	integration, _ := workspace.Select("herdr")
-	err := integration.Open(workspace.Request{Path: "/wt"})
+	err := integration.Open(workspace.Request{RepoPath: "/repo", Path: "/wt", Label: "l"})
 	if err == nil {
 		t.Fatal("expected an error when herdr exits non-zero, got nil")
 	}
