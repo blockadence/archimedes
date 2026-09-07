@@ -70,6 +70,18 @@ assert_contains "$(cat "$out_path" 2>/dev/null)" "stub-fixed-ok saw repo $REPO" 
 assert_file_missing "$REPO/OUT.md" "fixed-location driver's declared fixed_path is gone from the repo after harvesting (no trace left)"
 assert_eq "$(git -C "$REPO" status --porcelain)" "" "target repo's git status is clean after harvesting a fixed-location driver's output"
 
+out_path="$WORK/fixed-nested-harvested.md"
+if "$RUN_DRIVER" stub-fixed-nested "$REPO" "$out_path" >/dev/null 2>&1; then
+  pass "fixed-location driver with a nested fixed_path exits zero"
+else
+  fail "fixed-location driver with a nested fixed_path exits zero"
+fi
+assert_file_exists "$out_path" "nested fixed_path is harvested to the exact requested path"
+assert_file_missing "$REPO/.stub/memory/OUT.md" "nested fixed_path is gone from the repo after harvesting"
+assert_dir_missing "$REPO/.stub" \
+  "directories the harvest emptied are pruned, so a nested fixed_path really leaves no trace"
+assert_eq "$(git -C "$REPO" status --porcelain)" "" "target repo's git status is clean after harvesting a nested fixed_path"
+
 out_path="$WORK/fixed-no-path.md"
 if err="$("$RUN_DRIVER" stub-fixed-no-path "$REPO" "$out_path" 2>&1 >/dev/null)"; then
   fail "fixed-location driver with no fixed_path in its manifest exits non-zero"

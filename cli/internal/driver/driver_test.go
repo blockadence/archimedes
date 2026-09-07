@@ -45,6 +45,8 @@ func stubs(t *testing.T) string {
 	writeDriver(t, dir, "stub-not-executable", "name: stub-not-executable\noutput_mode: path-parameterized\ncommand: run.sh\n", "")
 	writeDriver(t, dir, "stub-fixed-ok", "name: stub-fixed-ok\noutput_mode: fixed-location\nfixed_path: OUT.md\ncommand: run.sh\n",
 		"#!/usr/bin/env bash\nset -euo pipefail\n[ $# -eq 1 ] || { echo 'usage: run.sh <repo-path>' >&2; exit 1; }\necho \"stub-fixed-ok saw repo $1\" > \"$1/OUT.md\"\n")
+	writeDriver(t, dir, "stub-fixed-nested", "name: stub-fixed-nested\noutput_mode: fixed-location\nfixed_path: .stub/memory/OUT.md\ncommand: run.sh\n",
+		"#!/usr/bin/env bash\nset -euo pipefail\n[ $# -eq 1 ] || { echo 'usage: run.sh <repo-path>' >&2; exit 1; }\nmkdir -p \"$1/.stub/memory\"\necho \"stub-fixed-nested saw repo $1\" > \"$1/.stub/memory/OUT.md\"\n")
 	writeDriver(t, dir, "stub-fixed-liar", "name: stub-fixed-liar\noutput_mode: fixed-location\nfixed_path: OUT.md\ncommand: run.sh\n",
 		"#!/usr/bin/env bash\nexit 0\n")
 	writeDriver(t, dir, "stub-fixed-no-path", "name: stub-fixed-no-path\noutput_mode: fixed-location\ncommand: run.sh\n",
@@ -199,6 +201,58 @@ func TestFixedLocationHarvestsToRequestedPathLeavingNoTrace(t *testing.T) {
 		t.Errorf("harvested output = %q, want it to contain %q", got, want)
 	}
 	assertMissing(t, filepath.Join(repo, "OUT.md"), "harvest moves rather than copies, so the target repo")
+}
+
+// A fixed_path can be nested, because a driver wrapping a tool that
+// scaffolds itself into the repo has no say in where that tool writes (the
+// spec-kit driver's is .specify/memory/constitution.md). Moving the file
+// out then leaves its directories behind, holding nothing — which no
+// porcelain check would catch, since git doesn't track directories, but
+// which is a trace of the run all the same.
+func TestFixedLocationPrunesDirectoriesTheHarvestEmpties(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	out := filepath.Join(t.TempDir(), "nested.md")
+
+	if err := driver.Run(drivers, "stub-fixed-nested", repo, out, io.Discard); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("nested fixed_path was not harvested to the requested path: %v", err)
+	}
+	if want := "stub-fixed-nested saw repo " + repo; !strings.Contains(string(got), want) {
+		t.Errorf("harvested output = %q, want it to contain %q", got, want)
+	}
+	assertMissing(t, filepath.Join(repo, ".stub", "memory", "OUT.md"), "the harvested file")
+	assertMissing(t, filepath.Join(repo, ".stub"), "the directory tree the harvest emptied")
+
+	// Pruning walks up from the fixed_path, so it has to stop at the first
+	// directory still holding something rather than eating the repo.
+	if _, err := os.Stat(filepath.Join(repo, "README.md")); err != nil {
+		t.Errorf("pruning removed content that was not the harvest's to remove: %v", err)
+	}
+}
+
+// A fixed_path sitting in a directory that was already there is the case
+// pruning must not touch: the directory is not the run's to remove.
+func TestFixedLocationLeavesDirectoriesItDidNotEmpty(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	kept := filepath.Join(repo, ".stub", "memory", "keep-me.txt")
+	if err := os.MkdirAll(filepath.Dir(kept), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(kept, []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "nested-shared.md")
+
+	if err := driver.Run(drivers, "stub-fixed-nested", repo, out, io.Discard); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Errorf("pruning removed a directory that still held something: %v", err)
+	}
 }
 
 func TestFixedLocationWithoutFixedPathFailsBeforeInvokingTheDriver(t *testing.T) {

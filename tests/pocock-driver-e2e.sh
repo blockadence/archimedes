@@ -30,23 +30,7 @@ fi
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 REPO="$WORK/throwaway-repo"
-mkdir -p "$REPO/src"
-(
-  cd "$REPO"
-  git init -q
-  cat > src/index.js <<'EOF'
-// A tiny widget-catalog service: Widgets have a name and a price.
-class Widget {
-  constructor(name, priceCents) {
-    this.name = name;
-    this.priceCents = priceCents;
-  }
-}
-module.exports = { Widget };
-EOF
-  git add -A
-  git -c user.email=test@example.com -c user.name=test commit -qm init
-)
+make_widget_repo "$REPO"
 
 echo "pocock driver end-to-end:"
 

@@ -161,7 +161,34 @@ func harvestFrom(fixedPath string) invocation {
 		if !isFile(writtenAt) {
 			return fmt.Errorf("exited 0 but did not write %s", writtenAt)
 		}
-		return move(writtenAt, outputPath)
+		if err := move(writtenAt, outputPath); err != nil {
+			return err
+		}
+		pruneEmptied(repoPath, fixedPath)
+		return nil
+	}
+}
+
+// pruneEmptied removes the directories that moving fixedPath out of
+// repoPath left holding nothing, walking up toward — but never reaching —
+// repoPath itself.
+//
+// A fixed_path can be nested, because a driver wrapping a tool that
+// scaffolds itself into the repo has no say in where that tool writes (the
+// spec-kit driver's is .specify/memory/constitution.md). `git status`
+// wouldn't have caught what's left, since git doesn't track directories,
+// but it's a trace of the run all the same.
+//
+// os.Remove refuses a directory that still holds anything, which is exactly
+// right for one that predates the run or holds something else; the first
+// refusal ends the walk. Failures are otherwise ignored: the artifact is
+// already safely harvested by this point, and an undeletable directory
+// isn't worth failing a run over.
+func pruneEmptied(repoPath, fixedPath string) {
+	for dir := filepath.Dir(fixedPath); dir != "." && dir != string(filepath.Separator); dir = filepath.Dir(dir) {
+		if err := os.Remove(filepath.Join(repoPath, dir)); err != nil {
+			return
+		}
 	}
 }
 

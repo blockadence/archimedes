@@ -1,0 +1,8 @@
+name: spec-kit
+description: >-
+  Wraps GitHub's Spec Kit (github.com/github/spec-kit): scaffolds spec-kit
+  into the target repo, has a headless `claude -p` session fill in its
+  constitution from the codebase, then strips the scaffolding back out.
+output_mode: fixed-location
+fixed_path: .specify/memory/constitution.md
+command: run.sh
