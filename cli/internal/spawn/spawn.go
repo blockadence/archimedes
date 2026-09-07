@@ -6,37 +6,21 @@
 package spawn
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/blockadence/archimedes/cli/internal/gitutil"
 	"github.com/blockadence/archimedes/cli/internal/manifest"
+	"github.com/blockadence/archimedes/cli/internal/stackref"
+	"github.com/blockadence/archimedes/cli/internal/workspace"
 )
 
 // DefaultAgentCmd is the next-step hint's fallback when no agent CLI is
 // configured.
 const DefaultAgentCmd = "claude"
-
-// StackRef identifies the branch a new one is stacked on top of, parsed
-// from "<repo>:<slug>".
-type StackRef struct {
-	Repo string
-	Slug string
-}
-
-// ParseStackRef splits a "<repo>:<slug>" value the way spawn.sh's
-// `IFS=':' read -r STACK_REPO STACK_SLUG` does: a value with no ":" yields
-// a non-empty Repo and an empty Slug rather than an error.
-func ParseStackRef(value string) StackRef {
-	if value == "" {
-		return StackRef{}
-	}
-	repo, slug, _ := strings.Cut(value, ":")
-	return StackRef{Repo: repo, Slug: slug}
-}
 
 // Options is one spawn request: which unit of work, into which repo, and
 // what to base it on.
@@ -50,10 +34,18 @@ type Options struct {
 	// Base, when set, overrides the repo's own base branch.
 	Base string
 	// Stack, when its Repo is set, stacks this branch on another slug's.
-	Stack StackRef
+	Stack stackref.Ref
 	// AgentCmd is the agent CLI the next-step hint should suggest. Empty
 	// falls back to DefaultAgentCmd.
 	AgentCmd string
+	// Workspace, when set, is the terminal workspace manager handed the
+	// finished worktree, so the unit of work lands in a pane already rooted
+	// there. Nil — the default — leaves spawn behaving exactly as it did
+	// before the integration existed.
+	Workspace *workspace.Integration
+	// Focus asks that manager to switch to the new workspace rather than
+	// opening it in the background. Ignored when Workspace is nil.
+	Focus bool
 }
 
 // StartPoint is the resolved git ref a new branch is created from, plus a
@@ -67,10 +59,10 @@ type StartPoint struct {
 // base override, which wins over the repo's own base branch (fetched fresh
 // as origin/<baseBranch>). stack.Repo (not stack.Slug) is the presence
 // check, matching the original script's `[ -n "$STACK_REPO" ]`.
-func ResolveStartPoint(baseBranch, baseOverride string, stack StackRef) StartPoint {
+func ResolveStartPoint(baseBranch, baseOverride string, stack stackref.Ref) StartPoint {
 	switch {
 	case stack.Repo != "":
-		return StartPoint{Ref: stack.Slug, Note: fmt.Sprintf("stacked on %s:%s", stack.Repo, stack.Slug)}
+		return StartPoint{Ref: stack.Slug, Note: stackref.Note(stack)}
 	case baseOverride != "":
 		return StartPoint{Ref: baseOverride, Note: fmt.Sprintf("based on %s", baseOverride)}
 	default:
@@ -169,8 +161,46 @@ func Run(opts Options, out, progress io.Writer) error {
 
 	fmt.Fprintf(out, "Worktree ready: %s (%s)\n", wt, start.Note)
 	fmt.Fprintln(out, NextStepHint(wt, opts.AgentCmd))
+	openWorkspace(opts, repoPath, wt, out, progress)
 
 	return nil
+}
+
+// openWorkspace hands the finished worktree to the configured terminal
+// workspace manager, if there is one. Any failure is reported on progress
+// and dropped: by this point the branch, the worktree, its context, and
+// the status row all exist, so a workspace manager that isn't installed —
+// or whose server isn't running — must not turn a completed spawn into a
+// failed one the operator then has to clean up by hand.
+func openWorkspace(opts Options, repoPath, wt string, out, progress io.Writer) {
+	if opts.Workspace == nil {
+		return
+	}
+
+	req := workspace.Request{
+		RepoPath: repoPath,
+		Path:     wt,
+		// One slug can be spawned into several repos, so the repo name is
+		// part of the label — the same "<repo>:<slug>" shape --stack-on
+		// parses.
+		Label: opts.Repo + ":" + opts.Slug,
+		Focus: opts.Focus,
+	}
+	// Not having the tool installed is the expected state on most machines
+	// and says nothing is wrong, so it gets a note; a tool that is
+	// installed and still refused the call is a real problem and gets a
+	// warning. Reporting both the same way trains the operator to ignore
+	// the one that matters.
+	if err := opts.Workspace.Open(req); err != nil {
+		if errors.Is(err, workspace.ErrUnavailable) {
+			fmt.Fprintf(progress, "note: skipping the %s workspace: %v\n", opts.Workspace.Name, err)
+		} else {
+			fmt.Fprintf(progress, "warning: %s workspace not opened: %v\n", opts.Workspace.Name, err)
+		}
+		return
+	}
+
+	fmt.Fprintf(out, "Opened %s workspace: %s\n", opts.Workspace.Name, req.Label)
 }
 
 func unknownRepoError(name string) error {

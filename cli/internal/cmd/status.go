@@ -22,14 +22,22 @@ func newStatusCmd() *cobra.Command {
 		Long: `Reads every work/<slug>/status.md this instance has recorded and looks up
 each row's live PR state via "gh pr list". Pass a slug to limit the report
 to one unit of work. Warns when more worktree streams are open than
-ARCHIMEDES_MAX_STREAMS (default 3) allows.`,
+ARCHIMEDES_MAX_STREAMS (default 3) allows.
+
+Also flags any stacked unit of work whose base branch has since merged, so
+a dependent branch is reported as needing a rebase rather than quietly
+going stale. The flag clears once the branch has been rebased.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			var slugFilter string
 			if len(args) == 1 {
 				slugFilter = args[0]
 			}
-			return runStatus(c.OutOrStdout(), root, slugFilter, jsonOutput, status.GHLookup)
+			return runStatus(c.OutOrStdout(), root, slugFilter, jsonOutput, status.Sources{
+				PR:     status.GHLookup,
+				Refs:   status.LocalRefs{},
+				Merged: status.GHMerged,
+			})
 		},
 	}
 
@@ -39,13 +47,20 @@ ARCHIMEDES_MAX_STREAMS (default 3) allows.`,
 	return cmd
 }
 
-func runStatus(w io.Writer, root, slugFilter string, jsonOutput bool, lookup status.PRLookup) error {
+// runStatus builds and prints the report. src carries the report's PR,
+// ref, and merged-state sources; its Repos is filled in here, since only
+// this layer knows the instance root the manifest resolves against.
+func runStatus(w io.Writer, root, slugFilter string, jsonOutput bool, src status.Sources) error {
 	m, err := loadManifest(root)
 	if err != nil {
 		return err
 	}
-	repoPath := func(name string) (string, error) {
-		return m.RepoPath(root, name)
+	src.Repos = func(name string) (status.RepoRef, error) {
+		r, err := m.Resolve(root, name)
+		if err != nil {
+			return status.RepoRef{}, err
+		}
+		return status.RepoRef{Path: r.Path, BaseBranch: r.BaseBranch}, nil
 	}
 
 	entries, err := status.Discover(filepath.Join(root, "work"), slugFilter)
@@ -53,7 +68,7 @@ func runStatus(w io.Writer, root, slugFilter string, jsonOutput bool, lookup sta
 		return fmt.Errorf("discovering status files: %w", err)
 	}
 
-	report := status.BuildReport(entries, repoPath, lookup, status.ParseGuardrailMax(os.Getenv("ARCHIMEDES_MAX_STREAMS")))
+	report := status.BuildReport(entries, src, status.ParseGuardrailMax(os.Getenv("ARCHIMEDES_MAX_STREAMS")))
 
 	if jsonOutput {
 		enc := json.NewEncoder(w)

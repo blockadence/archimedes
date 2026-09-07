@@ -25,10 +25,14 @@ tracking/spawning/pruning the worktrees used to execute it.`,
 		SilenceUsage: true,
 	}
 
+	root.AddCommand(newBootstrapCmd())
 	root.AddCommand(newRenderMapCmd())
+	root.AddCommand(newContextMapCmd())
 	root.AddCommand(newSpawnCmd())
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newPruneCmd())
+	root.AddCommand(newSyncTemplatesCmd())
+	root.AddCommand(newSyncHouseRulesCmd())
 
 	return root
 }

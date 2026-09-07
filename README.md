@@ -89,9 +89,19 @@ additionally requires [`multi-gitter`](https://github.com/lindell/multi-gitter).
 
 A `archimedes` binary is being built at [`cli/`](./cli) to replace the
 vendored bash scripts below with one globally-installed tool (see
-[`cli/README.md`](./cli/README.md)). It currently has one subcommand,
-`render-map`, ported from `render-map.sh`; the rest follow the same
-pattern one at a time.
+[`cli/README.md`](./cli/README.md)). `bootstrap`, `render-map`,
+`context-map`, `spawn`, `status`, `prune`, `sync-templates` and
+`sync-house-rules` are ported; the rest follow the same pattern one at a
+time.
+
+`spawn` can additionally open the new worktree as a workspace in a
+terminal workspace manager ([herdr](https://herdr.dev) today), so a unit of
+work arrives in a pane already rooted at its own checkout. It is off unless
+you opt in with `ARCHIMEDES_WORKSPACE=herdr` or `--workspace herdr`
+(`--focus` to switch to the new workspace rather than open it in the
+background), and a workspace manager that isn't installed or isn't running
+degrades to a note — the worktree is created either way. See
+[`cli/README.md`](./cli/README.md#terminal-workspace-integration-opt-in).
 
 ## Scripts (in `template/scripts/`, vendored into each instance)
 
@@ -131,7 +141,9 @@ pattern one at a time.
   -A` or get committed there — no `.gitignore` edit needed in the target
   repo, and removing the worktree removes the copy with it.
 - `status.sh [<slug>]` — live PR/branch status across every spawned
-  worktree, with a warning past a configurable concurrent-stream cap.
+  worktree, with a warning past a configurable concurrent-stream cap. The
+  Go CLI's `status` additionally flags stacked branches whose base merged
+  (see `cli/README.md`); the script still prints that as a TODO.
 - `prune.sh [<slug>] [--force]` — list (or, with `--force`, remove)
   worktrees/branches whose PR has merged or closed. Refuses to remove a
   branch still acting as another worktree's stack base.
@@ -170,8 +182,9 @@ for another language/build tool.
 ## Status
 
 Personal tool. Unfinished edges are called out as TODOs rather than papered
-over — notably, stacked-branch rebase detection in `status.sh` isn't
-implemented yet. Use at your own judgment.
+over — notably, stacked-branch rebase detection is implemented in the Go
+CLI's `status` subcommand but not in the vendored `status.sh`, which still
+prints it as a TODO. Use at your own judgment.
 
 ## License
 

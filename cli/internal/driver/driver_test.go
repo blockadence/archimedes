@@ -1,0 +1,243 @@
+package driver_test
+
+import (
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/blockadence/archimedes/cli/internal/driver"
+)
+
+// writeDriver installs a stub driver named name under driversDir: its
+// manifest, plus an executable run.sh with the given body (empty body means
+// no command file at all).
+func writeDriver(t *testing.T, driversDir, name, manifest, body string) {
+	t.Helper()
+	dir := filepath.Join(driversDir, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "driver.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if body == "" {
+		return
+	}
+	if err := os.WriteFile(filepath.Join(dir, "run.sh"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// stubs installs the same cast of well-behaved and misbehaving drivers the
+// shell contract test (tests/run-driver-contract.sh) exercises.
+func stubs(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+
+	writeDriver(t, dir, "stub-ok", "name: stub-ok\noutput_mode: path-parameterized\ncommand: run.sh\n",
+		"#!/usr/bin/env bash\nset -euo pipefail\n[ $# -eq 2 ] || { echo 'usage: run.sh <repo-path> <output-path>' >&2; exit 1; }\necho \"stub-ok saw repo $1\" > \"$2\"\n")
+	writeDriver(t, dir, "stub-bad-mode", "name: stub-bad-mode\noutput_mode: made-up-mode\ncommand: run.sh\n",
+		"#!/usr/bin/env bash\nexit 0\n")
+	writeDriver(t, dir, "stub-liar", "name: stub-liar\noutput_mode: path-parameterized\ncommand: run.sh\n",
+		"#!/usr/bin/env bash\nexit 0\n")
+	writeDriver(t, dir, "stub-not-executable", "name: stub-not-executable\noutput_mode: path-parameterized\ncommand: run.sh\n", "")
+	writeDriver(t, dir, "stub-fixed-ok", "name: stub-fixed-ok\noutput_mode: fixed-location\nfixed_path: OUT.md\ncommand: run.sh\n",
+		"#!/usr/bin/env bash\nset -euo pipefail\n[ $# -eq 1 ] || { echo 'usage: run.sh <repo-path>' >&2; exit 1; }\necho \"stub-fixed-ok saw repo $1\" > \"$1/OUT.md\"\n")
+	writeDriver(t, dir, "stub-fixed-liar", "name: stub-fixed-liar\noutput_mode: fixed-location\nfixed_path: OUT.md\ncommand: run.sh\n",
+		"#!/usr/bin/env bash\nexit 0\n")
+	writeDriver(t, dir, "stub-fixed-no-path", "name: stub-fixed-no-path\noutput_mode: fixed-location\ncommand: run.sh\n",
+		"#!/usr/bin/env bash\necho 'should not have been invoked' >&2\ntouch \"$1/INVOKED\"\nexit 1\n")
+	writeDriver(t, dir, "stub-fails", "name: stub-fails\noutput_mode: path-parameterized\ncommand: run.sh\n",
+		"#!/usr/bin/env bash\necho 'driver blew up' >&2\nexit 3\n")
+
+	return dir
+}
+
+func repoDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func assertMissing(t *testing.T, path, what string) {
+	t.Helper()
+	if _, err := os.Stat(path); err == nil {
+		t.Errorf("%s: %s exists but should not", what, path)
+	}
+}
+
+func TestUnknownDriverFailsAndWritesNothing(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	out := filepath.Join(t.TempDir(), "unknown.md")
+
+	err := driver.Run(drivers, "nonexistent-driver", repo, out, io.Discard)
+	if err == nil {
+		t.Fatal("expected an error for an unknown driver, got nil")
+	}
+	if !strings.Contains(err.Error(), "nonexistent-driver") {
+		t.Errorf("error %q does not name the unknown driver", err)
+	}
+	assertMissing(t, out, "unknown driver")
+}
+
+func TestUnsupportedOutputModeFailsAndWritesNothing(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	out := filepath.Join(t.TempDir(), "bad-mode.md")
+
+	err := driver.Run(drivers, "stub-bad-mode", repo, out, io.Discard)
+	if err == nil {
+		t.Fatal("expected an error for an unsupported output_mode, got nil")
+	}
+	if !strings.Contains(err.Error(), "made-up-mode") {
+		t.Errorf("error %q does not name the declared mode", err)
+	}
+	assertMissing(t, out, "unsupported output_mode")
+}
+
+func TestNonExecutableCommandFails(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	out := filepath.Join(t.TempDir(), "not-executable.md")
+
+	err := driver.Run(drivers, "stub-not-executable", repo, out, io.Discard)
+	if err == nil {
+		t.Fatal("expected an error for a missing/non-executable command, got nil")
+	}
+	if !strings.Contains(err.Error(), "run.sh") {
+		t.Errorf("error %q does not name the command", err)
+	}
+}
+
+func TestPathParameterizedWritesToExactPath(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	out := filepath.Join(t.TempDir(), "nested", "dir", "ok.md")
+
+	if err := driver.Run(drivers, "stub-ok", repo, out, io.Discard); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("driver did not write the output path (parent dirs created?): %v", err)
+	}
+	if want := "stub-ok saw repo " + repo; !strings.Contains(string(got), want) {
+		t.Errorf("output = %q, want it to contain %q", got, want)
+	}
+}
+
+func TestPathParameterizedDriverIsGivenAnAbsoluteRepoPath(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	out := filepath.Join(t.TempDir(), "abs.md")
+
+	rel, err := filepath.Rel(mustGetwd(t), repo)
+	if err != nil {
+		t.Skipf("no relative path from cwd to %s: %v", repo, err)
+	}
+
+	if err := driver.Run(drivers, "stub-ok", rel, out, io.Discard); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "stub-ok saw repo " + repo; !strings.Contains(string(got), want) {
+		t.Errorf("output = %q, want the driver to have been handed the absolute path %q", got, repo)
+	}
+}
+
+func mustGetwd(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return wd
+}
+
+func TestZeroExitWithoutOutputIsAnError(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	out := filepath.Join(t.TempDir(), "liar.md")
+
+	err := driver.Run(drivers, "stub-liar", repo, out, io.Discard)
+	if err == nil {
+		t.Fatal("expected an error when the driver exits 0 without writing, got nil")
+	}
+	if !strings.Contains(err.Error(), out) {
+		t.Errorf("error %q does not name the missing output path %q", err, out)
+	}
+}
+
+func TestNonZeroExitIsAnError(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	out := filepath.Join(t.TempDir(), "fails.md")
+
+	err := driver.Run(drivers, "stub-fails", repo, out, io.Discard)
+	if err == nil {
+		t.Fatal("expected an error when the driver exits non-zero, got nil")
+	}
+	assertMissing(t, out, "failing driver")
+}
+
+func TestFixedLocationHarvestsToRequestedPathLeavingNoTrace(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	out := filepath.Join(t.TempDir(), "harvested", "fixed.md")
+
+	if err := driver.Run(drivers, "stub-fixed-ok", repo, out, io.Discard); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("fixed-location output was not harvested to the requested path: %v", err)
+	}
+	if want := "stub-fixed-ok saw repo " + repo; !strings.Contains(string(got), want) {
+		t.Errorf("harvested output = %q, want it to contain %q", got, want)
+	}
+	assertMissing(t, filepath.Join(repo, "OUT.md"), "harvest moves rather than copies, so the target repo")
+}
+
+func TestFixedLocationWithoutFixedPathFailsBeforeInvokingTheDriver(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	out := filepath.Join(t.TempDir(), "no-fixed-path.md")
+
+	err := driver.Run(drivers, "stub-fixed-no-path", repo, out, io.Discard)
+	if err == nil {
+		t.Fatal("expected an error for fixed-location with no fixed_path, got nil")
+	}
+	if !strings.Contains(err.Error(), "fixed_path") {
+		t.Errorf("error %q does not name the missing field", err)
+	}
+	assertMissing(t, filepath.Join(repo, "INVOKED"), "the driver")
+	assertMissing(t, out, "missing fixed_path")
+}
+
+func TestFixedLocationZeroExitWithoutWritingIsAnError(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	out := filepath.Join(t.TempDir(), "fixed-liar.md")
+
+	err := driver.Run(drivers, "stub-fixed-liar", repo, out, io.Discard)
+	if err == nil {
+		t.Fatal("expected an error when a fixed-location driver exits 0 without writing, got nil")
+	}
+	if want := filepath.Join(repo, "OUT.md"); !strings.Contains(err.Error(), want) {
+		t.Errorf("error %q does not name the missing fixed_path location %q", err, want)
+	}
+	assertMissing(t, out, "fixed-location liar")
+}
+
+func TestDriverOutputReachesProgressWriter(t *testing.T) {
+	drivers, repo := stubs(t), repoDir(t)
+	out := filepath.Join(t.TempDir(), "fails.md")
+
+	var progress strings.Builder
+	_ = driver.Run(drivers, "stub-fails", repo, out, &progress)
+
+	if !strings.Contains(progress.String(), "driver blew up") {
+		t.Errorf("progress = %q, want the driver's own output", progress.String())
+	}
+}

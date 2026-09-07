@@ -56,11 +56,6 @@ func IgnoreWorktreeArtifacts(repoPath string) error {
 	return err
 }
 
-// HouseRulesFileName is where a repo's house rules land inside a spawned
-// worktree — an ephemeral copy of the dossier's section, delivered fresh on
-// every spawn so it can't go stale.
-const HouseRulesFileName = "HOUSE_RULES.md"
-
 // Context describes one worktree's materialization: which unit of work,
 // into which repo's worktree, and which instance the reference material and
 // dossiers come from.
@@ -123,7 +118,7 @@ func Materialize(c Context) error {
 	}
 
 	if rules != "" {
-		if err := os.WriteFile(filepath.Join(dest, HouseRulesFileName), []byte(rules+"\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dest, dossier.HouseRulesFileName), []byte(rules+"\n"), 0o644); err != nil {
 			return err
 		}
 	}

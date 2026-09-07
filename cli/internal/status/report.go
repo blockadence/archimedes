@@ -31,6 +31,11 @@ type Row struct {
 	PRNumber string `json:"pr_number"`
 	PRState  string `json:"pr_state"`
 	Note     string `json:"note"`
+	// NeedsRebase marks a stacked branch whose base has merged out from
+	// under it (see NeedsRebase in stack.go). RebaseOnto is the ref it
+	// should be moved onto; it's empty on every unflagged row.
+	NeedsRebase bool   `json:"needs_rebase"`
+	RebaseOnto  string `json:"rebase_onto,omitempty"`
 }
 
 // Report is the full result of a status run: every row plus the guardrail
@@ -42,31 +47,72 @@ type Report struct {
 	GuardrailHit bool  `json:"guardrail_hit"`
 }
 
-// RepoPath resolves a repo name (as it appears in a status.md row) to its
-// local path, so its PR state can be looked up.
-type RepoPath func(repoName string) (string, error)
+// RepoRef is one repo as the instance manifest records it: where its
+// checkout lives and which branch its work is based on.
+type RepoRef struct {
+	Path       string
+	BaseBranch string
+}
 
-// BuildReport looks up each entry's live PR state and applies the
-// guardrail threshold. A RepoPath or PRLookup failure degrades that row to
-// noPR rather than failing the whole report, matching status.sh (a
-// gh_slug/gh failure for one row doesn't stop the others).
-func BuildReport(entries []Entry, repoPath RepoPath, lookup PRLookup, guardrailMax int) Report {
+// Upstream is the remote-tracking ref this repo's branches are meant to
+// sit on top of — the same origin/<base branch> spawn cuts them from.
+func (r RepoRef) Upstream() string { return "origin/" + r.BaseBranch }
+
+// RepoLookup resolves a repo name (as it appears in a status.md row) to
+// its manifest entry, so its PR state can be looked up and its branches
+// compared against the base branch they came from.
+type RepoLookup func(repoName string) (RepoRef, error)
+
+// Sources is everything a report reads the world through: the instance
+// manifest, gh, and the repo checkouts on disk. Bundled into one value so
+// a report can grow another source without every caller re-threading its
+// arguments, and so tests substitute the parts they care about.
+type Sources struct {
+	Repos  RepoLookup
+	PR     PRLookup
+	Refs   GitRefs
+	Merged MergedLookup
+}
+
+// RebaseNeeded returns the rows whose stacked base has merged, in report
+// order.
+func (r Report) RebaseNeeded() []Row {
+	var flagged []Row
+	for _, row := range r.Rows {
+		if row.NeedsRebase {
+			flagged = append(flagged, row)
+		}
+	}
+	return flagged
+}
+
+// BuildReport looks up each entry's live PR state, flags any stacked row
+// its base has merged out from under, and applies the guardrail
+// threshold. A Repos or PR failure degrades that row to noPR rather than
+// failing the whole report, matching status.sh (a gh_slug/gh failure for
+// one row doesn't stop the others).
+func BuildReport(entries []Entry, src Sources, guardrailMax int) Report {
 	rows := make([]Row, 0, len(entries))
 	for _, e := range entries {
 		pr := noPR
-		if path, err := repoPath(e.Repo); err == nil {
-			if looked, err := lookup(path, e.Slug); err == nil {
+		info, err := src.Repos(e.Repo)
+		if err == nil {
+			if looked, err := src.PR(info.Path, e.Slug); err == nil {
 				pr = looked
 			}
 		}
 
-		rows = append(rows, Row{
+		row := Row{
 			Slug:     e.Slug,
 			Repo:     e.Repo,
 			PRNumber: pr.Number,
 			PRState:  pr.State,
 			Note:     e.Note,
-		})
+		}
+		if err == nil {
+			row.NeedsRebase, row.RebaseOnto = checkStack(src, e, info)
+		}
+		rows = append(rows, row)
 	}
 
 	count := len(rows)
@@ -78,14 +124,9 @@ func BuildReport(entries []Entry, repoPath RepoPath, lookup PRLookup, guardrailM
 	}
 }
 
-const todoTrailer = `TODO (not implemented yet): auto-detect stacked-rebase-needed. For any
-'stacked on X:Y' note, check whether Y's worktree still exists; if
-prune.sh already removed it (merged), this branch likely needs a
-rebase onto the real base branch.`
-
 // FormatHuman renders r as status.sh's human-readable table: the fixed-
-// width column header and rows, a guardrail warning when it's hit, and the
-// same "not implemented yet" trailer.
+// width column header and rows, a guardrail warning when it's hit, and a
+// list of any stacked branches whose base has since merged.
 func FormatHuman(r Report) string {
 	var b strings.Builder
 
@@ -96,12 +137,16 @@ func FormatHuman(r Report) string {
 
 	b.WriteString("\n")
 	if r.GuardrailHit {
-		fmt.Fprintf(&b, "Warning: %d active worktree streams open, guardrail is %d. Consider closing some out.\n", r.Count, r.GuardrailMax)
+		fmt.Fprintf(&b, "Warning: %d active worktree streams open, guardrail is %d. Consider closing some out.\n\n", r.Count, r.GuardrailMax)
 	}
 
-	b.WriteString("\n")
-	b.WriteString(todoTrailer)
-	b.WriteString("\n")
+	if flagged := r.RebaseNeeded(); len(flagged) > 0 {
+		b.WriteString("Rebase needed — these branches are stacked on a base that has since merged:\n")
+		for _, row := range flagged {
+			fmt.Fprintf(&b, "  %s / %s (%s) — rebase onto %s\n", row.Slug, row.Repo, row.Note, row.RebaseOnto)
+		}
+		b.WriteString("\n")
+	}
 
 	return b.String()
 }
