@@ -99,7 +99,7 @@ func commitFile(t *testing.T, repo, name string) {
 		t.Fatal(err)
 	}
 	testrepo.Git(t, repo, "add", "-A")
-	testrepo.Git(t, repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", name)
+	testrepo.Git(t, repo, "commit", "-q", "-m", name)
 }
 
 func TestHasRef(t *testing.T) {

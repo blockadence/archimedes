@@ -2,7 +2,12 @@
 // this module needs: a bare "origin" plus a clone of it carrying one commit,
 // already pushed to the base branch. That shape is what makes the fetch,
 // rev-parse origin/<base>, worktree, and push paths testable against real
-// git without touching the network.
+// git without touching the network. Two variants cover what that shape
+// can't: Reclone, a second checkout of one origin, for staging a remote
+// that has moved on behind a stale one; and Init, a repository with no
+// origin, for the code paths that only read the checkout in front of them.
+// Every one of them carries a fixed commit identity, so no test has to
+// spell one out to commit.
 //
 // It also provides the runner that building such a fixture needs anyway —
 // Git and GitOut, which run one git command and fail the test if it doesn't
@@ -81,26 +86,75 @@ func New(t testing.TB, spec Spec) Repo {
 		Clone:  filepath.Join(spec.Dir, cmp.Or(spec.Clone, spec.Name)),
 		Branch: cmp.Or(spec.Branch, defaultBranch),
 	}
-	files := spec.Files
-	if len(files) == 0 {
-		files = map[string]string{"README.md": "# " + spec.Name + "\n"}
-	}
-
 	if err := os.MkdirAll(spec.Dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	Git(t, "", "init", "-q", "--bare", "-b", repo.Branch, repo.Origin)
 	Git(t, "", "clone", "-q", repo.Origin, repo.Clone)
-	// A fixed identity, and no signing, so committing here — now and in
-	// whatever the test commits on top — doesn't depend on the machine's
-	// git config.
-	Git(t, repo.Clone, "config", "user.email", "t@t")
-	Git(t, repo.Clone, "config", "user.name", "t")
-	Git(t, repo.Clone, "config", "commit.gpgsign", "false")
+	configureIdentity(t, repo.Clone)
 
-	for name, content := range files {
-		path := filepath.Join(repo.Clone, name)
+	seed(t, repo.Clone, spec.Name, spec.Files)
+	Git(t, repo.Clone, "push", "-q", "origin", repo.Branch)
+
+	return repo
+}
+
+// Init builds a repository with no origin at all: a checkout at path, on
+// the default branch, carrying one seed commit and the fixed identity. Use
+// it where the code under test only reads and writes the checkout in front
+// of it, so a bare origin it never fetches from or pushes to would be
+// nothing but a slower fixture. The directory is created if it isn't there.
+//
+// It hands back the path it was given rather than a Repo, so it can be
+// used inline where one is wanted. A Repo would have to carry an empty
+// Origin, and the half of Repo's interface that reads that field — Reclone
+// above all — has no answer for a repository that was never cloned.
+func Init(t testing.TB, path string) string {
+	t.Helper()
+
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	Git(t, path, "init", "-q", "-b", defaultBranch)
+	configureIdentity(t, path)
+	// Seeded, because the branch and worktree commands a test reaches for
+	// next have nothing to start from until HEAD exists.
+	seed(t, path, filepath.Base(path), nil)
+
+	return path
+}
+
+// Reclone builds a second working checkout of r's origin, named name and
+// sitting beside the origin, and returns it as a fixture in its own right.
+// It is how a test moves the remote on behind a stale checkout's back: the
+// state a fetch-first code path exists to cope with, which needs two
+// checkouts of one origin and can't be staged with a single one.
+func (r Repo) Reclone(t testing.TB, name string) Repo {
+	t.Helper()
+
+	other := Repo{
+		Origin: r.Origin,
+		Clone:  filepath.Join(filepath.Dir(r.Origin), name),
+		Branch: r.Branch,
+	}
+	Git(t, "", "clone", "-q", other.Origin, other.Clone)
+	configureIdentity(t, other.Clone)
+
+	return other
+}
+
+// seed writes files into the checkout at dir and makes them its first
+// commit, defaulting to a lone README.md named after the repository when
+// the caller has no files of its own to plant.
+func seed(t testing.TB, dir, name string, files map[string]string) {
+	t.Helper()
+
+	if len(files) == 0 {
+		files = map[string]string{"README.md": "# " + name + "\n"}
+	}
+	for file, content := range files {
+		path := filepath.Join(dir, file)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -109,9 +163,17 @@ func New(t testing.TB, spec Spec) Repo {
 		}
 	}
 
-	Git(t, repo.Clone, "add", "-A")
-	Git(t, repo.Clone, "commit", "-q", "-m", "init")
-	Git(t, repo.Clone, "push", "-q", "origin", repo.Branch)
+	Git(t, dir, "add", "-A")
+	Git(t, dir, "commit", "-q", "-m", "init")
+}
 
-	return repo
+// configureIdentity gives the checkout at dir a fixed commit identity and
+// no signing, so committing there — in the fixture's own steps and in
+// whatever the test commits on top — doesn't depend on the machine's git
+// config.
+func configureIdentity(t testing.TB, dir string) {
+	t.Helper()
+	Git(t, dir, "config", "user.email", "t@t")
+	Git(t, dir, "config", "user.name", "t")
+	Git(t, dir, "config", "commit.gpgsign", "false")
 }

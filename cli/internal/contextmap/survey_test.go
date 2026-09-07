@@ -34,7 +34,7 @@ func TestStateReportsARepoAsCurrentWhenItsMapMatchesItsBaseBranch(t *testing.T) 
 	if state.CurrentSHA != "abc123" || state.MappedSHA != "abc123" {
 		t.Errorf("SHAs = current %q, mapped %q", state.CurrentSHA, state.MappedSHA)
 	}
-	if want := filepath.Join(inst.repoPaths["alpha"], "CONTEXT.md"); state.ContextPath != want {
+	if want := filepath.Join(inst.repoPath("alpha"), "CONTEXT.md"); state.ContextPath != want {
 		t.Errorf("ContextPath = %q, want %q", state.ContextPath, want)
 	}
 }
@@ -94,14 +94,13 @@ func TestLocalSHAReadsTheCheckoutWithoutFetching(t *testing.T) {
 	// A commit pushed behind the clone's back: LocalSHA must report the
 	// origin/main the checkout already has, not the one on the remote.
 	before := inst.sha(t, "alpha")
-	other := filepath.Join(inst.tmp, "other")
-	testrepo.Git(t, inst.tmp, "clone", "-q", filepath.Join(inst.tmp, "alpha.git"), other)
+	other := inst.repos["alpha"].Reclone(t, "other").Clone
 	mustWriteFile(t, filepath.Join(other, "NEW.md"), "new\n")
 	testrepo.Git(t, other, "add", "-A")
-	testrepo.Git(t, other, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "second")
+	testrepo.Git(t, other, "commit", "-q", "-m", "second")
 	testrepo.Git(t, other, "push", "-q", "origin", "main")
 
-	got, err := contextmap.LocalSHA(inst.repoPaths["alpha"], "main")
+	got, err := contextmap.LocalSHA(inst.repoPath("alpha"), "main")
 	if err != nil {
 		t.Fatal(err)
 	}
