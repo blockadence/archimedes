@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/cli/internal/contextmap"
 	"github.com/blockadence/archimedes/cli/internal/mcpserver"
 	"github.com/blockadence/archimedes/cli/internal/spawn"
 	"github.com/blockadence/archimedes/cli/internal/status"
@@ -134,7 +133,7 @@ func TestContextMapStatusReportsStalenessInDependencyOrder(t *testing.T) {
 	inst := newInstance(t)
 	cs := connect(t, mcpserver.Options{Root: inst.root})
 
-	var got contextmap.Plan
+	var got mcpserver.Plan
 	call(t, cs, "context_map_status", map[string]any{}, &got)
 
 	if len(got.Order) != 2 || got.Order[0] != "shared" || got.Order[1] != "app" {
@@ -151,7 +150,7 @@ func TestContextMapStatusReportsStalenessInDependencyOrder(t *testing.T) {
 	mustWriteFile(t, filepath.Join(inst.repoPaths["shared"], "CONTEXT.md"), "# shared\n")
 	setSHA(t, inst, "shared")
 
-	var after contextmap.Plan
+	var after mcpserver.Plan
 	call(t, cs, "context_map_status", map[string]any{}, &after)
 	if after.Repos[0].Name != "shared" || after.Repos[0].Stale {
 		t.Errorf("expected shared reported current after being mapped, got %#v", after.Repos[0])

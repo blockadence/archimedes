@@ -41,8 +41,11 @@ Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
 - `prune` — port of `template/scripts/prune.sh`
 - `sync-templates` — port of `template/scripts/sync-templates.sh`
 - `sync-house-rules` — port of `template/scripts/sync-house-rules.sh`
-- `serve-mcp` — the same instance served over the Model Context Protocol
-  (no script equivalent)
+- `apply-convention-pack` — port of
+  `template/scripts/apply-convention-pack.sh`
+- `dashboard` — a live view of the above; no script behind it
+- `serve-mcp` — the same instance served over the Model Context Protocol;
+  no script behind it either
 
 `bootstrap` discovers a GitHub org's repos, clones the ones not already
 checked out beside the instance, and scaffolds each one's `repos.yaml` entry
@@ -132,6 +135,71 @@ Neither shells out to anything but git through `internal/gitutil`; every
 other external command (`multi-gitter`, `gh`) goes through
 `reposync.ExecFunc`, the seam tests replace.
 
+`apply-convention-pack` wires one repo up to the shared build/lint
+convention it declares, by adding whatever reference that repo's build tool
+needs to start pulling in the pack's published config artifact. Both halves
+are instance data — the pack name from the repo's `repos.yaml` entry, the
+definition from the instance's `convention-packs/<name>.yaml` — so there is
+no config of its own to keep in step with either.
+
+It is one-time scaffolding rather than sync: afterwards the repo owns that
+reference like any other dependency, and nothing pushes updates back into
+it later. Re-running is a no-op, and the edit is left uncommitted for a
+human to review.
+
+`internal/conventionpack` dispatches on the pack's `build_tool`, so adding
+a second language/build tool is one entry in its `scaffolders` map plus the
+function it names — `gradle.go` is the worked example. Nothing above that
+dispatch knows Java or Gradle, down to the pack's build-tool-named block,
+which stays undecoded until a scaffolder asks for it in its own shape; so
+a new build tool costs a file, not a field on the shared `Pack` type. A build file that already carries a
+`buildscript {}` block of its own is refused: the two lines it needs are
+printed for a human to place by hand, since where they belong inside an
+existing block is a judgment call, not a rewrite worth guessing at.
+
+### Dashboard (optional)
+
+`archimedes dashboard` opens a live view of the whole instance: the worktree
+table `status` prints — PR state, stack notes, the rebase-needed list, the
+concurrent-stream guardrail — next to the per-repo context-map staleness
+`context-map --dry-run` reports. It retakes the reading every 30 seconds
+(`--refresh`, or `0` for on-demand only), on `r`, and quits on `q`.
+
+It is a presentation layer and nothing else. `internal/dashboard` collects a
+`Snapshot` by calling the same `status.BuildReport` and `contextmap.Assess`
+the two subcommands call, renders it, and loops; nothing about what a row
+*means* is decided there. So the dashboard can't drift from the CLI, and
+every command works exactly as it did before — the dashboard is additive and
+nothing depends on it.
+
+That parity is what the shared seams are for. `status.ManifestRepos` is the
+one place a repo name becomes a checkout path plus a base branch, and
+`contextmap.Survey` is the one place "assess every repo, dependency order
+first" lives — `context-map` walks its pass through the same
+`contextmap.State` the dashboard reads through.
+
+The one deliberate difference is the network. A mapping pass fetches before
+assessing, because it's about to spend a driver run on the answer; a
+dashboard refresh reads `origin/<base branch>` as the checkout last saw it,
+because a screen that repaints every 30 seconds must not drag the network in
+with it. That's the `contextmap.SHALookup` seam — `FetchedSHA` for a pass,
+`LocalSHA` for a reading — and it means a repo nobody has fetched lately can
+under-report, which is the safe direction: the dashboard stays quiet about a
+pass that's due rather than inventing one.
+
+Everything narrower than an unreadable `repos.yaml` is carried in the
+snapshot rather than raised: a row whose `gh` lookup failed reads "no PR", a
+repo whose base branch couldn't be resolved says so in its own row, and a
+refresh that fails outright leaves the last good reading on screen under a
+visible error. A dashboard that blanks itself over one unreachable repo
+would be worse than one showing that repo as unknown.
+
+`Collect` and `Render` are ordinary functions over data — no terminal, no
+clock — and `Model` takes its clock by injection, so the whole thing is
+tested by driving messages through `Update` and asserting on frames. Only
+`internal/cmd/dashboard.go` touches a terminal; without one (a pipe, a CI
+log) it refuses and points at `archimedes status`, which answers the same
+question in a form a pipe can hold.
 ### Terminal workspace integration (opt-in)
 
 `spawn` can also hand the finished worktree to a terminal workspace
@@ -211,16 +279,32 @@ paths can't drift on what the instance currently looks like. That's what
 question both ways and compares the answers, so a change that only moves
 one of them fails there.
 
-Three things the CLI does that a tool call deliberately doesn't. No
+The staleness tool shares `contextmap.Survey` with the dashboard, and the
+`SHALookup` seam is what lets one primitive serve both: it passes
+`FetchedSHA`, because it answers the question `context-map --dry-run`
+answers and that one measures staleness against the remote, where the
+dashboard passes `LocalSHA` rather than drag the network into a screen
+refresh. `mcpserver.Plan` is the wire projection of the `[]RepoState` that
+comes back — JSON tags and schema descriptions belong to the protocol
+boundary, not to `contextmap`.
+
+Four things the CLI does that a tool call deliberately doesn't. No
 interactive mapping session is offered, which is why the context-map tool
-surveys staleness rather than running a pass — `contextmap.Survey` is the
-structured form of what `--dry-run` prints, computed by the same
-`pass.assess` the pass itself uses. No terminal workspace is opened: a pane
-appearing on the operator's machine is something they ask for at their own
-prompt, not a side effect of an agent's tool call. And a spawn's `cd
-<worktree> && <agent>` next-step hint is dropped, since its whole content is
-already in the result and it is addressed to a person who isn't there; git's
-own output still reaches the log.
+surveys staleness rather than running a pass. No terminal workspace is
+opened: a pane appearing on the operator's machine is something they ask
+for at their own prompt, not a side effect of an agent's tool call. A
+spawn's `cd <worktree> && <agent>` next-step hint is dropped, since its
+whole content is already in the result and it is addressed to a person who
+isn't there; git's own output still reaches the log.
+
+And a repo whose state can't be read — an unreachable remote, a base branch
+that isn't there — is reported as an `error` on that repo rather than
+failing the call, where a pass stops at the first one. That is the one
+place a tool answers differently from its command, and deliberately: a pass
+is about to spend a driver run and can't proceed on an unknown, while a
+reader asking "what needs mapping?" is still better off with the answer for
+every other repo than with nothing. It is `RepoState.Err`'s documented
+contract, and the dashboard reads it the same way.
 
 The server is bound to one instance by `--root` for its lifetime, resolved to
 an absolute path when the server is built — a client won't share the working

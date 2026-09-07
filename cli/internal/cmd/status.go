@@ -11,11 +11,11 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/status"
 )
 
-// maxStreamsEnvVar names the environment variable holding the open-worktree
-// guardrail threshold. It lives here with the CLI's other environment
-// overrides rather than in internal/status, since which variable carries a
-// setting is a CLI concern and the package that parses it shouldn't have to
-// know.
+// maxStreamsEnvVar caps how many worktree streams can be open before a
+// report warns. Named here rather than inline because the dashboard and the
+// MCP server warn off the same threshold — and named *here* rather than in
+// internal/status because which variable carries a setting is a CLI
+// concern, not something the package that parses it should have to know.
 const maxStreamsEnvVar = "ARCHIMEDES_MAX_STREAMS"
 
 func newStatusCmd() *cobra.Command {

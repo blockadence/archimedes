@@ -22,13 +22,7 @@ func Collect(root, slugFilter string, src Sources, guardrailMax int) (Report, er
 	if err != nil {
 		return Report{}, fmt.Errorf("loading %s: %w", manifestPath, err)
 	}
-	src.Repos = func(name string) (RepoRef, error) {
-		r, err := m.Resolve(root, name)
-		if err != nil {
-			return RepoRef{}, err
-		}
-		return RepoRef{Path: r.Path, BaseBranch: r.BaseBranch}, nil
-	}
+	src.Repos = ManifestRepos(m, root)
 
 	entries, err := Discover(filepath.Join(root, "work"), slugFilter)
 	if err != nil {

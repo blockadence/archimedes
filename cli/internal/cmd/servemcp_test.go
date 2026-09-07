@@ -194,7 +194,7 @@ func TestContextMapStatusToolMatchesTheDryRun(t *testing.T) {
 	fromCLI := execute(t, "context-map", "--root", root, "--dry-run")
 
 	cs := mcpSession(t, mcpserver.Options{Root: root})
-	var fromMCP contextmap.Plan
+	var fromMCP mcpserver.Plan
 	callTool(t, cs, "context_map_status", map[string]any{}, &fromMCP)
 
 	if want := "Planned order: " + strings.Join(fromMCP.Order, " "); !strings.Contains(fromCLI, want) {
@@ -310,7 +310,7 @@ func TestToolsReportPathsAClientCanOpenFromARelativeRoot(t *testing.T) {
 	}
 
 	// The other tools resolve the same root, so they must agree with it.
-	var plan contextmap.Plan
+	var plan mcpserver.Plan
 	callTool(t, cs, "context_map_status", map[string]any{}, &plan)
 	for _, r := range plan.Repos {
 		if r.Path != repos[r.Name] {
