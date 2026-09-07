@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/prune"
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
 // setupInstance builds an instance root with one target repo (with a
@@ -17,16 +18,11 @@ import (
 func setupInstance(t *testing.T, root, repoName, slug, note string) (repoPath, wt string) {
 	t.Helper()
 
-	origin := filepath.Join(root, repoName+"-origin.git")
-	repoPath = filepath.Join(root, repoName)
-	run(t, "", "git", "init", "-q", "--bare", "-b", "main", origin)
-	run(t, "", "git", "clone", "-q", origin, repoPath)
-	if err := os.WriteFile(filepath.Join(repoPath, "README.md"), []byte("hi\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	run(t, repoPath, "git", "add", "-A")
-	run(t, repoPath, "git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
-	run(t, repoPath, "git", "push", "-q", "origin", "main")
+	repoPath = testrepo.New(t, testrepo.Spec{
+		Dir:    root,
+		Name:   repoName,
+		Origin: repoName + "-origin.git",
+	}).Clone
 
 	wt = filepath.Join(root, repoName+"-worktrees", slug)
 	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {

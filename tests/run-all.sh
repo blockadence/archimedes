@@ -6,6 +6,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 failed=0
 for t in "$HERE"/*.sh; do
   [ "$(basename "$t")" = "helpers.sh" ] && continue
+  [ "$(basename "$t")" = "gitfixture.sh" ] && continue
   [ "$(basename "$t")" = "run-all.sh" ] && continue
   echo "=== $(basename "$t") ==="
   "$t" || failed=1

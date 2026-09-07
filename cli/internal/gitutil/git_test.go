@@ -8,25 +8,15 @@ import (
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/gitutil"
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
-// makeRepo sets up a clone of a bare "origin" with one commit, mirroring
-// the fixture tests/spawn_materializes_context.sh uses for the shell
-// version. Tests that only need a remote URL to parse use makeRemote.
+// makeRepo is the full fixture, for the helpers that need real history to
+// work against (worktrees, branches, merge state). Tests that only need a
+// remote URL to parse use makeRemote, which skips the clone entirely.
 func makeRepo(t *testing.T, tmp string) string {
 	t.Helper()
-	origin := filepath.Join(tmp, "origin.git")
-	clone := filepath.Join(tmp, "clone")
-
-	mustGit(t, "", "init", "-q", "--bare", "-b", "main", origin)
-	mustGit(t, "", "clone", "-q", origin, clone)
-	if err := os.WriteFile(filepath.Join(clone, "README.md"), []byte("hi\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mustGit(t, clone, "add", "-A")
-	mustGit(t, clone, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
-	mustGit(t, clone, "push", "-q", "origin", "main")
-	return clone
+	return testrepo.New(t, testrepo.Spec{Dir: tmp, Name: "app"}).Clone
 }
 
 // makeRemote returns an empty repo whose origin remote is originURL —

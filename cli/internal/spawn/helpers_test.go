@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
 // gitOK runs git in dir, failing the test on error.
@@ -54,19 +56,15 @@ func mustWriteFile(t *testing.T, path, content string) {
 
 // makeTargetRepo mirrors tests/spawn_materializes_context.sh's fixture: a
 // bare "origin" plus a clone with a normal .gitignore and one commit on
-// main, so spawn's fetch-first behavior has real remote state to pull.
+// main, so spawn's fetch-first behavior has real remote state to pull, and
+// so the repo's own tracked .gitignore is there to be left alone.
 func makeTargetRepo(t *testing.T, tmp, name string) (clonePath string) {
 	t.Helper()
-	clonePath = filepath.Join(tmp, name)
-
-	gitOK(t, tmp, "init", "-q", "--bare", "-b", "main", filepath.Join(tmp, name+".git"))
-	gitOK(t, tmp, "clone", "-q", filepath.Join(tmp, name+".git"), clonePath)
-	mustWriteFile(t, filepath.Join(clonePath, ".gitignore"), "*.log\n")
-	gitOK(t, clonePath, "add", "-A")
-	gitCommit(t, clonePath, "init")
-	gitOK(t, clonePath, "push", "-q", "origin", "main")
-
-	return clonePath
+	return testrepo.New(t, testrepo.Spec{
+		Dir:   tmp,
+		Name:  name,
+		Files: map[string]string{".gitignore": "*.log\n"},
+	}).Clone
 }
 
 // instance is an Archimedes instance root wired to two target repos, the

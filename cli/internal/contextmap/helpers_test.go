@@ -8,16 +8,8 @@ import (
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/manifest"
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
-
-func gitOK(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v (in %s): %v\n%s", args, dir, err, out)
-	}
-}
 
 func gitOut(t *testing.T, dir string, args ...string) string {
 	t.Helper()
@@ -38,23 +30,6 @@ func mustWriteFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// makeTargetRepo builds a bare "origin" plus a clone with one commit on
-// main, so the mapping pass's fetch + rev-parse origin/main have real
-// remote state to read.
-func makeTargetRepo(t *testing.T, tmp, name string) string {
-	t.Helper()
-	clonePath := filepath.Join(tmp, name)
-
-	gitOK(t, tmp, "init", "-q", "--bare", "-b", "main", filepath.Join(tmp, name+".git"))
-	gitOK(t, tmp, "clone", "-q", filepath.Join(tmp, name+".git"), clonePath)
-	mustWriteFile(t, filepath.Join(clonePath, "README.md"), "# "+name+"\n")
-	gitOK(t, clonePath, "add", "-A")
-	gitOK(t, clonePath, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
-	gitOK(t, clonePath, "push", "-q", "origin", "main")
-
-	return clonePath
 }
 
 // instance is an Archimedes instance root plus the sibling target repos its
@@ -79,8 +54,10 @@ func newInstance(t *testing.T, reposYAML string, names ...string) instance {
 		repoPaths:  map[string]string{},
 		driversDir: filepath.Join(tmp, "instance", "drivers"),
 	}
+	// A real bare "origin" plus a clone per repo, so the mapping pass's
+	// fetch + rev-parse origin/main have remote state to read.
 	for _, name := range names {
-		inst.repoPaths[name] = makeTargetRepo(t, tmp, name)
+		inst.repoPaths[name] = testrepo.New(t, testrepo.Spec{Dir: tmp, Name: name}).Clone
 	}
 	mustWriteFile(t, filepath.Join(inst.root, "repos.yaml"), reposYAML)
 

@@ -28,6 +28,32 @@ worktree or branch — belong there too. Tests are exempt: a test that builds
 a git fixture drives git directly, so a bug in `gitutil` can't hide itself
 by also breaking the fixture.
 
+## Test fixtures
+
+A test that needs a real repository to work against builds one with
+`internal/testrepo`: a bare "origin" plus a clone of it carrying one commit,
+already pushed to the base branch, which is what makes the fetch, `rev-parse
+origin/<base>`, worktree, and push paths exercisable against real git with
+no network.
+
+```go
+repo := testrepo.New(t, testrepo.Spec{Dir: tmp, Name: "app"})
+// repo.Clone, repo.Origin, repo.Branch
+```
+
+`Spec` defaults to `<Dir>/<Name>` for the clone, `<Dir>/<Name>.git` for the
+origin, `main` for the branch, and a single seeded `README.md`; override any
+of them for the cases that need it (a different base branch, a seed clone
+that must not sit where the code under test is about to clone, a repo whose
+tracked `.gitignore` is the point of the test). It is test-only scaffolding —
+a test in the package fails if the shipped binary ever ends up depending on
+it, and it drives git directly rather than through `internal/gitutil` under
+the same exemption every git fixture has: a bug in `gitutil` must not be
+able to hide itself by also breaking the fixture.
+
+The bash suite still covering `template/scripts/*.sh` builds the same shape
+from `tests/gitfixture.sh`; keep the two in step while both exist.
+
 ## Status
 
 Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:

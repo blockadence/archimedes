@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
 func TestContextMapOptionsFromEnvironment(t *testing.T) {
@@ -42,13 +44,7 @@ func TestContextMapOptionsDefaultToEmptyWhenUnset(t *testing.T) {
 // the flags an operator actually types.
 func TestContextMapCommandDryRunThenMaps(t *testing.T) {
 	tmp := t.TempDir()
-	repo := filepath.Join(tmp, "app")
-	run(t, tmp, "git", "init", "-q", "--bare", "-b", "main", filepath.Join(tmp, "app.git"))
-	run(t, tmp, "git", "clone", "-q", filepath.Join(tmp, "app.git"), repo)
-	writeFile(t, filepath.Join(repo, "README.md"), "# app\n")
-	run(t, repo, "git", "add", "-A")
-	run(t, repo, "git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
-	run(t, repo, "git", "push", "-q", "origin", "main")
+	repo := testrepo.New(t, testrepo.Spec{Dir: tmp, Name: "app"}).Clone
 
 	root := filepath.Join(tmp, "instance")
 	writeFile(t, filepath.Join(root, "repos.yaml"),

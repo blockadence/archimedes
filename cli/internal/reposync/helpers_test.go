@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
 func mustMkdirAll(t *testing.T, path string) {
@@ -50,20 +52,9 @@ func gitOut(t *testing.T, dir string, args ...string) string {
 // push to without touching the network.
 func makeTargetRepo(t *testing.T, tmp, name string) string {
 	t.Helper()
-	bare := filepath.Join(tmp, name+".git")
-	clone := filepath.Join(tmp, name)
-
-	gitOK(t, tmp, "init", "-q", "--bare", "-b", "main", bare)
-	gitOK(t, tmp, "clone", "-q", bare, clone)
-	// A fixed identity, so committing doesn't depend on the machine's git config.
-	gitOK(t, clone, "config", "user.email", "t@t")
-	gitOK(t, clone, "config", "user.name", "t")
+	clone := testrepo.New(t, testrepo.Spec{Dir: tmp, Name: name}).Clone
+	// The syncs push the branch they're on without naming a refspec.
 	gitOK(t, clone, "config", "push.default", "current")
-	mustWriteFile(t, filepath.Join(clone, "README.md"), "# "+name+"\n")
-	gitOK(t, clone, "add", "-A")
-	gitOK(t, clone, "commit", "-q", "-m", "init")
-	gitOK(t, clone, "push", "-q", "origin", "main")
-
 	return clone
 }
 

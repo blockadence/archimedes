@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
 // squashMergedStack builds a checkout in the state a squash-merged base
@@ -14,16 +16,7 @@ import (
 // commits.
 func squashMergedStack(t *testing.T) string {
 	t.Helper()
-	tmp := t.TempDir()
-	origin := filepath.Join(tmp, "origin.git")
-	clone := filepath.Join(tmp, "service-a")
-
-	git(t, "", "init", "-q", "--bare", "-b", "main", origin)
-	git(t, "", "clone", "-q", origin, clone)
-	git(t, clone, "config", "user.email", "t@t")
-	git(t, clone, "config", "user.name", "t")
-	commit(t, clone, "README.md", "hello\n", "init")
-	git(t, clone, "push", "-q", "origin", "main")
+	clone := testrepo.New(t, testrepo.Spec{Dir: t.TempDir(), Name: "service-a"}).Clone
 
 	git(t, clone, "checkout", "-q", "-b", "auth-api")
 	commit(t, clone, "api.go", "api\n", "add the api")
