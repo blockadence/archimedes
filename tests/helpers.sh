@@ -63,13 +63,14 @@ make_origin_and_clone() {
 
 # The compiled CLI these tests drive. An instance carries no scripts of its
 # own any more, so every test that acts on one acts through this binary —
-# the same one an operator installs. It is built into cli/archimedes, the
-# path .gitignore already covers, so a whole suite run shares one build
-# instead of each file making its own; `go build` no-ops when it is current.
-ARCHIMEDES_BIN="$TESTS_REPO_ROOT/cli/archimedes"
+# the same one an operator installs. It is built into archimedes at the
+# repo root, the path .gitignore already covers, so a whole suite run shares
+# one build instead of each file making its own; `go build` no-ops when it
+# is current.
+ARCHIMEDES_BIN="$TESTS_REPO_ROOT/archimedes"
 
 build_archimedes() {
-  ( cd "$TESTS_REPO_ROOT/cli" && go build -o archimedes ./cmd/archimedes ) || {
+  ( cd "$TESTS_REPO_ROOT" && go build -o archimedes ./cmd/archimedes ) || {
     echo "could not build the archimedes CLI" >&2
     return 1
   }
