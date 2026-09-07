@@ -21,25 +21,40 @@ The one exception is `drivers/`, which is not inert data but programs that
 run inside your repositories, and where a fix reaching you matters more than
 a starting point staying put. See `drivers/README.md`.
 
-See the Archimedes README for how the pattern itself works, and
-`archimedes --help` for the full command list. Everything below this line is
-specific to this instance.
+See the Archimedes README for how the pattern itself works. Everything below
+this line is specific to this instance.
+
+## Running a command
+
+Archimedes installs two ways, and what you type differs by install:
+
+```
+archimedes <subcommand>       # installed standalone, on your PATH
+gh archimedes <subcommand>    # installed as a gh extension
+```
+
+Everything in this instance names the subcommand on its own — `bootstrap`,
+`spawn`, `context-map` — and this section is the one place that says what
+goes in front of one. Use whichever form you installed; `--help` lists them
+all either way. Naming them this way keeps the instance's files reading the
+same for everyone, which matters because they are shared: a teammate, or an
+agent working in here, may have the other install.
 
 ## Setup
 
-1. `archimedes bootstrap <github-org>` — discover and clone repos, scaffold
-   `repos.yaml` and `repos/*.md` dossiers.
+1. `bootstrap <github-org>` — discover and clone repos, scaffold `repos.yaml`
+   and `repos/*.md` dossiers.
 2. Fill in each `repos/*.md` dossier's branching/release sections by hand,
    including `## House rules` — mandated decisions for that repo. Editing it
-   here is the only place a house rule needs to change: `archimedes spawn`
-   injects an ephemeral copy into every worktree automatically, and
-   `archimedes sync-house-rules <repo>` pushes a durable, committed copy
-   into the repo itself.
-3. `archimedes context-map --dry-run` to see the mapping order and which
-   repos are stale, then without `--dry-run` to work through it, repo by
-   repo. Safe to re-run any time — repos already current for their base
-   branch's latest commit are skipped.
-4. `archimedes render-map` after any `repos.yaml` change.
-5. `archimedes sync-templates --dry-run` to preview, then without
-   `--dry-run` to open a PR in each tracked repo introducing/updating the
-   canonical PR/issue templates from `scaffolding/`.
+   here is the only place a house rule needs to change: `spawn` injects an
+   ephemeral copy into every worktree automatically, and
+   `sync-house-rules <repo>` pushes a durable, committed copy into the repo
+   itself.
+3. `context-map --dry-run` to see the mapping order and which repos are
+   stale, then without `--dry-run` to work through it, repo by repo. Safe to
+   re-run any time — repos already current for their base branch's latest
+   commit are skipped.
+4. `render-map` after any `repos.yaml` change.
+5. `sync-templates --dry-run` to preview, then without `--dry-run` to open a
+   PR in each tracked repo introducing/updating the canonical PR/issue
+   templates from `scaffolding/`.
