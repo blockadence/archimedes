@@ -94,6 +94,14 @@ vendored bash scripts below with one globally-installed tool (see
 `sync-house-rules` and `apply-convention-pack` are ported; the rest follow
 the same pattern one at a time.
 
+`dashboard` is the one subcommand with no script behind it: a live,
+interactive view of the whole instance — every spawned worktree with its PR
+state and any rebase it's owed, alongside each repo's context-map staleness
+— refreshing in place instead of printing once. It is purely additive, a
+second way to look at what `status` and `context-map --dry-run` already
+report, reading the same code they do. See
+[`cli/README.md`](./cli/README.md#dashboard-optional).
+
 `spawn` can additionally open the new worktree as a workspace in a
 terminal workspace manager ([herdr](https://herdr.dev) today), so a unit of
 work arrives in a pane already rooted at its own checkout. It is off unless

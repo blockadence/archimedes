@@ -43,6 +43,7 @@ Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
 - `sync-house-rules` — port of `template/scripts/sync-house-rules.sh`
 - `apply-convention-pack` — port of
   `template/scripts/apply-convention-pack.sh`
+- `dashboard` — a live view of the above; no script behind it
 
 `bootstrap` discovers a GitHub org's repos, clones the ones not already
 checked out beside the instance, and scaffolds each one's `repos.yaml` entry
@@ -154,6 +155,49 @@ a new build tool costs a file, not a field on the shared `Pack` type. A build fi
 printed for a human to place by hand, since where they belong inside an
 existing block is a judgment call, not a rewrite worth guessing at.
 
+### Dashboard (optional)
+
+`archimedes dashboard` opens a live view of the whole instance: the worktree
+table `status` prints — PR state, stack notes, the rebase-needed list, the
+concurrent-stream guardrail — next to the per-repo context-map staleness
+`context-map --dry-run` reports. It retakes the reading every 30 seconds
+(`--refresh`, or `0` for on-demand only), on `r`, and quits on `q`.
+
+It is a presentation layer and nothing else. `internal/dashboard` collects a
+`Snapshot` by calling the same `status.BuildReport` and `contextmap.Assess`
+the two subcommands call, renders it, and loops; nothing about what a row
+*means* is decided there. So the dashboard can't drift from the CLI, and
+every command works exactly as it did before — the dashboard is additive and
+nothing depends on it.
+
+That parity is what the shared seams are for. `status.ManifestRepos` is the
+one place a repo name becomes a checkout path plus a base branch, and
+`contextmap.Survey` is the one place "assess every repo, dependency order
+first" lives — `context-map` walks its pass through the same
+`contextmap.State` the dashboard reads through.
+
+The one deliberate difference is the network. A mapping pass fetches before
+assessing, because it's about to spend a driver run on the answer; a
+dashboard refresh reads `origin/<base branch>` as the checkout last saw it,
+because a screen that repaints every 30 seconds must not drag the network in
+with it. That's the `contextmap.SHALookup` seam — `FetchedSHA` for a pass,
+`LocalSHA` for a reading — and it means a repo nobody has fetched lately can
+under-report, which is the safe direction: the dashboard stays quiet about a
+pass that's due rather than inventing one.
+
+Everything narrower than an unreadable `repos.yaml` is carried in the
+snapshot rather than raised: a row whose `gh` lookup failed reads "no PR", a
+repo whose base branch couldn't be resolved says so in its own row, and a
+refresh that fails outright leaves the last good reading on screen under a
+visible error. A dashboard that blanks itself over one unreachable repo
+would be worse than one showing that repo as unknown.
+
+`Collect` and `Render` are ordinary functions over data — no terminal, no
+clock — and `Model` takes its clock by injection, so the whole thing is
+tested by driving messages through `Update` and asserting on frames. Only
+`internal/cmd/dashboard.go` touches a terminal; without one (a pipe, a CI
+log) it refuses and points at `archimedes status`, which answers the same
+question in a form a pipe can hold.
 ### Terminal workspace integration (opt-in)
 
 `spawn` can also hand the finished worktree to a terminal workspace

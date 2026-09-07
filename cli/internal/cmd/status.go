@@ -12,6 +12,11 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/status"
 )
 
+// maxStreamsEnvVar caps how many worktree streams can be open before a
+// report warns. Named here rather than inline because the dashboard warns
+// off the same threshold.
+const maxStreamsEnvVar = "ARCHIMEDES_MAX_STREAMS"
+
 func newStatusCmd() *cobra.Command {
 	var root string
 	var jsonOutput bool
@@ -55,20 +60,14 @@ func runStatus(w io.Writer, root, slugFilter string, jsonOutput bool, src status
 	if err != nil {
 		return err
 	}
-	src.Repos = func(name string) (status.RepoRef, error) {
-		r, err := m.Resolve(root, name)
-		if err != nil {
-			return status.RepoRef{}, err
-		}
-		return status.RepoRef{Path: r.Path, BaseBranch: r.BaseBranch}, nil
-	}
+	src.Repos = status.ManifestRepos(m, root)
 
 	entries, err := status.Discover(filepath.Join(root, "work"), slugFilter)
 	if err != nil {
 		return fmt.Errorf("discovering status files: %w", err)
 	}
 
-	report := status.BuildReport(entries, src, status.ParseGuardrailMax(os.Getenv("ARCHIMEDES_MAX_STREAMS")))
+	report := status.BuildReport(entries, src, status.ParseGuardrailMax(os.Getenv(maxStreamsEnvVar)))
 
 	if jsonOutput {
 		enc := json.NewEncoder(w)

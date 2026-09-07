@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/blockadence/archimedes/cli/internal/manifest"
 )
 
 // DefaultGuardrailMax is status.sh's fallback threshold when
@@ -149,4 +151,18 @@ func FormatHuman(r Report) string {
 	}
 
 	return b.String()
+}
+
+// ManifestRepos is the real RepoLookup: it resolves a repo name through an
+// instance's manifest, with paths resolved against root (the directory
+// holding repos.yaml). A repo the manifest doesn't list is an error, which
+// BuildReport degrades to "no PR" for that row.
+func ManifestRepos(m *manifest.Manifest, root string) RepoLookup {
+	return func(name string) (RepoRef, error) {
+		r, err := m.Resolve(root, name)
+		if err != nil {
+			return RepoRef{}, err
+		}
+		return RepoRef{Path: r.Path, BaseBranch: r.BaseBranch}, nil
+	}
 }
