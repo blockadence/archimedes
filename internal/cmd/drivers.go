@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,8 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes"
-	"github.com/blockadence/archimedes/internal/driver"
+	"github.com/blockadence/gh-archimedes"
+	"github.com/blockadence/gh-archimedes/internal/driver"
+	"github.com/blockadence/gh-archimedes/internal/invocation"
 )
 
 func newDriversCmd() *cobra.Command {
@@ -19,7 +21,7 @@ func newDriversCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "drivers",
 		Short: "List the context-mapping drivers this instance can run",
-		Long: `Lists every driver a mapping pass or "run-driver" could resolve here, and
+		Long: fmt.Sprintf(`Lists every driver a mapping pass or "run-driver" could resolve here, and
 which of two places each one comes from.
 
 Drivers under this instance's own drivers/ are the instance's: it is free
@@ -30,7 +32,7 @@ update route. An instance driver sharing a name with a shipped one wins,
 and is reported as shadowing it, since fixes to the shipped one stop
 arriving there.
 
-Use "archimedes drivers adopt <name>" to take a shipped driver over.`,
+Use "%[1]s drivers adopt <name>" to take a shipped driver over.`, invocation.Name()),
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			return listDrivers(driverSet(root), c.OutOrStdout())
@@ -62,6 +64,11 @@ edit that was the reason for adopting.`,
 		RunE: func(c *cobra.Command, args []string) error {
 			dest, err := driverSet(root).Adopt(args[0])
 			if err != nil {
+				// internal/driver knows which names it ships; only out
+				// here is it known what the operator types to see them.
+				if errors.Is(err, driver.ErrNotShipped) {
+					return fmt.Errorf("%w (run `%s drivers` to see what does)", err, invocation.Name())
+				}
 				return err
 			}
 			fmt.Fprintf(c.OutOrStdout(), "Adopted %s into %s\n", args[0], dest)
@@ -111,7 +118,7 @@ func listDrivers(drivers driver.Set, out io.Writer) error {
 		fmt.Fprintln(out, "reach it. Keep it if the copy is yours; delete drivers/<name>/ to go back to the")
 		fmt.Fprintln(out, "one the tool maintains. An instance scaffolded before the drivers moved into the")
 		fmt.Fprintln(out, "binary holds copies it never asked for, and its own drivers/README.md predates")
-		fmt.Fprintln(out, "this -- `archimedes drivers --help` is the current answer.")
+		fmt.Fprintf(out, "this -- `%s drivers --help` is the current answer.\n", invocation.Name())
 	}
 	return nil
 }

@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/blockadence/archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
 
 // loadManifest loads root's repos.yaml, the manifest every subcommand

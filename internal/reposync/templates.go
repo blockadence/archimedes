@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blockadence/archimedes/internal/gitutil"
-	"github.com/blockadence/archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/gitutil"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
 
 // The branch, commit, and pull request the templates fan-out opens in every

@@ -9,9 +9,9 @@ import (
 
 	"github.com/aymanbagabas/go-udiff"
 
-	"github.com/blockadence/archimedes/internal/dossier"
-	"github.com/blockadence/archimedes/internal/gitutil"
-	"github.com/blockadence/archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/dossier"
+	"github.com/blockadence/gh-archimedes/internal/gitutil"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
 
 // The branch, commit, and pull request the house-rules sync opens in the

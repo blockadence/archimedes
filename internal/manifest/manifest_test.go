@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
 
 func TestLoad(t *testing.T) {

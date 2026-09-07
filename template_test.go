@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/blockadence/archimedes"
+	"github.com/blockadence/gh-archimedes"
 )
 
 // The template and the shipped drivers are prose, YAML and bash maintained

@@ -12,8 +12,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/blockadence/archimedes/internal/contextmap"
-	"github.com/blockadence/archimedes/internal/status"
+	"github.com/blockadence/gh-archimedes/internal/contextmap"
+	"github.com/blockadence/gh-archimedes/internal/status"
 )
 
 // ansiRE matches the escape sequences lipgloss wraps styled text in.

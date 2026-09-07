@@ -1,6 +1,6 @@
 package status
 
-import "github.com/blockadence/archimedes/internal/gitutil"
+import "github.com/blockadence/gh-archimedes/internal/gitutil"
 
 // LocalRefs is the real GitRefs: it reads refs from the checkouts on disk
 // via git, without fetching. A repo nobody has fetched recently reports on

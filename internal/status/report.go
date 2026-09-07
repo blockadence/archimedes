@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blockadence/archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
 
 // DefaultGuardrailMax is the concurrent-stream threshold used when

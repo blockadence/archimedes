@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/dossier"
-	"github.com/blockadence/archimedes/internal/reposync"
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/dossier"
+	"github.com/blockadence/gh-archimedes/internal/reposync"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
 const testRules = "Never force-push to `main`.\nEvery migration needs a paired rollback script."

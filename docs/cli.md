@@ -17,12 +17,159 @@ go install ./cmd/archimedes          # installs `archimedes` to $GOBIN
 From anywhere, with no checkout:
 
 ```
-go install github.com/blockadence/archimedes/cmd/archimedes@latest
+go install github.com/blockadence/gh-archimedes/cmd/archimedes@latest
+gh extension install blockadence/gh-archimedes
 ```
 
 Requires `git` and `gh` (authenticated); `sync-templates` additionally
 requires `multi-gitter`. Each subcommand checks for what it needs before it
 starts.
+
+## The two installs
+
+The tool is installed either as a standalone `archimedes` on `$PATH` or as
+a gh extension invoked `gh archimedes`. The second is additive and came
+later; what makes it cheap is that it is not a second build, a second entry
+point, or a second code path. gh installs an extension by downloading one
+binary out of a GitHub release and running it with the subcommand and flags
+forwarded verbatim, so the artifact a release carries is the same artifact
+`go install` would have produced, and by the time `main` runs the two are
+indistinguishable.
+
+Three things had to be true for that, and each is guarded by
+`tests/gh_extension_packaging.sh`, which drives the real release build
+rather than a copy of its recipe.
+
+**Every subcommand works with no checkout beside it.** An extension install
+is a lone binary in `~/.local/share/gh/extensions/`; there is no clone of
+this repository anywhere near it. That is not a packaging concern so much
+as the thing that had to be settled first — it is why the instance template
+and the drivers are carried inside the binary (see "Two embedded trees"
+above) rather than copied out of a checkout.
+
+**The name in the help is the name that was typed.** The one thing gh
+cannot forward is what it was called: an operator who typed `gh archimedes`
+and is answered with `archimedes spawn <slug> <repo>` has been handed a
+command they have not got. gh announces itself by setting `GH_EXTENSION=1`
+(documented in `gh help environment` for exactly this); `internal/invocation`
+is the one place that reads it, and `Name()` is what every operator-facing
+string is built from.
+
+`newRootCmd` feeds it to cobra as the display-name annotation, which
+rewrites the whole tree's usage lines at once — as an annotation rather
+than as `Use`, because the first word of `Use` is the command's *name*, and
+a two-word `Use` would make every subcommand a child of something called
+`gh`. The prose around those usage lines gets no such sweep, and neither
+does runtime output: `init`'s "run this next" line, the dashboard's empty
+states, the command a notification says to run about a condition. Those are
+ordinary strings and are formatted with `invocation.Name()` one at a time,
+which is the part that rots quietly — so a test walks the command tree
+under `GH_EXTENSION=1` looking for any `archimedes <subcommand>` that
+should have been `gh archimedes <subcommand>`.
+
+Two kinds of mention deliberately stay fixed, and the test is scoped to
+`archimedes <subcommand>` so that they can:
+
+- Prose naming the program as a thing rather than as something to type —
+  "the drivers archimedes ships", "inside the archimedes binary" — which is
+  the same program under either install.
+- Anything written into a *file*: the `HOUSE_RULES.md` `sync-house-rules`
+  commits into a target repo, the PR templates `sync-templates` pushes, the
+  dossier stubs `bootstrap` scaffolds. Keying a committed file's content to
+  how the operator who generated it happened to install would put a
+  spurious diff in every such repo the first time somebody with the other
+  install ran the sync. The MCP tool descriptions stay fixed for the same
+  reason: they document which subcommand a tool is equivalent to, to an
+  agent that is not going to type either.
+
+**The binary knows which build it is.** See below.
+
+### Version
+
+`--version` has to answer "which build is this?", and a downloaded release
+artifact is the case that makes it matter: there is no working tree beside
+it to look at instead, so whatever the binary says is the only evidence
+there is. `internal/version` assembles that answer from whichever of the
+three build routes ran, most authoritative first:
+
+1. **A release build links the tag in**, with a `-ldflags` `-X` against
+   `internal/version.stamped`. `.github/release-build.sh` is the only thing
+   that passes it. This is the route the criterion is about.
+2. **`go install <module>/cmd/archimedes@v1.2.3` links nothing**, but the
+   module system records the version it fetched, and `debug.ReadBuildInfo`
+   hands it back.
+3. **A build from a working tree has neither**, and reports the commit the
+   Go toolchain stamped: `dev (a1b2c3d)`, or `dev (a1b2c3d, dirty)` when
+   the tree had uncommitted edits and so matches no commit at all.
+
+The module system says `(devel)` when it has no version to give, which is
+every build made from a working tree. Passing that through would be
+reporting a placeholder as a version — the thing this exists to stop — so
+it falls to (3) instead. One wrinkle worth knowing, since this project is
+worked on in worktrees: the toolchain only stamps a commit when it
+recognises the directory as a checkout, and it looks for a `.git`
+*directory*, so a build made inside a git worktree reports a bare `dev`.
+Nothing works around it — neither route that installs the tool comes
+through there.
+
+The version is not only for `--version`. `serve-mcp` reports it to the
+agent tool on the other end of the protocol, which has even less ability to
+go and look.
+
+### Cutting a release
+
+Tag and push; `.github/workflows/release.yml` does the rest.
+
+```
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+`cli/gh-extension-precompile` builds the platform matrix, creates the
+release, and attaches the binaries. A tag containing a `-` (`v0.2.0-rc.1`)
+publishes as a prerelease, which `gh extension install` will not hand to
+anyone — the safe way to exercise the workflow end to end.
+
+The build itself is ours (`build_script_override`) rather than the action's,
+for two reasons the action cannot accommodate: the main package is
+`./cmd/archimedes` and not the repository root (the root is the library
+package carrying the embedded trees, so the action's default build has
+nothing to compile), and the version has to be linked in — the action's
+`go_build_options` reaches `go build` as a single word, which cannot carry
+both a `-ldflags` value and a package path. Everything else in
+`.github/release-build.sh` mirrors the action's own build deliberately:
+same platform list, same `go tool dist list` guard, same `-trimpath` and
+`-s -w`. Divergence there would be an accident rather than a decision.
+
+Asset names end with `<os>-<arch>`, because matching the tail of an asset
+name against the platform it is installing onto is how gh picks the file to
+download. A rename that appends anything after that leaves a release that
+looks fine on GitHub and installs on nothing.
+
+### Why the repository is named `gh-archimedes`
+
+gh will only install an extension from a repository whose name starts with
+`gh-`, and it refuses before it goes anywhere near the network. That is a
+namespace rule about the repository, not a statement about the tool: the
+binary is `archimedes`, standalone is the primary install, and the
+extension is the additive one.
+
+The module path was realigned with it, which is the one thing the rename
+breaks: `go install github.com/blockadence/archimedes/cmd/archimedes@latest`
+stops resolving. GitHub's rename redirect gets Go to the right repository
+but not past the check that follows — the `go.mod` it finds there declares
+`gh-archimedes`, and Go refuses a module whose declared path is not the one
+requested. Leaving the module path alone would have dodged that at the cost
+of a repository whose name and import path disagree forever, and of an
+install line that depends on a redirect. Nothing had been tagged or
+published under the old path, so the cost was one line in the README.
+
+The alternative was a second, release-only repository, which was weighed
+and rejected. It needed a standing cross-repository token (a workflow's
+`GITHUB_TOKEN` cannot create a release elsewhere) or a second tag lineage
+that could drift from this one — and a version that can drift is the exact
+failure the section above exists to prevent. It also meant publishing, to
+people gh explicitly tells to review an extension's source before trusting
+it, a repository containing no source.
 
 ## Two embedded trees
 
@@ -176,6 +323,12 @@ against this binary, and builds the same repo shape from
 `tests/driver_ownership.sh` is where the instance/tool split is proved the
 only way that means anything: a copy of the binary somewhere else on disk,
 with no checkout of this repo in reach.
+`tests/gh_extension_packaging.sh` does the same for the release artifact:
+it runs `.github/release-build.sh` for the one platform it can execute,
+then drives the result both as `archimedes` and as `gh-archimedes` under
+`GH_EXTENSION=1` and compares what each scaffolds. Running the real build
+script is the point — a test that restated the ldflags recipe would keep
+passing after the recipe it copied had changed.
 
 ## Subcommands
 

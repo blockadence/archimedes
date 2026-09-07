@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/contextmap"
-	"github.com/blockadence/archimedes/internal/manifest"
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/contextmap"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
 // fixedSHA answers every repo with the same commit, for the tests that care

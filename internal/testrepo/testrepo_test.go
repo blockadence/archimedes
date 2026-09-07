@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
-const modulePath = "github.com/blockadence/archimedes"
+const modulePath = "github.com/blockadence/gh-archimedes"
 
 // moduleRoot locates the module from this file's own path, so the guard
 // below doesn't depend on the working directory the test binary is run in.

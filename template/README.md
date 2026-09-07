@@ -1,6 +1,6 @@
 # (rename this to your instance)
 
-An [Archimedes](https://github.com/blockadence/archimedes) instance.
+An [Archimedes](https://github.com/blockadence/gh-archimedes) instance.
 
 This directory holds the cross-repo planning layer for actual work: which
 repos exist, how they depend on each other, and their branching/release

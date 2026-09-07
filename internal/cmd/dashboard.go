@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"errors"
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -10,9 +10,10 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes/internal/contextmap"
-	"github.com/blockadence/archimedes/internal/dashboard"
-	"github.com/blockadence/archimedes/internal/status"
+	"github.com/blockadence/gh-archimedes/internal/contextmap"
+	"github.com/blockadence/gh-archimedes/internal/dashboard"
+	"github.com/blockadence/gh-archimedes/internal/invocation"
+	"github.com/blockadence/gh-archimedes/internal/status"
 )
 
 func newDashboardCmd() *cobra.Command {
@@ -22,12 +23,12 @@ func newDashboardCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dashboard",
 		Short: "Live, interactive view of worktree, PR and context-map state",
-		Long: `Opens a live view of the whole instance: every spawned worktree with its
+		Long: fmt.Sprintf(`Opens a live view of the whole instance: every spawned worktree with its
 PR state and any rebase it's owed, alongside each repo's context-map
 staleness. It refreshes on a timer, or on "r"; "q" quits.
 
-Purely additive — a second way to look at what "archimedes status" and
-"archimedes context-map --dry-run" already report, reading the same code
+Purely additive — a second way to look at what "%[1]s status" and
+"%[1]s context-map --dry-run" already report, reading the same code
 they do, so the two can never disagree. Every one of those commands
 continues to work exactly as before, and nothing requires the dashboard.
 
@@ -37,7 +38,7 @@ looking costs no round trip and works offline. A repo nobody has fetched
 lately can therefore under-report — it stays quiet about a pass that's due
 rather than inventing one.
 
-Needs a terminal to draw on; in a pipe or a log, use "archimedes status".`,
+Needs a terminal to draw on; in a pipe or a log, use "%[1]s status".`, invocation.Name()),
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			return runDashboard(c.OutOrStdout(), c.InOrStdin(), dashboardOptions(root, os.Getenv), refresh)
@@ -77,7 +78,7 @@ func dashboardOptions(root string, env func(string) string) dashboard.Options {
 func runDashboard(out io.Writer, in io.Reader, opts dashboard.Options, refresh time.Duration) error {
 	f, ok := out.(*os.File)
 	if !ok || !term.IsTerminal(f.Fd()) {
-		return errors.New("dashboard needs an interactive terminal; use \"archimedes status\" for the same data as a static table")
+		return fmt.Errorf("dashboard needs an interactive terminal; use %q for the same data as a static table", invocation.Name()+" status")
 	}
 
 	_, err := tea.NewProgram(dashboard.New(opts, refresh), tea.WithOutput(out), tea.WithInput(in)).Run()

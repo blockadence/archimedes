@@ -13,11 +13,11 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/blockadence/archimedes/internal/contextmap"
-	"github.com/blockadence/archimedes/internal/mcpserver"
-	"github.com/blockadence/archimedes/internal/spawn"
-	"github.com/blockadence/archimedes/internal/status"
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/contextmap"
+	"github.com/blockadence/gh-archimedes/internal/mcpserver"
+	"github.com/blockadence/gh-archimedes/internal/spawn"
+	"github.com/blockadence/gh-archimedes/internal/status"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
 // These tests are the second acceptance criterion of the MCP server: a tool

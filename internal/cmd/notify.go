@@ -1,13 +1,15 @@
 package cmd
 
 import (
+	"fmt"
 	"io"
 	"os"
 
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes/internal/notify"
-	"github.com/blockadence/archimedes/internal/prune"
+	"github.com/blockadence/gh-archimedes/internal/invocation"
+	"github.com/blockadence/gh-archimedes/internal/notify"
+	"github.com/blockadence/gh-archimedes/internal/prune"
 )
 
 // notifyCmdEnvVar names the operator's own notification hook, so an
@@ -22,7 +24,7 @@ func newNotifyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "notify",
 		Short: "Report context maps that have gone stale and worktrees ready to prune",
-		Long: `Reports what has changed since the last run: a tracked repo whose context
+		Long: fmt.Sprintf(`Reports what has changed since the last run: a tracked repo whose context
 map no longer matches its base branch's latest commit, and a spawned
 worktree whose PR has merged or closed and that nothing else is stacked on.
 
@@ -33,7 +35,7 @@ been reported lives in a state file beside repos.yaml (--state moves it),
 which is the memory a background process would otherwise hold. Run it from
 cron, launchd, or any other scheduler:
 
-  */15 * * * * cd /path/to/instance && archimedes notify
+  */15 * * * * cd /path/to/instance && %[1]s notify
 
 A pass with nothing new prints nothing, so a scheduler that mails a job's
 output mails you only when there is something to act on.
@@ -49,7 +51,7 @@ message on stdin:
 
 Adopting this on an instance that already has a backlog you know about?
 Run it once with --seed, which records what is true now and notifies about
-none of it.`,
+none of it.`, invocation.Name()),
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			opts := notifyOptions(root, statePath, command, seed, os.Getenv)

@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/manifest"
-	"github.com/blockadence/archimedes/internal/notify"
-	"github.com/blockadence/archimedes/internal/prune"
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/notify"
+	"github.com/blockadence/gh-archimedes/internal/prune"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
 // instance is a watchable Archimedes instance: a repos.yaml pointing at
@@ -364,5 +364,28 @@ func TestWatchStillClearsAConditionAPassPositivelyResolved(t *testing.T) {
 	}
 	if !strings.Contains(again, "Context map stale: app") {
 		t.Errorf("output = %q, want the repo to notify again once it is genuinely stale again", again)
+	}
+}
+
+// A notification is read long after the pass that produced it, often out of
+// a mailbox, so the command it names has to be one the operator can paste.
+// Which of the two installs sent it is the only thing that decides that.
+func TestWatchNamesARemedyTheOperatorsInstallCanRun(t *testing.T) {
+	for ghExtension, want := range map[string]string{
+		"":  "Run: archimedes context-map",
+		"1": "Run: gh archimedes context-map",
+	} {
+		t.Run(want, func(t *testing.T) {
+			t.Setenv("GH_EXTENSION", ghExtension)
+			inst := newInstance(t)
+
+			out, err := inst.watch(t, notify.Options{})
+			if err != nil {
+				t.Fatalf("watch: %v\n%s", err, out)
+			}
+			if !strings.Contains(out, want) {
+				t.Errorf("notification does not say %q:\n%s", want, out)
+			}
+		})
 	}
 }

@@ -53,6 +53,13 @@ const dirName = "drivers"
 // nothing supplies.
 var errNoManifest = errors.New("unknown driver")
 
+// ErrNotShipped is Adopt refusing a name this binary carries no driver for.
+// Exported so the caller can add the pointer to what would have worked:
+// only out there is it known that an operator types `archimedes drivers`
+// under one install and `gh archimedes drivers` under the other, and this
+// package has no business reading its environment to find out.
+var ErrNotShipped = errors.New("does not ship with archimedes")
+
 // Manifest is a driver's driver.yaml.
 type Manifest struct {
 	Name        string `yaml:"name"`

@@ -3,8 +3,8 @@ package workspacemap_test
 import (
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/manifest"
-	"github.com/blockadence/archimedes/internal/workspacemap"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/workspacemap"
 )
 
 // Expected outputs below are byte-exact: the "## Repos" block is

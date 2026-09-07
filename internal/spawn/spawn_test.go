@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/dossier"
-	"github.com/blockadence/archimedes/internal/spawn"
-	"github.com/blockadence/archimedes/internal/stackref"
-	"github.com/blockadence/archimedes/internal/testrepo"
-	"github.com/blockadence/archimedes/internal/workspace"
+	"github.com/blockadence/gh-archimedes/internal/dossier"
+	"github.com/blockadence/gh-archimedes/internal/spawn"
+	"github.com/blockadence/gh-archimedes/internal/stackref"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/workspace"
 )
 
 func TestResolveStartPoint(t *testing.T) {

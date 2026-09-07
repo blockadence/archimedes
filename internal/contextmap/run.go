@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blockadence/archimedes/internal/driver"
-	"github.com/blockadence/archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/driver"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
 
 // Defaults for the parts of a mapping pass an operator can reconfigure

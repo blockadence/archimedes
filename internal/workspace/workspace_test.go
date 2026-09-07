@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/workspace"
+	"github.com/blockadence/gh-archimedes/internal/workspace"
 )
 
 // stubHerdr puts a fake `herdr` on PATH that appends its argv to a log

@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/blockadence/archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
 
 // Order returns the names of repos in dependency order — every repo after

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/blockadence/archimedes"
-	"github.com/blockadence/archimedes/internal/instance"
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes"
+	"github.com/blockadence/gh-archimedes/internal/instance"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
 // Create's caller is a person on a machine that may have no clone of this

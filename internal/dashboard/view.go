@@ -7,7 +7,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/blockadence/archimedes/internal/contextmap"
+	"github.com/blockadence/gh-archimedes/internal/contextmap"
+	"github.com/blockadence/gh-archimedes/internal/invocation"
 )
 
 // DefaultWidth is what a frame is drawn at before the terminal has told us
@@ -174,7 +175,7 @@ func worktrees(s Snapshot, width int) string {
 	b.WriteString(section("WORKTREES"))
 
 	if len(s.Report.Rows) == 0 {
-		b.WriteString(indent(styleDim.Render("Nothing spawned yet — archimedes spawn <slug> <repo>.")))
+		b.WriteString(indent(styleDim.Render("Nothing spawned yet — " + invocation.Name() + " spawn <slug> <repo>.")))
 		b.WriteString("\n")
 		return b.String()
 	}
@@ -253,7 +254,7 @@ func contextMaps(s Snapshot, width int) string {
 	b.WriteString(section("CONTEXT MAPS"))
 
 	if len(s.Repos) == 0 {
-		b.WriteString(indent(styleDim.Render("No repos in repos.yaml — archimedes bootstrap <org>.")))
+		b.WriteString(indent(styleDim.Render("No repos in repos.yaml — " + invocation.Name() + " bootstrap <org>.")))
 		b.WriteString("\n")
 		return b.String()
 	}

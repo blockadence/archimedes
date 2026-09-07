@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/dossier"
+	"github.com/blockadence/gh-archimedes/internal/dossier"
 )
 
 func writeDossier(t *testing.T, dir, repo, content string) {

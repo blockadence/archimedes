@@ -282,7 +282,7 @@ func driverDirs(fsys fs.FS) ([]string, error) {
 // whole point of adopting.
 func (s Set) Adopt(name string) (string, error) {
 	if !s.ships(name) {
-		return "", fmt.Errorf("%w: %s does not ship with archimedes (run `archimedes drivers` to see what does)", errNoManifest, name)
+		return "", fmt.Errorf("%w: %s", ErrNotShipped, name)
 	}
 	dest := filepath.Join(s.Dir, name)
 	if _, err := os.Stat(dest); err == nil {

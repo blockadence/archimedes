@@ -1,4 +1,4 @@
-module github.com/blockadence/archimedes
+module github.com/blockadence/gh-archimedes
 
 go 1.25.4
 

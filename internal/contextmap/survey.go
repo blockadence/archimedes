@@ -4,8 +4,8 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/blockadence/archimedes/internal/gitutil"
-	"github.com/blockadence/archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/gitutil"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
 
 // SHALookup resolves the commit a repo's base branch is at, as seen from

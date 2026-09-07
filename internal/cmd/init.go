@@ -5,8 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes"
-	"github.com/blockadence/archimedes/internal/instance"
+	"github.com/blockadence/gh-archimedes"
+	"github.com/blockadence/gh-archimedes/internal/instance"
+	"github.com/blockadence/gh-archimedes/internal/invocation"
 )
 
 func newInitCmd() *cobra.Command {
@@ -31,7 +32,7 @@ Refuses a destination that already exists rather than merging into it.`,
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Instance ready at %s\n\n", dest)
-			fmt.Fprintf(cmd.OutOrStdout(), "Next: cd %s && archimedes bootstrap <github-org>\n", dest)
+			fmt.Fprintf(cmd.OutOrStdout(), "Next: cd %s && %s bootstrap <github-org>\n", dest, invocation.Name())
 			return nil
 		},
 	}

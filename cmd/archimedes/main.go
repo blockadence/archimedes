@@ -7,7 +7,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/blockadence/archimedes/internal/cmd"
+	"github.com/blockadence/gh-archimedes/internal/cmd"
 )
 
 func main() {

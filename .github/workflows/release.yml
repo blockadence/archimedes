@@ -1,0 +1,30 @@
+# Cutting a release is the whole of publishing this tool, both ways it is
+# installed: `gh extension install` downloads a binary from the release this
+# builds, and it is the release tag that `--version` reports back. Tag and
+# push and there is nothing else to do.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# A tag with a `-` in it (v0.2.0-rc.1) publishes as a prerelease, which
+# `gh extension install` will not hand to anyone -- the safe way to check
+# this workflow end to end.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cli/gh-extension-precompile@v2
+        with:
+          go_version_file: go.mod
+          # See the script for why this build isn't the action's own.
+          build_script_override: .github/release-build.sh

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/notify"
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/notify"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
 func TestNotifyOptionsPrefersTheFlagOverTheEnvironment(t *testing.T) {

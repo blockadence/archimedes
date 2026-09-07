@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/dossier"
+	"github.com/blockadence/gh-archimedes/internal/dossier"
 )
 
 func TestWriteStubScaffoldsDistinctOrderedSections(t *testing.T) {

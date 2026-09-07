@@ -8,8 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes/internal/conventionpack"
-	"github.com/blockadence/archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/conventionpack"
+	"github.com/blockadence/gh-archimedes/internal/invocation"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
 
 func newApplyConventionPackCmd() *cobra.Command {
@@ -64,7 +65,7 @@ func runApplyConventionPack(out, errOut io.Writer, root, repoName string) error 
 		return fmt.Errorf("unknown repo: %s (not in repos.yaml)", repoName)
 	}
 	if !checkout.Cloned {
-		return fmt.Errorf("%s is in repos.yaml but not cloned yet (run archimedes bootstrap)", repoName)
+		return fmt.Errorf("%s is in repos.yaml but not cloned yet (run %s bootstrap)", repoName, invocation.Name())
 	}
 	repo := checkout.Repo
 	if repo.ConventionPack == "" {
