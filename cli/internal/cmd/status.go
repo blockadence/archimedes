@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -13,8 +12,10 @@ import (
 )
 
 // maxStreamsEnvVar caps how many worktree streams can be open before a
-// report warns. Named here rather than inline because the dashboard warns
-// off the same threshold.
+// report warns. Named here rather than inline because the dashboard and the
+// MCP server warn off the same threshold — and named *here* rather than in
+// internal/status because which variable carries a setting is a CLI
+// concern, not something the package that parses it should have to know.
 const maxStreamsEnvVar = "ARCHIMEDES_MAX_STREAMS"
 
 func newStatusCmd() *cobra.Command {
@@ -53,21 +54,12 @@ going stale. The flag clears once the branch has been rebased.`,
 }
 
 // runStatus builds and prints the report. src carries the report's PR,
-// ref, and merged-state sources; its Repos is filled in here, since only
-// this layer knows the instance root the manifest resolves against.
+// ref, and merged-state sources; status.Collect fills in the rest.
 func runStatus(w io.Writer, root, slugFilter string, jsonOutput bool, src status.Sources) error {
-	m, err := loadManifest(root)
+	report, err := status.Collect(root, slugFilter, src, status.ParseGuardrailMax(os.Getenv(maxStreamsEnvVar)))
 	if err != nil {
 		return err
 	}
-	src.Repos = status.ManifestRepos(m, root)
-
-	entries, err := status.Discover(filepath.Join(root, "work"), slugFilter)
-	if err != nil {
-		return fmt.Errorf("discovering status files: %w", err)
-	}
-
-	report := status.BuildReport(entries, src, status.ParseGuardrailMax(os.Getenv(maxStreamsEnvVar)))
 
 	if jsonOutput {
 		enc := json.NewEncoder(w)

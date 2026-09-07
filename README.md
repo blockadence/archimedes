@@ -111,6 +111,14 @@ background), and a workspace manager that isn't installed or isn't running
 degrades to a note — the worktree is created either way. See
 [`cli/README.md`](./cli/README.md#terminal-workspace-integration-opt-in).
 
+`serve-mcp` serves one instance over the Model Context Protocol, so an
+MCP-capable agent tool can list tracked repos, read worktree and PR status,
+check context-map staleness, and spawn a unit of work as structured tool
+calls rather than shelling out to the CLI and parsing its tables. It is a
+second way in, not a replacement: every tool delegates to the same code the
+equivalent subcommand does. See
+[`cli/README.md`](./cli/README.md#mcp-server).
+
 ## Scripts (in `template/scripts/`, vendored into each instance)
 
 - `bootstrap.sh` — discover org repos via `gh repo list`, clone what's

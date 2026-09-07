@@ -48,6 +48,22 @@ type Options struct {
 	Focus bool
 }
 
+// Result is what one spawn created, reported back so a caller doesn't have
+// to re-derive it from the manifest or scrape it out of the printed lines.
+type Result struct {
+	// Slug and Repo echo the request, so a result stands on its own.
+	Slug string `json:"slug"`
+	Repo string `json:"repo"`
+	// Branch is the branch created; spawn names it after the slug.
+	Branch string `json:"branch"`
+	// Worktree is the checkout the branch was added at.
+	Worktree string `json:"worktree"`
+	// StartRef is the git ref the branch was cut from, and Note the
+	// human-readable explanation of that choice recorded in the status file.
+	StartRef string `json:"start_ref"`
+	Note     string `json:"note"`
+}
+
 // StartPoint is the resolved git ref a new branch is created from, plus a
 // human-readable note recorded in the status file explaining the choice.
 type StartPoint struct {
@@ -94,8 +110,9 @@ func NextStepHint(worktreePath, agentCmd string) string {
 // status file.
 //
 // progress receives git's own output; out receives the result lines meant
-// for the caller.
-func Run(opts Options, out, progress io.Writer) error {
+// for the caller. The Result names what was created; it is only meaningful
+// when the returned error is nil.
+func Run(opts Options, out, progress io.Writer) (Result, error) {
 	// Absolutize up front, the way lib.sh's `ROOT="$(cd … && pwd)"` does.
 	// Every path below derives from this, and git is run with its working
 	// directory set to the target repo — so a relative root would resolve
@@ -103,47 +120,47 @@ func Run(opts Options, out, progress io.Writer) error {
 	// worktree inside the checkout it belongs beside.
 	root, err := filepath.Abs(opts.Root)
 	if err != nil {
-		return fmt.Errorf("resolving instance root %s: %w", opts.Root, err)
+		return Result{}, fmt.Errorf("resolving instance root %s: %w", opts.Root, err)
 	}
 
 	manifestPath := filepath.Join(root, "repos.yaml")
 	m, err := manifest.Load(manifestPath)
 	if err != nil {
-		return fmt.Errorf("loading %s: %w", manifestPath, err)
+		return Result{}, fmt.Errorf("loading %s: %w", manifestPath, err)
 	}
 
 	repo, ok := m.Find(opts.Repo)
 	if !ok {
-		return unknownRepoError(opts.Repo)
+		return Result{}, unknownRepoError(opts.Repo)
 	}
 	repoPath := filepath.Join(root, repo.Path)
 	if info, err := os.Stat(repoPath); err != nil || !info.IsDir() {
-		return unknownRepoError(opts.Repo)
+		return Result{}, unknownRepoError(opts.Repo)
 	}
 
 	if err := gitutil.RunOut(repoPath, progress, "fetch", "origin"); err != nil {
-		return err
+		return Result{}, err
 	}
 	if err := gitutil.RunOut(repoPath, progress, "checkout", repo.BaseBranch); err != nil {
-		return err
+		return Result{}, err
 	}
 	if err := gitutil.RunOut(repoPath, progress, "pull", "--ff-only", "origin", repo.BaseBranch); err != nil {
-		return err
+		return Result{}, err
 	}
 
 	start := ResolveStartPoint(repo.BaseBranch, opts.Base, opts.Stack)
 
 	wt := WorktreePath(repoPath, opts.Slug)
 	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
-		return err
+		return Result{}, err
 	}
 	if err := gitutil.RunOut(repoPath, progress, "worktree", "add", wt, "-b", opts.Slug, start.Ref); err != nil {
-		return err
+		return Result{}, err
 	}
 
 	workDir := filepath.Join(root, "work")
 	if err := os.MkdirAll(filepath.Join(workDir, opts.Slug), 0o755); err != nil {
-		return err
+		return Result{}, err
 	}
 	if err := Materialize(Context{
 		RepoPath: repoPath,
@@ -152,18 +169,25 @@ func Run(opts Options, out, progress io.Writer) error {
 		Slug:     opts.Slug,
 		Worktree: wt,
 	}); err != nil {
-		return fmt.Errorf("materializing worktree context: %w", err)
+		return Result{}, fmt.Errorf("materializing worktree context: %w", err)
 	}
 
 	if err := appendStatusRow(workDir, opts.Slug, opts.Repo, wt, start.Note); err != nil {
-		return fmt.Errorf("recording status: %w", err)
+		return Result{}, fmt.Errorf("recording status: %w", err)
 	}
 
 	fmt.Fprintf(out, "Worktree ready: %s (%s)\n", wt, start.Note)
 	fmt.Fprintln(out, NextStepHint(wt, opts.AgentCmd))
 	openWorkspace(opts, repoPath, wt, out, progress)
 
-	return nil
+	return Result{
+		Slug:     opts.Slug,
+		Repo:     opts.Repo,
+		Branch:   opts.Slug,
+		Worktree: wt,
+		StartRef: start.Ref,
+		Note:     start.Note,
+	}, nil
 }
 
 // openWorkspace hands the finished worktree to the configured terminal

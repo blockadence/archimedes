@@ -44,6 +44,8 @@ Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
 - `apply-convention-pack` — port of
   `template/scripts/apply-convention-pack.sh`
 - `dashboard` — a live view of the above; no script behind it
+- `serve-mcp` — the same instance served over the Model Context Protocol;
+  no script behind it either
 
 `bootstrap` discovers a GitHub org's repos, clones the ones not already
 checked out beside the instance, and scaffolds each one's `repos.yaml` entry
@@ -239,3 +241,87 @@ Adding another workspace manager means adding a case to
 `workspace.Select` and an `Opener` beside `openHerdr`. Everything above
 `internal/workspace` — `spawn`, the flags, the warning path — is written
 against the `Integration` type, not against herdr.
+
+### MCP server
+
+`serve-mcp` serves one instance over the Model Context Protocol, so an
+MCP-capable agent tool can query and act on repo/worktree state as
+structured tool calls instead of shelling out to this CLI and parsing its
+tables:
+
+```
+archimedes serve-mcp --root /path/to/instance
+```
+
+It speaks over stdin/stdout and runs until the client disconnects, so it is
+started by the agent tool rather than by hand. Everything else — git's own
+output, any warning — goes to stderr, because stdout carries the protocol
+itself.
+
+Four tools, matching the subcommands an agent would otherwise have had to
+run:
+
+| Tool | Reports | Equivalent |
+| --- | --- | --- |
+| `list_repos` | every tracked repo, its checkout, base branch, dependencies and context-map bookkeeping | `repos.yaml` itself |
+| `repo_status` | every spawned worktree, its live PR state, the rebase flag and the guardrail verdict | `status --json` |
+| `context_map_status` | which repos' maps are stale, and the dependency order a pass would rebuild them in | `context-map --dry-run` |
+| `spawn_worktree` | the branch and worktree it created for one unit of work | `spawn` |
+
+The first three are annotated read-only; `spawn_worktree` is the one that
+writes, and both its description and the server's instructions say so.
+
+It is a second way in, not a second implementation. Each tool is a thin
+mapping from a tool call onto the same `internal/` package the subcommand
+calls — `status.Collect`, `contextmap.Survey`, `spawn.Run` — so the two
+paths can't drift on what the instance currently looks like. That's what
+`internal/cmd/servemcp_test.go` pins: it asks the same instance the same
+question both ways and compares the answers, so a change that only moves
+one of them fails there.
+
+The staleness tool shares `contextmap.Survey` with the dashboard, and the
+`SHALookup` seam is what lets one primitive serve both: it passes
+`FetchedSHA`, because it answers the question `context-map --dry-run`
+answers and that one measures staleness against the remote, where the
+dashboard passes `LocalSHA` rather than drag the network into a screen
+refresh. `mcpserver.Plan` is the wire projection of the `[]RepoState` that
+comes back — JSON tags and schema descriptions belong to the protocol
+boundary, not to `contextmap`.
+
+Four things the CLI does that a tool call deliberately doesn't. No
+interactive mapping session is offered, which is why the context-map tool
+surveys staleness rather than running a pass. No terminal workspace is
+opened: a pane appearing on the operator's machine is something they ask
+for at their own prompt, not a side effect of an agent's tool call. A
+spawn's `cd <worktree> && <agent>` next-step hint is dropped, since its
+whole content is already in the result and it is addressed to a person who
+isn't there; git's own output still reaches the log.
+
+And a repo whose state can't be read — an unreachable remote, a base branch
+that isn't there — is reported as an `error` on that repo rather than
+failing the call, where a pass stops at the first one. That is the one
+place a tool answers differently from its command, and deliberately: a pass
+is about to spend a driver run and can't proceed on an unknown, while a
+reader asking "what needs mapping?" is still better off with the answer for
+every other repo than with nothing. It is `RepoState.Err`'s documented
+contract, and the dashboard reads it the same way.
+
+The server is bound to one instance by `--root` for its lifetime, resolved to
+an absolute path when the server is built — a client won't share the working
+directory the server was started from, so every path a tool reports is one it
+can open. No tool takes a path to another instance.
+
+It reads the same environment as the subcommands (`ARCHIMEDES_MAX_STREAMS`,
+`ARCHIMEDES_DRIVER`, `ARCHIMEDES_DRIVERS_DIR`, `ARCHIMEDES_CONTEXT_FILE`), and
+carries each setting in the form the environment holds it so the *same*
+parser decides what it means — `ARCHIMEDES_MAX_STREAMS=0` is a guardrail of
+zero to a tool call exactly as it is to `archimedes status`, not an unset
+field falling back to the default. It requires `git` but not `gh`: a PR
+lookup degrades to "no PR" rather than failing, so demanding `gh` would
+refuse to start a server on a machine where `archimedes status` itself works.
+
+It is built on the official
+[Go MCP SDK](https://github.com/modelcontextprotocol/go-sdk); tool schemas
+are inferred from the Go argument and result types in
+`internal/mcpserver/tools.go`, so a field gains a schema entry by being
+declared, not by being described twice.
