@@ -84,6 +84,41 @@ Two kinds of mention deliberately stay fixed, and the test is scoped to
 
 **The binary knows which build it is.** See below.
 
+### What an instance's own docs name
+
+The template `init` scaffolds sits on the file side of that line and cannot
+be settled by holding one form fixed: an instance's `README.md`,
+`AGENTS.md` and `drivers/README.md` exist to tell a reader what to run, and
+half of those readers installed the other way. Substituting the invoking
+form as `init` writes is the tempting fix and is wrong for the reason the
+bullet above is right — the instance's committed content would then record
+which install created it, and read wrong for the teammate with the other
+one. `TestInitWritesTheSameInstanceHoweverItWasInvoked` holds that shut,
+and `tests/gh_extension_packaging.sh` holds it shut against the real
+release artifact.
+
+So the template names no invocation at all. It names the subcommand alone —
+`spawn`, `run-driver <name> <repo-path> <output-path>`, "the `drivers`
+listing" — and says once, in `README.md` under "Running a command", what an
+operator puts in front of it. `AGENTS.md` points at that section rather
+than restating it, because its reader is a coding agent that will do as it
+is told and otherwise reach for a binary that may not be on the `PATH`. The
+only fenced invocation in the whole template is the one in that section,
+which shows both forms.
+
+That is a prose convention, so it is guarded like one:
+`TestTheInstanceTemplateNamesNoCommandHalfItsReadersHaventGot` walks every
+embedded template file against the real subcommand list, flattening hard
+wraps first because `archimedes` and its subcommand can sit on two lines.
+Its two companions hold the other end: that the README section still exists
+and still shows both forms, and that `AGENTS.md` still names it, since a
+renamed heading would leave the one cross-reference an agent follows
+pointing at nothing. A sentence added later that spells an invocation out
+fails the suite rather than shipping. Instances
+that already exist keep the docs they were scaffolded with: nothing
+refreshes a template file into an instance, which is the same rule that
+makes the seeded content theirs (see "Two embedded trees").
+
 ### Version
 
 `--version` has to answer "which build is this?", and a downloaded release

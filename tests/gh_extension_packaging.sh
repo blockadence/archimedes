@@ -91,6 +91,28 @@ assert_eq "$dispatched_status" "0" "it scaffolds an instance when gh dispatches 
 direct_tree="$(cd "$WORK/direct" && find . -path ./.git -prune -o -print | sort)"
 dispatched_tree="$(cd "$WORK/dispatched" && find . -path ./.git -prune -o -print | sort)"
 assert_eq "$dispatched_tree" "$direct_tree" "both routes scaffold the same instance"
+
+# And byte for byte, not only path for path. These files are committed to
+# the instance's history and read by teammates and agents with either
+# install or neither, so an instance may not record which one scaffolded it
+# -- the docs inside it name subcommands rather than an invocation for
+# exactly that reason (docs/cli.md, "What an instance's own docs name").
+#
+# The count first, because the comparisons either side of it are between two
+# things this test produced: had the scaffolding written nothing at all,
+# both would be empty and both would say ok.
+scaffolded_files="$(cd "$WORK/direct" && find . -path ./.git -prune -o -type f -print | wc -l | tr -d ' ')"
+if [ "$scaffolded_files" -gt 0 ]; then
+  pass "the instance it scaffolded has files in it to compare ($scaffolded_files)"
+else
+  fail "the instance it scaffolded has files in it to compare"
+fi
+
+# diff rather than a digest of each side: when this fails it has to say
+# which file and what differs, and two lists of hashes would leave that to
+# whoever is reading.
+assert_eq "$(diff -r -x .git "$WORK/direct" "$WORK/dispatched" 2>&1)" "" \
+  "and the same bytes in every file of it"
 assert_eq "$(git -C "$WORK/dispatched" rev-list --count HEAD)" "1" \
   "and the one gh scaffolded got its own history too"
 
