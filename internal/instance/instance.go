@@ -3,10 +3,12 @@
 // content never lives in this repo's history.
 //
 // What lands in an instance is data and nothing else — a manifest, dossier
-// and work directories, drivers and scaffolding it owns from here on. The
-// tooling that acts on it is the archimedes binary itself, so there is
-// nothing in an instance to keep in step with this repo and nothing to
-// re-vendor into it.
+// and work directories, scaffolding it owns from here on, and an empty
+// drivers/ for whatever drivers it comes to own. Not one file of it is a
+// program: the tooling that acts on an instance is the archimedes binary,
+// and so are the drivers it ships (see internal/driver's Set). So there is
+// nothing in an instance to keep in step with this repo, nothing to
+// re-vendor into it, and no file mode to restore on the way in.
 //
 // The template is a filesystem the caller supplies rather than a path this
 // package goes looking for: cmd hands it the copy embedded in the binary
@@ -15,13 +17,11 @@
 package instance
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 
-	"github.com/blockadence/archimedes/internal/driver"
 	"github.com/blockadence/archimedes/internal/gitutil"
 )
 
@@ -48,9 +48,6 @@ func Create(src fs.FS, name, destParent string) (string, error) {
 
 func scaffold(src fs.FS, name, dest string) error {
 	if err := materialize(src, dest); err != nil {
-		return err
-	}
-	if err := markDriverCommandsExecutable(dest); err != nil {
 		return err
 	}
 	for _, args := range [][]string{
@@ -81,45 +78,4 @@ func materialize(src fs.FS, dest string) error {
 		}
 		return os.WriteFile(target, data, 0o644)
 	})
-}
-
-// markDriverCommandsExecutable restores the one file mode an instance
-// depends on. A template filesystem carries no modes (the embedded one
-// cannot), and a driver whose command isn't runnable is a driver that
-// doesn't work — so the mode is derived from what each driver.yaml declares
-// its command to be, rather than guessed from a filename. A driver's
-// sourced helper is not a program and stays inert; so does everything
-// outside drivers/.
-func markDriverCommandsExecutable(dest string) error {
-	driversDir := filepath.Join(dest, driver.DirName)
-	entries, err := os.ReadDir(driversDir)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("reading %s: %w", driversDir, err)
-	}
-
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		m, err := driver.LoadManifest(driversDir, e.Name())
-		// A directory under drivers/ that declares nothing is not a
-		// driver, and this is not the place to complain about it. A
-		// manifest that exists and won't load is a different problem.
-		if errors.Is(err, driver.ErrNoManifest) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if m.Command == "" {
-			return fmt.Errorf("driver %s: its manifest names no command", e.Name())
-		}
-		if err := os.Chmod(driver.CommandPath(driversDir, e.Name(), m), 0o755); err != nil {
-			return fmt.Errorf("making driver %s runnable: %w", e.Name(), err)
-		}
-	}
-	return nil
 }

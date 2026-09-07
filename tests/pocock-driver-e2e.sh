@@ -14,9 +14,6 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
-ROOT="$(cd "$HERE/.." && pwd)"
-export ARCHIMEDES_DRIVERS_DIR="$ROOT/template/drivers"
-
 if [ "${ARCHIMEDES_TEST_LIVE_DRIVERS:-0}" != "1" ]; then
   echo "skip: pocock-driver-e2e.sh (makes a real claude -p call -- set ARCHIMEDES_TEST_LIVE_DRIVERS=1 to run it)"
   exit 0

@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/blockadence/archimedes"
 	"github.com/blockadence/archimedes/internal/contextmap"
 )
 
@@ -51,8 +52,9 @@ override that default with a "driver" field of its own.`,
 }
 
 // contextMapOptions assembles a pass from the flags plus the environment
-// overrides. Anything unset is left empty for internal/contextmap to apply
-// its own default to, so the defaults live in one place.
+// overrides, over the drivers this binary ships. Anything unset is left
+// empty for internal/contextmap to apply its own default to, so the
+// defaults live in one place.
 func contextMapOptions(root string, dryRun bool, env func(string) string) contextmap.Options {
 	return contextmap.Options{
 		Root:          root,
@@ -62,5 +64,6 @@ func contextMapOptions(root string, dryRun bool, env func(string) string) contex
 		ContextPrompt: env(contextPromptEnvVar),
 		Driver:        env(driverEnvVar),
 		DriversDir:    env(driversDirEnvVar),
+		Builtin:       archimedes.Drivers(),
 	}
 }

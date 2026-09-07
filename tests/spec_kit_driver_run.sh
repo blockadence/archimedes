@@ -15,7 +15,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
 ROOT="$(cd "$HERE/.." && pwd)"
-DRIVER_BIN="$ROOT/template/drivers/spec-kit/run.sh"
+DRIVER_BIN="$ROOT/drivers/spec-kit/run.sh"
 build_archimedes || exit 1
 
 WORK="$(mktemp -d)"
@@ -98,7 +98,6 @@ STUB
 chmod +x "$STUB_BIN/specify" "$STUB_BIN/claude"
 
 export PATH="$STUB_BIN:$PATH"
-export ARCHIMEDES_DRIVERS_DIR="$ROOT/template/drivers"
 
 # Every case below starts from the same untouched repo and ends with the
 # same question: is it back exactly as it was found? Nothing but .git and

@@ -31,7 +31,7 @@ your-workspace/
 │   ├── repos/*.md           # per-repo dossier: branching, release procedure,
 │   │                        # house rules, known gotchas
 │   ├── work/<slug>/          # one folder per active unit of work
-│   ├── drivers/              # pluggable context-mapping drivers
+│   ├── drivers/              # context-mapping drivers this instance owns
 │   ├── convention-packs/     # shared build/lint conventions repos declare
 │   └── scaffolding/          # canonical PR/issue templates to push out
 ├── service-a/
@@ -42,7 +42,12 @@ your-workspace/
 An instance is data. It holds no tooling of its own: the `archimedes`
 binary is installed once per machine and every instance on it is acted on
 by that one install, so there is nothing in an instance to keep in step
-with this repo.
+with this repo. That includes the context-mapping drivers — the three that
+ship ride in the binary and are read out of it when one runs, which is what
+lets a fix to one reach instances that already exist. An instance's own
+`drivers/` starts empty and holds only what its operator puts there, where
+it takes precedence (see
+[`template/drivers/README.md`](./template/drivers/README.md)).
 
 The instance never contains the repos themselves (no submodules, no vendored
 copies) — it references sibling checkouts by relative path. It also never
@@ -124,6 +129,12 @@ Nothing else has to move: `repos.yaml`, `repos/`, `work/`, `drivers/` and
 subcommand takes the same arguments its script did. From then on the
 instance is data only, and upgrading means upgrading the binary.
 
+An instance old enough to have had `openspec/`, `pocock/` and `spec-kit/`
+copied into its `drivers/` still runs those copies, and no fix made here
+reaches them. `archimedes drivers` flags each as `shadows built-in`; delete
+the ones you never edited to go back to the versions the binary carries, and
+keep the ones you did.
+
 ## Commands
 
 Run from inside an instance, or from anywhere with `--root <instance>`.
@@ -147,20 +158,26 @@ behind each one are in [`docs/cli.md`](./docs/cli.md).
   or driver. By default the mapping itself is an interactive, human-in-the-
   loop session per repo (`ARCHIMEDES_AGENT_CMD`/`ARCHIMEDES_CONTEXT_PROMPT`/
   `ARCHIMEDES_CONTEXT_FILE` override the defaults); set `repos.yaml`'s
-  `driver` field — or `ARCHIMEDES_DRIVER` — to a name under `drivers/` to
-  build the map unattended instead (see `drivers/README.md`).
+  `driver` field — or `ARCHIMEDES_DRIVER` — to a driver's name to build the
+  map unattended instead (see `drivers/README.md`).
 - `run-driver <driver-name> <repo-path> <output-path>` — invoke one
   driver's context-mapping contract directly, without a pass around it. A
   driver declares, in its `driver.yaml` manifest, whether it accepts an
   explicit output path (`output_mode: path-parameterized`) or always writes
   into whatever repo it's run in (`output_mode: fixed-location`, harvested
-  afterward so the target repo ends up clean). Three drivers ship as working
-  examples: an `openspec` driver wrapping the
+  afterward so the target repo ends up clean). Three drivers ship in the
+  binary as working examples: an `openspec` driver wrapping the
   [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec) for the first mode,
   and — for the second — a `pocock` driver wrapping Matt Pocock's
   `domain-modeling` skill and a `spec-kit` driver wrapping
   [GitHub's Spec Kit](https://github.com/github/spec-kit), which has to
   scaffold itself into the target repo and strip that back out again.
+- `drivers` / `drivers adopt <name>` — list every driver this instance can
+  run and which of the two places it comes from: the instance's own
+  `drivers/`, which nothing ever refreshes, or the binary, where a fix
+  arrives with the next upgrade. `adopt` copies a shipped driver into the
+  instance to edit, taking it over — an instance driver wins over a shipped
+  one of the same name, and the listing says so.
 - `spawn <slug> <repo> [--base <branch>|--stack-on <repo>:<slug>]` —
   fetch-first worktree creation for one unit of work in one repo. Also
   materializes `work/<slug>/`'s contents (a ticket, a spec, whatever

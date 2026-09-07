@@ -15,7 +15,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
 ROOT="$(cd "$HERE/.." && pwd)"
-source "$ROOT/template/drivers/spec-kit/repo-snapshot.sh"
+source "$ROOT/drivers/spec-kit/repo-snapshot.sh"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

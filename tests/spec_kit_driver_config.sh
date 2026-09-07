@@ -11,7 +11,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
 ROOT="$(cd "$HERE/.." && pwd)"
-DRIVER_DIR="$ROOT/template/drivers/spec-kit"
+DRIVER_DIR="$ROOT/drivers/spec-kit"
 build_archimedes || exit 1
 
 WORK="$(mktemp -d)"
@@ -63,7 +63,10 @@ mkdir -p "$REPO"
 )
 
 out_path="$WORK/out.md"
-if err="$(PATH="$SPECLESS_PATH" ARCHIMEDES_DRIVERS_DIR="$ROOT/template/drivers" \
+# No ARCHIMEDES_DRIVERS_DIR and no instance: spec-kit comes out of the
+# binary, which is the only reason a run from an empty directory can find it
+# at all.
+if err="$(cd "$WORK" && PATH="$SPECLESS_PATH" \
     "$ARCHIMEDES_BIN" run-driver spec-kit "$REPO" "$out_path" 2>&1 >/dev/null)"; then
   fail "a run without the specify CLI installed exits non-zero"
 else
@@ -97,7 +100,6 @@ EOF
 
 (
   cd "$INSTANCE"
-  export ARCHIMEDES_DRIVERS_DIR="$ROOT/template/drivers"
   PATH="$SPECLESS_PATH" "$ARCHIMEDES_BIN" context-map
 ) </dev/null >"$WORK/run.log" 2>&1
 run_status=$?
@@ -122,17 +124,14 @@ echo "one repo can be switched to spec-kit on its own:"
 # different shape from the other two drivers', so which one suits a repo is
 # a per-repo judgement. That's only true if the per-repo override actually
 # reaches this driver.
-# ARCHIMEDES_DRIVERS_DIR names one directory, so the real drivers and the
-# stub the other repo stays on have to sit in the same one.
-MERGED_DRIVERS="$WORK/drivers"
-mkdir -p "$MERGED_DRIVERS"
-cp -R "$ROOT/template/drivers/." "$MERGED_DRIVERS/"
-cp -R "$HERE/fixtures/drivers/stub-ok" "$MERGED_DRIVERS/"
-
+# The two layers in one pass: the instance owns stub-ok, spec-kit comes out
+# of the binary, and a repos.yaml naming either resolves without the
+# operator arranging for both to sit in one directory.
 make_origin_and_clone "$WORK" stays-on-default
 make_origin_and_clone "$WORK" switched-to-spec-kit
 INSTANCE2="$WORK/instance2"
-mkdir -p "$INSTANCE2"
+mkdir -p "$INSTANCE2/drivers"
+cp -R "$HERE/fixtures/drivers/stub-ok" "$INSTANCE2/drivers/"
 
 cat > "$INSTANCE2/repos.yaml" <<EOF
 driver: stub-ok
@@ -152,7 +151,6 @@ EOF
 
 (
   cd "$INSTANCE2"
-  export ARCHIMEDES_DRIVERS_DIR="$MERGED_DRIVERS"
   PATH="$SPECLESS_PATH" "$ARCHIMEDES_BIN" context-map
 ) </dev/null >"$WORK/override.log" 2>&1
 
