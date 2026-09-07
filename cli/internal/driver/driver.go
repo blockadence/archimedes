@@ -51,12 +51,17 @@ type Manifest struct {
 // LoadManifest reads the manifest for the driver named name under
 // driversDir. A driver with no manifest there is an unknown driver: naming
 // one that doesn't exist is a misconfiguration that fails immediately,
-// rather than silently falling back to some other way of mapping.
+// rather than silently falling back to some other way of mapping. A
+// manifest that exists but can't be read is a different problem, and says
+// so rather than blaming the name.
 func LoadManifest(driversDir, name string) (Manifest, error) {
 	path := filepath.Join(driversDir, name, ManifestName)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return Manifest{}, fmt.Errorf("unknown driver: %s (no manifest at %s)", name, path)
+		if os.IsNotExist(err) {
+			return Manifest{}, fmt.Errorf("unknown driver: %s (no manifest at %s)", name, path)
+		}
+		return Manifest{}, fmt.Errorf("reading %s: %w", path, err)
 	}
 
 	var m Manifest
@@ -64,6 +69,30 @@ func LoadManifest(driversDir, name string) (Manifest, error) {
 		return Manifest{}, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return m, nil
+}
+
+// invocation is how one output_mode gets a driver's output to outputPath.
+// Picking one up front (see Manifest.plan) is what keeps the output_mode
+// decision in a single place rather than re-tested at every step.
+type invocation func(bin, repoPath, outputPath string, progress io.Writer) error
+
+// plan validates a manifest and returns how to invoke it. Everything a
+// mode requires beyond the mode itself — fixed-location's fixed_path — is
+// checked here, so a misconfigured manifest is rejected before any driver
+// runs rather than partway through one.
+func (m Manifest) plan(name string) (invocation, error) {
+	switch m.OutputMode {
+	case ModePathParameterized:
+		return writeWhereTold, nil
+	case ModeFixedLocation:
+		if m.FixedPath == "" {
+			return nil, fmt.Errorf("driver %q declares output_mode %q but has no fixed_path in its manifest", name, ModeFixedLocation)
+		}
+		return harvestFrom(m.FixedPath), nil
+	default:
+		return nil, fmt.Errorf("driver %q declares output_mode %q, which archimedes doesn't support (only %s, %s)",
+			name, m.OutputMode, ModePathParameterized, ModeFixedLocation)
+	}
 }
 
 // Run invokes the driver named name against repoPath and guarantees the
@@ -79,15 +108,9 @@ func Run(driversDir, name, repoPath, outputPath string, progress io.Writer) erro
 	if err != nil {
 		return err
 	}
-
-	switch m.OutputMode {
-	case ModePathParameterized, ModeFixedLocation:
-	default:
-		return fmt.Errorf("driver %q declares output_mode %q, which archimedes doesn't support (only %s, %s)",
-			name, m.OutputMode, ModePathParameterized, ModeFixedLocation)
-	}
-	if m.OutputMode == ModeFixedLocation && m.FixedPath == "" {
-		return fmt.Errorf("driver %q declares output_mode %q but has no fixed_path in its manifest", name, ModeFixedLocation)
+	invoke, err := m.plan(name)
+	if err != nil {
+		return err
 	}
 
 	bin := filepath.Join(driversDir, name, m.Command)
@@ -107,33 +130,44 @@ func Run(driversDir, name, repoPath, outputPath string, progress io.Writer) erro
 		return err
 	}
 
-	if m.OutputMode == ModePathParameterized {
-		if err := invoke(bin, progress, repoPath, outputPath); err != nil {
-			return fmt.Errorf("driver %q: %w", name, err)
-		}
-		if !isFile(outputPath) {
-			return fmt.Errorf("driver %q exited 0 but did not write %s", name, outputPath)
-		}
-		return nil
-	}
-
-	// fixed-location: the driver can't be told where to write, so we
-	// invoke it with just the repo path and harvest its manifest-declared
-	// fixed_path ourselves — moving rather than copying, so the target
-	// repo ends up with no trace of the artifact.
-	writtenAt := filepath.Join(repoPath, m.FixedPath)
-	if err := invoke(bin, progress, repoPath); err != nil {
+	if err := invoke(bin, repoPath, outputPath, progress); err != nil {
 		return fmt.Errorf("driver %q: %w", name, err)
 	}
-	if !isFile(writtenAt) {
-		return fmt.Errorf("driver %q exited 0 but did not write %s", name, writtenAt)
-	}
-	return move(writtenAt, outputPath)
+	return nil
 }
 
-// invoke runs the driver executable, streaming both its streams to
-// progress so whatever it reports reaches the operator.
-func invoke(bin string, progress io.Writer, args ...string) error {
+// writeWhereTold is the path-parameterized contract: the driver is handed
+// the output location and writes exactly there.
+func writeWhereTold(bin, repoPath, outputPath string, progress io.Writer) error {
+	if err := run(bin, progress, repoPath, outputPath); err != nil {
+		return err
+	}
+	if !isFile(outputPath) {
+		return fmt.Errorf("exited 0 but did not write %s", outputPath)
+	}
+	return nil
+}
+
+// harvestFrom is the fixed-location contract: the driver can't be told
+// where to write, so it's invoked with just the repo path and we harvest
+// its manifest-declared fixedPath ourselves — moving rather than copying,
+// so the target repo ends up with no trace of the artifact.
+func harvestFrom(fixedPath string) invocation {
+	return func(bin, repoPath, outputPath string, progress io.Writer) error {
+		writtenAt := filepath.Join(repoPath, fixedPath)
+		if err := run(bin, progress, repoPath); err != nil {
+			return err
+		}
+		if !isFile(writtenAt) {
+			return fmt.Errorf("exited 0 but did not write %s", writtenAt)
+		}
+		return move(writtenAt, outputPath)
+	}
+}
+
+// run executes the driver, streaming both its streams to progress so
+// whatever it reports reaches the operator.
+func run(bin string, progress io.Writer, args ...string) error {
 	cmd := exec.Command(bin, args...)
 	cmd.Stdout = progress
 	cmd.Stderr = progress
@@ -165,7 +199,9 @@ func isFile(path string) bool {
 
 // move relocates src to dst, falling back to copy-then-remove when the two
 // are on different filesystems (the control repo and a target repo need not
-// share one, and os.Rename can't cross that boundary the way mv does).
+// share one, and os.Rename can't cross that boundary the way mv does). The
+// copy carries src's mode, so the harvested map is the file the driver
+// wrote either way.
 func move(src, dst string) error {
 	if err := os.Rename(src, dst); err == nil {
 		return nil
@@ -177,7 +213,12 @@ func move(src, dst string) error {
 	}
 	defer in.Close()
 
-	out, err := os.Create(dst)
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, info.Mode().Perm())
 	if err != nil {
 		return err
 	}

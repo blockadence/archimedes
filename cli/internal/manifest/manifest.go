@@ -27,6 +27,11 @@ type Repo struct {
 	Driver string `yaml:"driver"`
 }
 
+// FieldContextModeledSHA is Repo.ContextModeledSHA's key in repos.yaml,
+// named here because SetRepoField addresses fields by their YAML key
+// rather than through the struct.
+const FieldContextModeledSHA = "context_modeled_sha"
+
 // Manifest is the parsed contents of repos.yaml.
 type Manifest struct {
 	// Driver is the instance-wide default context-mapping driver, used for
