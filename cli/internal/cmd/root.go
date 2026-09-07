@@ -31,6 +31,7 @@ tracking/spawning/pruning the worktrees used to execute it.`,
 	root.AddCommand(newSpawnCmd())
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newPruneCmd())
+	root.AddCommand(newDashboardCmd())
 	root.AddCommand(newSyncTemplatesCmd())
 	root.AddCommand(newSyncHouseRulesCmd())
 

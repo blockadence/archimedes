@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/blockadence/archimedes/cli/internal/driver"
-	"github.com/blockadence/archimedes/cli/internal/gitutil"
 	"github.com/blockadence/archimedes/cli/internal/manifest"
 )
 
@@ -90,42 +89,39 @@ func Run(opts Options, out, progress io.Writer, in io.Reader) error {
 	}
 	fmt.Fprintf(out, "Planned order: %s\n", strings.Join(order, " "))
 
+	// Staleness is measured against the remote's base branch, not the
+	// local checkout, so a stale local clone can't make a repo look
+	// current — a pass is about to spend a driver run on the answer.
+	sha := FetchedSHA(progress)
+
 	for _, name := range order {
 		repo, ok := m.Find(name)
 		if !ok {
 			continue
 		}
-		path := filepath.Join(root, repo.Path)
-		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+
+		state := State(root, repo, contextFile, sha)
+		if !state.Cloned {
 			fmt.Fprintf(out, "Skipping %s, not cloned yet (run bootstrap first).\n", name)
 			continue
 		}
-
-		// Staleness is measured against the remote's base branch, not the
-		// local checkout, so a stale local clone can't make a repo look
-		// current.
-		if err := gitutil.RunOut(path, progress, "fetch", "origin", repo.BaseBranch, "-q"); err != nil {
-			return err
-		}
-		currentSHA, err := gitutil.Run(path, "rev-parse", "origin/"+repo.BaseBranch)
-		if err != nil {
-			return err
+		if state.Err != nil {
+			return state.Err
 		}
 
 		turn := repoTurn{
 			repo:       repo,
-			path:       path,
-			outputPath: filepath.Join(path, contextFile),
-			currentSHA: currentSHA,
+			path:       state.Path,
+			outputPath: state.ContextPath,
+			currentSHA: state.CurrentSHA,
 		}
 
-		assessment := Assess(repo.ContextModeledSHA, currentSHA, contextFile, isFile(turn.outputPath))
-		if !assessment.Stale {
-			fmt.Fprintf(out, "Up to date: %s (@ %s)\n", name, Short(currentSHA))
+		if !state.Stale {
+			fmt.Fprintf(out, "Up to date: %s (@ %s)\n", name, Short(state.CurrentSHA))
 			continue
 		}
 
-		fmt.Fprintf(out, "\n=== %s (%s) ===\n", name, assessment.Reason)
+		fmt.Fprintf(out, "\n=== %s (%s) ===\n", name, state.Reason)
 		if opts.DryRun {
 			continue
 		}
@@ -140,7 +136,7 @@ func Run(opts Options, out, progress io.Writer, in io.Reader) error {
 			return err
 		}
 
-		if err := manifest.SetRepoField(manifestPath, name, manifest.FieldContextModeledSHA, currentSHA); err != nil {
+		if err := manifest.SetRepoField(manifestPath, name, manifest.FieldContextModeledSHA, turn.currentSHA); err != nil {
 			return fmt.Errorf("recording %s as mapped: %w", name, err)
 		}
 	}
