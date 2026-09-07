@@ -14,8 +14,8 @@ import (
 // subcommand that reads PR state off a status.md row (prune, notify), so
 // they can't disagree about which repository a row refers to.
 //
-// Either way the state is "NONE" — no PR to act on — because that matches
-// lib.sh and is the safe direction: a lookup failure must never be
+// Either way the state is "NONE" — no PR to act on — because that is the
+// safe direction: a lookup failure must never be
 // mistaken for permission to prune something. The two are told apart by
 // the error instead. A repo the manifest doesn't know is a settled answer
 // (there is nothing here to prune); an origin that can't be read is a

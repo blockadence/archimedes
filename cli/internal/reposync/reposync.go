@@ -1,7 +1,6 @@
 // Package reposync pushes canonical control-repo content into the tracked
-// target repos as pull requests: the shared PR/issue templates
-// (template/scripts/sync-templates.sh) and a repo's own house rules
-// (template/scripts/sync-house-rules.sh).
+// target repos as pull requests: the shared PR/issue templates and a repo's
+// own house rules.
 //
 // The two differ in shape, not intent. Templates are identical across every
 // repo, so that sync is a thin wrapper around multi-gitter's fan-out — no

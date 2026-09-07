@@ -49,6 +49,21 @@ type Options struct {
 	ContextPrompt string
 }
 
+// DriversDir is where drivers are looked up for an instance rooted at root:
+// override when the operator named one (ARCHIMEDES_DRIVERS_DIR), otherwise
+// the instance's own drivers/.
+//
+// Exported because more than a mapping pass asks the question — `run-driver`
+// exercises one driver on its own — and the two answering it differently
+// would mean a driver that works in a pass and is missing outside it, or the
+// reverse.
+func DriversDir(root, override string) string {
+	if override != "" {
+		return override
+	}
+	return filepath.Join(root, DriversDirName)
+}
+
 // Run sequences a context-mapping pass across every repo in the instance at
 // opts.Root, dependency/base repos first, skipping any repo whose map is
 // already current for its base branch's latest commit. Each repo it does
@@ -70,10 +85,7 @@ func Run(opts Options, out, progress io.Writer, in io.Reader) error {
 	if contextFile == "" {
 		contextFile = DefaultContextFile
 	}
-	driversDir := opts.DriversDir
-	if driversDir == "" {
-		driversDir = filepath.Join(root, DriversDirName)
-	}
+	driversDir := DriversDir(root, opts.DriversDir)
 	confirm := bufio.NewReader(in)
 
 	order, warning := Order(m.Repos)

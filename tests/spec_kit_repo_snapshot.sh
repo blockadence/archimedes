@@ -4,7 +4,7 @@
 # to scaffold a whole toolchain into the target repo still honor the
 # fixed-location contract's "no trace left behind" guarantee: snapshot the
 # repo's state first, then afterwards undo everything the run added or
-# changed, keeping only the declared fixed_path for run-driver.sh to
+# changed, keeping only the declared fixed_path for the driver runner to
 # harvest.
 #
 # No network, no CLIs, no spec-kit -- the helpers are exercised directly
@@ -56,7 +56,7 @@ rm "$REPO/src/doomed.js"
 restore_repo_state "$REPO" "$SNAP" ".specify/memory/constitution.md"
 
 assert_file_exists "$REPO/.specify/memory/constitution.md" \
-  "the kept path survives restore, so run-driver.sh still has something to harvest"
+  "the kept path survives restore, so the driver runner still has something to harvest"
 assert_eq "$(cat "$REPO/.specify/memory/constitution.md" 2>/dev/null)" "the constitution" \
   "the kept path's content is untouched by restore"
 
@@ -84,7 +84,7 @@ assert_eq "$(cat "$REPO/README.md" 2>/dev/null)" "# readme, edited by a human" \
   "a tracked file already dirty before the run keeps its edits (restore undoes the run's changes, not the human's)"
 
 # The only thing standing between this repo and its pre-run git status is
-# the artifact run-driver.sh is about to move out of it.
+# the artifact the driver runner is about to move out of it.
 assert_eq "$(git -C "$REPO" status --porcelain)" \
   "$(printf ' M README.md\n?? .specify/\n?? scratch-note.md')" \
   "git status after restore shows the pre-run state plus the kept artifact, nothing else"

@@ -15,8 +15,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
 ROOT="$(cd "$HERE/.." && pwd)"
-RUN_DRIVER="$ROOT/template/scripts/run-driver.sh"
 DRIVER_BIN="$ROOT/template/drivers/spec-kit/run.sh"
+build_archimedes || exit 1
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -122,7 +122,7 @@ echo "spec-kit driver, successful run:"
 
 fresh_repo "$REPO"
 OUT="$WORK/CONTEXT.md"
-if "$RUN_DRIVER" spec-kit "$REPO" "$OUT" >"$WORK/run.log" 2>&1; then
+if "$ARCHIMEDES_BIN" run-driver spec-kit "$REPO" "$OUT" >"$WORK/run.log" 2>&1; then
   pass "a run whose session fills the constitution in exits zero"
 else
   fail "a run whose session fills the constitution in exits zero"
@@ -140,7 +140,7 @@ echo "spec-kit driver, the session does nothing:"
 
 fresh_repo "$REPO"
 OUT="$WORK/noop.md"
-if err="$(CLAUDE_STUB_MODE=noop "$RUN_DRIVER" spec-kit "$REPO" "$OUT" 2>&1 >/dev/null)"; then
+if err="$(CLAUDE_STUB_MODE=noop "$ARCHIMEDES_BIN" run-driver spec-kit "$REPO" "$OUT" 2>&1 >/dev/null)"; then
   fail "a run whose session leaves the template untouched exits non-zero"
 else
   pass "a run whose session leaves the template untouched exits non-zero"
@@ -155,7 +155,7 @@ echo "spec-kit driver, the session fails:"
 
 fresh_repo "$REPO"
 OUT="$WORK/fail.md"
-if CLAUDE_STUB_MODE=fail "$RUN_DRIVER" spec-kit "$REPO" "$OUT" >/dev/null 2>&1; then
+if CLAUDE_STUB_MODE=fail "$ARCHIMEDES_BIN" run-driver spec-kit "$REPO" "$OUT" >/dev/null 2>&1; then
   fail "a run whose session exits non-zero fails the driver too"
 else
   pass "a run whose session exits non-zero fails the driver too"
@@ -168,7 +168,7 @@ echo "spec-kit driver, specify itself fails:"
 
 fresh_repo "$REPO"
 OUT="$WORK/specify-fail.md"
-if err="$(SPECIFY_STUB_FAIL=1 "$RUN_DRIVER" spec-kit "$REPO" "$OUT" 2>&1 >/dev/null)"; then
+if err="$(SPECIFY_STUB_FAIL=1 "$ARCHIMEDES_BIN" run-driver spec-kit "$REPO" "$OUT" 2>&1 >/dev/null)"; then
   fail "a run whose specify init fails exits non-zero"
 else
   pass "a run whose specify init fails exits non-zero"
@@ -182,7 +182,7 @@ echo "spec-kit driver, specify scaffolds no constitution:"
 
 fresh_repo "$REPO"
 OUT="$WORK/no-constitution.md"
-if err="$(SPECIFY_STUB_NO_CONSTITUTION=1 "$RUN_DRIVER" spec-kit "$REPO" "$OUT" 2>&1 >/dev/null)"; then
+if err="$(SPECIFY_STUB_NO_CONSTITUTION=1 "$ARCHIMEDES_BIN" run-driver spec-kit "$REPO" "$OUT" 2>&1 >/dev/null)"; then
   fail "a run where specify scaffolds no constitution exits non-zero"
 else
   pass "a run where specify scaffolds no constitution exits non-zero"
@@ -223,7 +223,7 @@ if [ -f "$SENTINEL" ]; then
   fi
   # The session had already written the constitution by this point, so a
   # driver that shrugged the interrupt off would have left it sitting there
-  # for run-driver.sh to harvest -- a context map for a repo nobody
+  # for the driver runner to harvest -- a context map for a repo nobody
   # finished cleaning up.
   assert_repo_pristine "$REPO" "killed mid-run"
   assert_file_missing "$REPO/.specify/memory/constitution.md" \
@@ -245,7 +245,7 @@ echo "spec-kit driver, the session commits:"
 # for a repo that now has a whole toolchain committed into it.
 fresh_repo "$REPO"
 OUT="$WORK/committed.md"
-if err="$(CLAUDE_STUB_MODE=commit "$RUN_DRIVER" spec-kit "$REPO" "$OUT" 2>&1 >/dev/null)"; then
+if err="$(CLAUDE_STUB_MODE=commit "$ARCHIMEDES_BIN" run-driver spec-kit "$REPO" "$OUT" 2>&1 >/dev/null)"; then
   fail "a run whose session committed exits non-zero rather than quietly succeeding"
 else
   pass "a run whose session committed exits non-zero rather than quietly succeeding"

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# End-to-end: runs the real spec-kit driver, through the same run-driver.sh
-# seam context-map-all.sh uses, against a throwaway git repo. This is the
-# hardest case for the fixed-location contract's guarantees -- the driver
-# has to unpack a whole toolchain into the target repo to produce anything
-# -- so the assertions are the same ones the pocock driver has to satisfy:
-# the canonical artifact lands in the control repo (here, $WORK), and the
-# target repo is left with no trace of the run at all.
+# End-to-end: runs the real spec-kit driver, through the same
+# `archimedes run-driver` seam a context-mapping pass uses, against a
+# throwaway git repo. This is the hardest case for the fixed-location
+# contract's guarantees -- the driver has to unpack a whole toolchain into
+# the target repo to produce anything -- so the assertions are the same ones
+# the pocock driver has to satisfy: the canonical artifact lands in the
+# control repo (here, $WORK), and the target repo is left with no trace of
+# the run at all.
 #
 # This makes a real, billed `claude -p` call and downloads Spec Kit's
 # templates, so it's opt-in: set ARCHIMEDES_TEST_LIVE_DRIVERS=1 to run it.
@@ -15,7 +16,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
 ROOT="$(cd "$HERE/.." && pwd)"
-RUN_DRIVER="$ROOT/template/scripts/run-driver.sh"
 export ARCHIMEDES_DRIVERS_DIR="$ROOT/template/drivers"
 
 if [ "${ARCHIMEDES_TEST_LIVE_DRIVERS:-0}" != "1" ]; then
@@ -33,6 +33,8 @@ if ! command -v claude >/dev/null 2>&1; then
   exit 0
 fi
 
+build_archimedes || exit 1
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 REPO="$WORK/throwaway-repo"
@@ -41,7 +43,7 @@ make_widget_repo "$REPO"
 echo "spec-kit driver end-to-end:"
 
 OUT="$WORK/CONTEXT.md"
-if "$RUN_DRIVER" spec-kit "$REPO" "$OUT" >"$WORK/run.log" 2>&1; then
+if "$ARCHIMEDES_BIN" run-driver spec-kit "$REPO" "$OUT" >"$WORK/run.log" 2>&1; then
   pass "driver run exits zero against a throwaway repo"
 else
   fail "driver run exits zero against a throwaway repo"

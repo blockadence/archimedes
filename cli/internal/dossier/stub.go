@@ -9,9 +9,6 @@ import (
 // repo: a skeleton of the sections a context-mapping pass fills in, with
 // "House rules" (standing directives) and "Known gotchas" (surprising
 // facts) deliberately kept as two distinct sections.
-//
-// Kept byte-identical to lib.sh's write_dossier_stub heredoc;
-// TestStubMatchesLibSh fails if the two drift apart.
 const stubTemplate = `# %s
 
 **Path:** %s

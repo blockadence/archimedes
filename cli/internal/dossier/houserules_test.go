@@ -3,7 +3,6 @@ package dossier_test
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/dossier"
@@ -82,69 +81,27 @@ func TestHouseRulesMissingDossier(t *testing.T) {
 	}
 }
 
-// A freshly bootstrapped, never-edited dossier carries instructional
-// boilerplate. Delivering that as though it were a real mandated rule would
-// be worse than delivering nothing.
-func TestHouseRulesTreatsUneditedStubAsNoRules(t *testing.T) {
+// A dossier scaffolded before the scripts were retired carries the older
+// wording of the stub. Its repo has no house rules recorded any more than a
+// freshly scaffolded one does, and the cost of forgetting that is the worst
+// this package has: instructional boilerplate committed into someone's repo
+// as though it were a mandated rule.
+func TestHouseRulesTreatsThePreRetirementStubAsNoRules(t *testing.T) {
 	dir := t.TempDir()
-	writeDossier(t, dir, "r", "# r\n\n"+dossier.HouseRulesHeading+"\n"+stubBodyFromLibSh(t)+"\n\n## Known gotchas\nTBD\n")
+	legacy := "TBD. Mandated decisions that must be respected even if unusual — the kind of\n" +
+		"thing a new contributor (or agent) would otherwise get wrong by using good\n" +
+		"judgment. Kept separate from \"Known gotchas\" below: gotchas are surprising\n" +
+		"facts about the repo, house rules are standing directives. Edit this section\n" +
+		"only here — `sync-house-rules.sh` pushes a durable copy into the repo\n" +
+		"itself, and `spawn.sh` injects an ephemeral copy into every worktree\n" +
+		"spawned for it, so this dossier is the one place changes need to be made."
+	writeDossier(t, dir, "r", "# r\n\n"+dossier.HouseRulesHeading+"\n"+legacy+"\n\n## Known gotchas\nTBD\n")
 
 	got, err := dossier.HouseRules(dir, "r")
 	if err != nil {
 		t.Fatalf("HouseRules: %v", err)
 	}
 	if got != "" {
-		t.Errorf("unedited stub was treated as a real house rule: %q", got)
-	}
-}
-
-var stubBodyRE = regexp.MustCompile(`(?s)HOUSE_RULES_STUB_BODY='(.*?)'`)
-
-// stubBodyFromLibSh reads the canonical stub text out of the shell
-// implementation, so this package's copy is checked against the real thing
-// rather than against itself.
-func stubBodyFromLibSh(t *testing.T) string {
-	t.Helper()
-	path := filepath.Join("..", "..", "..", "template", "scripts", "lib.sh")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %v", path, err)
-	}
-	m := stubBodyRE.FindSubmatch(data)
-	if m == nil {
-		t.Fatalf("could not find HOUSE_RULES_STUB_BODY in %s", path)
-	}
-	return string(m[1])
-}
-
-// The Go and shell implementations both decide what counts as an unedited
-// stub. If lib.sh's wording is reworded without updating this package, a
-// freshly bootstrapped dossier would start delivering boilerplate as a real
-// rule — silently, and only via the Go CLI. Fail loudly instead.
-func TestStubBodyMatchesLibSh(t *testing.T) {
-	dir := t.TempDir()
-	writeDossier(t, dir, "r", "# r\n\n"+dossier.HouseRulesHeading+"\n"+stubBodyFromLibSh(t)+"\n")
-
-	got, err := dossier.HouseRules(dir, "r")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "" {
-		t.Errorf("lib.sh's HOUSE_RULES_STUB_BODY has drifted from this package's copy;\n"+
-			"update houseRulesStubBody in houserules.go to match.\nlib.sh has:\n%s", got)
-	}
-}
-
-// The heading the Go code looks for must be the one lib.sh writes.
-func TestHeadingMatchesLibSh(t *testing.T) {
-	path := filepath.Join("..", "..", "..", "template", "scripts", "lib.sh")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %v", path, err)
-	}
-
-	want := "HOUSE_RULES_HEADING='" + dossier.HouseRulesHeading + "'"
-	if !regexp.MustCompile(regexp.QuoteMeta(want)).Match(data) {
-		t.Errorf("lib.sh does not define %s; heading has drifted", want)
+		t.Errorf("an instance scaffolded before the retirement had its stub read as a real house rule:\n%s", got)
 	}
 }

@@ -14,7 +14,7 @@ import (
 
 // setupInstance builds an instance root with one target repo (with a
 // spawned worktree+branch for slug) plus a matching work/<slug>/status.md,
-// the same shape spawn.sh produces.
+// the same shape spawn produces.
 func setupInstance(t *testing.T, root, repoName, slug, note string) (repoPath, wt string) {
 	t.Helper()
 

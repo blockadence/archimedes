@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# End-to-end: runs the real pocock driver, through the same run-driver.sh
-# seam context-map-all.sh uses, against a throwaway git repo. Exercises the
-# fixed-location contract's actual guarantees: the canonical CONTEXT.md
-# lands in the control repo (here, $WORK) and the target repo is left with
-# no trace of it -- clean `git status`.
+# End-to-end: runs the real pocock driver, through the same
+# `archimedes run-driver` seam a context-mapping pass uses, against a
+# throwaway git repo. Exercises the fixed-location contract's actual
+# guarantees: the canonical CONTEXT.md lands in the control repo (here,
+# $WORK) and the target repo is left with no trace of it -- clean
+# `git status`.
 #
 # This makes a real, billed `claude -p` call, so it's opt-in: set
 # ARCHIMEDES_TEST_LIVE_DRIVERS=1 to run it. Skips with a clear message
@@ -14,7 +15,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
 ROOT="$(cd "$HERE/.." && pwd)"
-RUN_DRIVER="$ROOT/template/scripts/run-driver.sh"
 export ARCHIMEDES_DRIVERS_DIR="$ROOT/template/drivers"
 
 if [ "${ARCHIMEDES_TEST_LIVE_DRIVERS:-0}" != "1" ]; then
@@ -27,6 +27,8 @@ if ! command -v claude >/dev/null 2>&1; then
   exit 0
 fi
 
+build_archimedes || exit 1
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 REPO="$WORK/throwaway-repo"
@@ -35,7 +37,7 @@ make_widget_repo "$REPO"
 echo "pocock driver end-to-end:"
 
 OUT="$WORK/CONTEXT.md"
-if "$RUN_DRIVER" pocock "$REPO" "$OUT" >"$WORK/run.log" 2>&1; then
+if "$ARCHIMEDES_BIN" run-driver pocock "$REPO" "$OUT" >"$WORK/run.log" 2>&1; then
   pass "driver run exits zero against a throwaway repo"
 else
   fail "driver run exits zero against a throwaway repo"

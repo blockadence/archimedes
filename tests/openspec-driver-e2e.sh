@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# End-to-end: runs the real openspec driver, through the same run-driver.sh
-# seam context-map-all.sh uses, against a throwaway git repo. Requires the
-# `openspec` CLI on PATH (npm install -g @fission-ai/openspec); skips with a
-# clear message if it isn't available rather than failing the suite.
+# End-to-end: runs the real openspec driver, through the same
+# `archimedes run-driver` seam a context-mapping pass uses, against a
+# throwaway git repo. Requires the `openspec` CLI on PATH (npm install -g
+# @fission-ai/openspec); skips with a clear message if it isn't available
+# rather than failing the suite.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
 ROOT="$(cd "$HERE/.." && pwd)"
-RUN_DRIVER="$ROOT/template/scripts/run-driver.sh"
 export ARCHIMEDES_DRIVERS_DIR="$ROOT/template/drivers"
 
 if ! command -v openspec >/dev/null 2>&1; then
   echo "skip: openspec-driver-e2e.sh (openspec CLI not on PATH — npm install -g @fission-ai/openspec)"
   exit 0
 fi
+
+build_archimedes || exit 1
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -31,10 +33,11 @@ mkdir -p "$REPO/src"
 echo "openspec driver end-to-end:"
 
 OUT="$WORK/CONTEXT.md"
-if "$RUN_DRIVER" openspec "$REPO" "$OUT" >/dev/null; then
+if "$ARCHIMEDES_BIN" run-driver openspec "$REPO" "$OUT" >"$WORK/run.log" 2>&1; then
   pass "driver run exits zero against a throwaway repo"
 else
   fail "driver run exits zero against a throwaway repo"
+  cat "$WORK/run.log" >&2
 fi
 
 assert_file_exists "$OUT" "context map lands at the exact requested path"

@@ -2,7 +2,7 @@
 
 ## Repos
 
-(populated by `scripts/bootstrap.sh`, then `scripts/render-map.sh`)
+(populated by `archimedes bootstrap`, then `archimedes render-map`)
 
 ## Relationships
 

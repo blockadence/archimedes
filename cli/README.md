@@ -1,8 +1,10 @@
 # archimedes (CLI)
 
-Compiled replacement for `template/scripts/*.sh`, installable once, globally,
-independent of any instance. An instance becomes pure data (`repos.yaml`,
-`repos/*.md`, `work/`) — this binary is the only thing that acts on it.
+The tool, installed once per machine and independent of any instance. An
+instance is pure data (`repos.yaml`, `repos/*.md`, `work/`, `drivers/`,
+`scaffolding/`) — this binary is the only thing that acts on it, so every
+instance on a machine is served by one install and none of them carry a
+copy of anything.
 
 ## Build / install
 
@@ -10,6 +12,10 @@ independent of any instance. An instance becomes pure data (`repos.yaml`,
 go build ./cmd/archimedes            # local binary at ./archimedes
 go install ./cmd/archimedes          # installs `archimedes` to $GOBIN
 ```
+
+Requires `git` and `gh` (authenticated); `sync-templates` additionally
+requires `multi-gitter`. Each subcommand checks for what it needs before it
+starts.
 
 ## Adding a subcommand
 
@@ -51,29 +57,26 @@ it, and it drives git directly rather than through `internal/gitutil` under
 the same exemption every git fixture has: a bug in `gitutil` must not be
 able to hide itself by also breaking the fixture.
 
-The bash suite still covering `template/scripts/*.sh` builds the same shape
-from `tests/gitfixture.sh`; keep the two in step while both exist.
+The bash suite under `tests/` exercises the shipped drivers end to end
+against this binary, and builds the same repo shape from
+`tests/gitfixture.sh`; keep the two in step.
 
-## Status
+## Subcommands
 
-Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
-
-- `bootstrap` — port of `template/scripts/bootstrap.sh`
-- `render-map` — port of `template/scripts/render-map.sh`
-- `context-map` — port of `template/scripts/context-map-all.sh` (plus
-  `run-driver.sh`, as `internal/driver`)
-- `spawn` — port of `template/scripts/spawn.sh`
-- `status` — port of `template/scripts/status.sh`
-- `prune` — port of `template/scripts/prune.sh`
-- `sync-templates` — port of `template/scripts/sync-templates.sh`
-- `sync-house-rules` — port of `template/scripts/sync-house-rules.sh`
-- `apply-convention-pack` — port of
-  `template/scripts/apply-convention-pack.sh`
-- `notify` — no script behind it: the staleness and prune-eligibility checks
-  above, run on a schedule instead of by hand
-- `dashboard` — a live view of the above; no script behind it
-- `serve-mcp` — the same instance served over the Model Context Protocol;
-  no script behind it either
+- `bootstrap` — discover an org's repos, clone and scaffold them
+- `render-map` — regenerate `WORKSPACE-MAP.md`'s repo list
+- `context-map` — sequence a context-mapping pass across every repo
+- `run-driver` — invoke one context-mapping driver directly
+- `spawn` — create the branch and worktree for one unit of work
+- `status` — live PR/branch state across every spawned worktree
+- `prune` — remove worktrees whose PR has merged or closed
+- `sync-templates` — push the canonical PR/issue templates out
+- `sync-house-rules` — push one repo's house rules out
+- `apply-convention-pack` — scaffold a repo onto its declared convention
+- `notify` — the staleness and prune-eligibility checks above, run on a
+  schedule instead of by hand
+- `dashboard` — a live view of the above
+- `serve-mcp` — the same instance served over the Model Context Protocol
 
 `bootstrap` discovers a GitHub org's repos, clones the ones not already
 checked out beside the instance, and scaffolds each one's `repos.yaml` entry
@@ -92,18 +95,17 @@ survive the rewrite.
 
 `spawn` creates the branch and worktree for one unit of work in one target
 repo. It always fetches first, so a branch starts from current remote state
-rather than a stale local checkout, and resolves its start point with the
-same precedence the script used (`--stack-on` over `--base` over the repo's
-own base branch). It then materializes the unit of work's reference material
-plus the target repo's house rules into the worktree's `.archimedes/`, under
-the no-commit guarantee (see `internal/spawn/materialize.go`).
+rather than a stale local checkout, and resolves its start point by
+precedence (`--stack-on` over `--base` over the repo's own base branch). It
+then materializes the unit of work's reference material plus the target
+repo's house rules into the worktree's `.archimedes/`, under the no-commit
+guarantee (see `internal/spawn/materialize.go`).
 
 `status` reads every `work/<slug>/status.md`, looks up each row's live PR
-state via `gh pr list`, and prints the same fixed-width table the shell
-script did (or `--json` for a machine-readable report). A row's PR lookup
-degrading to "no PR" — a missing `gh` auth, no network, an unset repo — never
-fails the rest of the report, matching the original script's `|| echo '{}'`
-fallback.
+state via `gh pr list`, and prints a fixed-width table (or `--json` for a
+machine-readable report). A row's PR lookup degrading to "no PR" — a missing
+`gh` auth, no network, an unset repo — never fails the rest of the report:
+one unanswerable row shouldn't cost you the other nine.
 
 It also flags stacked branches left behind by a squash- or rebase-merged
 base — the case where a dependent branch would open a pull request
@@ -137,16 +139,25 @@ base.
 
 `context-map` sequences a mapping pass across every repo, dependency/base
 repos first, skipping any repo already current for its base branch's latest
-commit (`--dry-run` reports that plan without acting on it). It splits the
-same two ways the scripts did: `internal/contextmap` decides *which* repos
-need mapping and in what order, `internal/driver` knows *how* to invoke one
-driver — so swapping the configured driver never touches orchestration, and
-neither half hardcodes any particular driver. Which driver runs is resolved
+commit (`--dry-run` reports that plan without acting on it). It splits two
+ways: `internal/contextmap` decides *which* repos need mapping and in what
+order, `internal/driver` knows *how* to invoke one driver — so swapping the
+configured driver never touches orchestration, and neither half hardcodes
+any particular driver. Which driver runs is resolved
 most-specific-first: a repo's own `driver` field, then `repos.yaml`'s
 top-level one, then `ARCHIMEDES_DRIVER`; with none set, each repo becomes an
 interactive session the operator confirms. Recording a repo as mapped goes
 through `manifest.SetRepoField`, sharing the node-tree editing described
 above so a hand-maintained `repos.yaml` survives the rewrite.
+
+`run-driver` is that second half on its own: one driver, one repo, one
+output path, with no pass around it and nothing read from or recorded in
+`repos.yaml`. It exists because a driver is the part of an instance most
+likely to be written or debugged locally, and stepping through a whole
+mapping pass to exercise one is a poor way to do that. It resolves
+`drivers/` exactly as a pass does — `--root`, or `ARCHIMEDES_DRIVERS_DIR` —
+so the two can't disagree about which drivers they mean, and it keeps the
+driver's own output on stderr so stdout carries only where the map landed.
 
 `sync-templates` and `sync-house-rules` (both in `internal/reposync`) push
 canonical control-repo content into the target repos as pull requests. The

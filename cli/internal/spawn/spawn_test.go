@@ -263,7 +263,7 @@ func TestRunRelativeRootDoesNotNestWorktreeInsideRepo(t *testing.T) {
 }
 
 // repos.yaml's path is not required to be the "../<name>" sibling layout
-// bootstrap.sh happens to produce. A repo checked out *below* the instance
+// bootstrap happens to produce. A repo checked out *below* the instance
 // root is the case where a mis-resolved relative path is worst: the
 // worktree lands inside the target checkout and shows up in its git status.
 func TestRunResolvesRepoPathsBelowInstanceRoot(t *testing.T) {
@@ -296,9 +296,8 @@ func TestRunResolvesRepoPathsBelowInstanceRoot(t *testing.T) {
 	}
 }
 
-// The end-to-end equivalent of tests/house_rules_spawn.sh: spawning
-// delivers the target repo's house rules even when the slug has no
-// reference material of its own.
+// Spawning delivers the target repo's house rules even when the slug has
+// no reference material of its own.
 func TestRunDeliversHouseRules(t *testing.T) {
 	inst := newInstance(t)
 

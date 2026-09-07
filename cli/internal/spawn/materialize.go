@@ -88,8 +88,8 @@ func Materialize(c Context) error {
 		return err
 	}
 
-	// A missing or unreadable work/<slug> is not an error, matching lib.sh's
-	// `[ ! -d "$src" ]` guard — it just means there's no reference material.
+	// A missing or unreadable work/<slug> is not an error — it just means
+	// there's no reference material.
 	src := filepath.Join(c.Root, "work", c.Slug)
 	entries, err := os.ReadDir(src)
 	hasWork := err == nil && len(entries) > 0
@@ -127,9 +127,8 @@ func Materialize(c Context) error {
 }
 
 // copyTree recursively copies src's contents into dest (both assumed to
-// exist), preserving file contents, permissions, and symlinks — matching
-// what lib.sh's `cp -R "$src/."` carried over, so the mechanism stays
-// content-agnostic.
+// exist), preserving file contents, permissions, and symlinks, so the
+// mechanism stays content-agnostic.
 func copyTree(src, dest string) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {

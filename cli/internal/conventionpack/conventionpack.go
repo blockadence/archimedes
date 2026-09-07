@@ -1,6 +1,5 @@
 // Package conventionpack wires a repo up to the shared build/lint
-// convention it declares — the port of
-// template/scripts/apply-convention-pack.sh.
+// convention it declares.
 //
 // A convention pack is a named, language-agnostic definition living in the
 // instance's own convention-packs/<name>.yaml: which build tool it targets

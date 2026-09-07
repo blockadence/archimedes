@@ -74,15 +74,14 @@ func RemoveWorktree(repoPath, wt string) error {
 }
 
 // RemoveBranch deletes branch from repoPath. An already-gone branch is not
-// an error, matching prune.sh's `git branch -D "$slug" 2>/dev/null || true`.
+// an error: the caller wanted it gone, and it is.
 func RemoveBranch(repoPath, branch string) error {
 	_, _ = Run(repoPath, "branch", "-D", branch)
 	return nil
 }
 
 // githubRemoteRE extracts "owner/name" from a github.com origin remote URL,
-// SSH or HTTPS. Mirrors lib.sh's gh_slug():
-// sed -E 's#.*github\.com[:/](.+)\.git#\1#'
+// SSH or HTTPS — the form gh wants for --repo.
 var githubRemoteRE = regexp.MustCompile(`github\.com[:/](.+)\.git$`)
 
 // GHSlug derives the "owner/name" slug gh needs from repoPath's origin

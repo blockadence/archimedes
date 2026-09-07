@@ -1,8 +1,7 @@
 // Package bootstrap brings an instance up to date with the org it tracks:
 // discover the org's repos, clone the ones missing locally, and scaffold a
-// repos.yaml entry and dossier stub for each. A port of
-// template/scripts/bootstrap.sh, kept independent of cobra/CLI concerns so
-// it can be unit-tested directly.
+// repos.yaml entry and dossier stub for each. Kept independent of
+// cobra/CLI concerns so it can be unit-tested directly.
 //
 // Every step is idempotent, because re-running against an
 // already-bootstrapped instance is the normal case rather than the
@@ -46,9 +45,9 @@ type Options struct {
 // progress receives git's own clone output; out receives the result lines
 // meant for the caller.
 func Run(opts Options, out, progress io.Writer) error {
-	// Absolutized up front, the way lib.sh's `ROOT="$(cd … && pwd)"` did:
-	// repo paths are relative to the instance ("../<name>"), so resolving
-	// them against anything else would clone into the wrong place.
+	// Absolutized up front: repo paths are relative to the instance
+	// ("../<name>"), so resolving them against anything else would clone
+	// into the wrong place.
 	root, err := filepath.Abs(opts.Root)
 	if err != nil {
 		return fmt.Errorf("resolving instance root %s: %w", opts.Root, err)

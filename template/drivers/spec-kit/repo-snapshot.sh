@@ -17,8 +17,8 @@
 # alone, so a repo that was already dirty stays dirty in exactly the same
 # way.
 #
-# Requires bash 4+ for associative arrays, same as scripts/context-map-all.sh.
-# Sourced, not run: `source repo-snapshot.sh`.
+# Requires bash 4+ for associative arrays, same as the driver that sources
+# it. Sourced, not run: `source repo-snapshot.sh`.
 
 # Print a snapshot of <repo-path>'s working state as NUL-terminated
 # "<kind><TAB><value>" records:

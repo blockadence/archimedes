@@ -8,7 +8,7 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/manifest"
 )
 
-// DefaultGuardrailMax is status.sh's fallback threshold when
+// DefaultGuardrailMax is the concurrent-stream threshold used when
 // ARCHIMEDES_MAX_STREAMS isn't set (or isn't a valid integer).
 const DefaultGuardrailMax = 3
 
@@ -91,8 +91,7 @@ func (r Report) RebaseNeeded() []Row {
 // BuildReport looks up each entry's live PR state, flags any stacked row
 // its base has merged out from under, and applies the guardrail
 // threshold. A Repos or PR failure degrades that row to noPR rather than
-// failing the whole report, matching status.sh (a gh_slug/gh failure for
-// one row doesn't stop the others).
+// failing the whole report: one unreadable row doesn't stop the others.
 func BuildReport(entries []Entry, src Sources, guardrailMax int) Report {
 	rows := make([]Row, 0, len(entries))
 	for _, e := range entries {
@@ -126,9 +125,9 @@ func BuildReport(entries []Entry, src Sources, guardrailMax int) Report {
 	}
 }
 
-// FormatHuman renders r as status.sh's human-readable table: the fixed-
-// width column header and rows, a guardrail warning when it's hit, and a
-// list of any stacked branches whose base has since merged.
+// FormatHuman renders r as the human-readable table: the fixed-width column
+// header and rows, a guardrail warning when it's hit, and a list of any
+// stacked branches whose base has since merged.
 func FormatHuman(r Report) string {
 	var b strings.Builder
 

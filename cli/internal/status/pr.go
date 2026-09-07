@@ -15,9 +15,9 @@ type PR struct {
 }
 
 // noPR is what a row gets when it has no open or historical PR, or when
-// the lookup itself couldn't be completed (matches status.sh's `|| echo
-// '{}'` fallback: a lookup failure is reported as "no PR", not a hard
-// error, since gh/network flakiness shouldn't take down the whole report).
+// the lookup itself couldn't be completed: a lookup failure is reported as
+// "no PR" rather than raised, since gh/network flakiness shouldn't take
+// down the whole report.
 var noPR = PR{Number: "-", State: "no PR"}
 
 // PRLookup resolves a repo's live PR state for a given head branch.

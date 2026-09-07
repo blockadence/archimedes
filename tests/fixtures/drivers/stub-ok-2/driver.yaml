@@ -1,4 +1,0 @@
-name: stub-ok-2
-description: Second well-behaved path-parameterized stub driver, for testing driver selection/override.
-output_mode: path-parameterized
-command: run.sh
