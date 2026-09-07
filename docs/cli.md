@@ -120,12 +120,15 @@ Both fail the test with git's own output if the command doesn't succeed.
 `GitOut` returns stdout with surrounding whitespace trimmed, since git
 terminates nearly everything it prints with a newline no caller wants.
 
-A test whose subject *commits into a repository it created itself* — rather
-than one `New` built and already configured — calls `testrepo.IsolateGit(t)`
-first. It points git at a config of that test's own with an identity in it,
-so the test doesn't pass or fail on whether the machine running the suite
-happens to have a global `user.name` (and, on one that does, doesn't
-silently record it).
+Every fixture the package builds carries a fixed commit identity, so no test
+has to spell one out to commit. A test whose subject *builds the repository
+itself* has no fixture checkout to carry it, and calls
+`testrepo.IsolateGit(t)` instead: git gets a global config of that test's
+own holding an identity and nothing else, so the test doesn't pass or fail
+on whether the machine running the suite happens to have a global
+`user.name` — and, on one that does, doesn't silently record it. Prefer the
+fixtures wherever the test owns the repository; reach for this only when it
+doesn't.
 
 The bash suite under `tests/` exercises the shipped drivers end to end
 against this binary, and builds the same repo shape from

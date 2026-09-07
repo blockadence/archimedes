@@ -2,9 +2,7 @@ package testrepo
 
 import (
 	"bytes"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -40,19 +38,4 @@ func GitOut(t testing.TB, dir string, args ...string) string {
 		t.Fatalf("git %v (in %q): %v\n%s", args, dir, err, stderr.String())
 	}
 	return strings.TrimSpace(string(out))
-}
-
-// IsolateGit points git at a config of this test's own, with an identity in
-// it, for tests that commit into a repository they created rather than one
-// New built. Without it such a test passes or fails on whether the machine
-// running the suite happens to have a global user.name — and on a machine
-// that has one, silently records it.
-func IsolateGit(t testing.TB) {
-	t.Helper()
-	cfg := filepath.Join(t.TempDir(), "gitconfig")
-	if err := os.WriteFile(cfg, []byte("[user]\n\tname = t\n\temail = t@t\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
-	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
 }

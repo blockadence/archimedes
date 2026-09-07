@@ -128,6 +128,73 @@ func TestNewLeavesTheCloneCommittableWithoutTheMachinesGitConfig(t *testing.T) {
 	}
 }
 
+func TestRecloneBuildsASecondCheckoutOfTheSameOriginBesideIt(t *testing.T) {
+	dir := t.TempDir()
+	repo := testrepo.New(t, testrepo.Spec{Dir: dir, Name: "app"})
+
+	other := repo.Reclone(t, "other")
+
+	if want := filepath.Join(dir, "other"); other.Clone != want {
+		t.Errorf("Clone = %q, want the second checkout beside the origin at %q", other.Clone, want)
+	}
+	if other.Origin != repo.Origin {
+		t.Errorf("Origin = %q, want the origin it was cloned from, %q", other.Origin, repo.Origin)
+	}
+	if other.Branch != repo.Branch {
+		t.Errorf("Branch = %q, want %q", other.Branch, repo.Branch)
+	}
+	if got, want := testrepo.GitOut(t, other.Clone, "rev-parse", "HEAD"), testrepo.GitOut(t, repo.Clone, "rev-parse", "HEAD"); got != want {
+		t.Errorf("second checkout is at %s, want the origin's %s", got, want)
+	}
+}
+
+func TestRecloneLeavesTheSecondCheckoutCommittableWithoutTheMachinesGitConfig(t *testing.T) {
+	repo := testrepo.New(t, testrepo.Spec{Dir: t.TempDir(), Name: "app"})
+
+	other := repo.Reclone(t, "other")
+
+	// The point of a second checkout is committing on it, so it must carry
+	// the identity without the test repeating -c user.email.
+	testrepo.Git(t, other.Clone, "commit", "-q", "--allow-empty", "-m", "second")
+	if got := testrepo.GitOut(t, other.Clone, "log", "-1", "--format=%ae"); got != "t@t" {
+		t.Errorf("commit author = %q, want the identity the fixture configured", got)
+	}
+}
+
+func TestInitBuildsACommittedRepoWithNoOrigin(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "repo")
+
+	got := testrepo.Init(t, path)
+
+	if got != path {
+		t.Errorf("Init returned %q, want the path it was given, %q", got, path)
+	}
+	if got := testrepo.GitOut(t, path, "remote"); got != "" {
+		t.Errorf("remotes = %q, want none: this shape is the repo that stands alone", got)
+	}
+	if got := testrepo.GitOut(t, path, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
+		t.Errorf("repo is on %q, want the default main", got)
+	}
+	// One commit, so a branch or worktree can be based on it — an empty
+	// repo has no HEAD to start one from.
+	if got := testrepo.GitOut(t, path, "rev-list", "--count", "HEAD"); got != "1" {
+		t.Errorf("commit count = %q, want the single seed commit", got)
+	}
+	if got := testrepo.GitOut(t, path, "status", "--porcelain"); got != "" {
+		t.Errorf("repo has uncommitted changes:\n%s", got)
+	}
+}
+
+func TestInitLeavesTheRepoCommittableWithoutTheMachinesGitConfig(t *testing.T) {
+	path := testrepo.Init(t, filepath.Join(t.TempDir(), "repo"))
+
+	testrepo.Git(t, path, "commit", "-q", "--allow-empty", "-m", "more")
+
+	if got := testrepo.GitOut(t, path, "log", "-1", "--format=%ae"); got != "t@t" {
+		t.Errorf("commit author = %q, want the identity the fixture configured", got)
+	}
+}
+
 // The fixture is test-only scaffolding: no production package may end up
 // depending on it, since that would pull `testing` into the shipped binary.
 // cmd/archimedes is the module's only main package, so its dependency

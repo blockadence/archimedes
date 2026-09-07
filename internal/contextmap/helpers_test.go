@@ -23,8 +23,7 @@ func mustWriteFile(t *testing.T, path, content string) {
 // repos.yaml points at, the "../<name>" layout bootstrap produces.
 type instance struct {
 	root       string
-	tmp        string
-	repoPaths  map[string]string
+	repos      map[string]testrepo.Repo
 	driversDir string
 }
 
@@ -37,18 +36,22 @@ func newInstance(t *testing.T, reposYAML string, names ...string) instance {
 
 	inst := instance{
 		root:       filepath.Join(tmp, "instance"),
-		tmp:        tmp,
-		repoPaths:  map[string]string{},
+		repos:      map[string]testrepo.Repo{},
 		driversDir: filepath.Join(tmp, "instance", "drivers"),
 	}
 	// A real bare "origin" plus a clone per repo, so the mapping pass's
 	// fetch + rev-parse origin/main have remote state to read.
 	for _, name := range names {
-		inst.repoPaths[name] = testrepo.New(t, testrepo.Spec{Dir: tmp, Name: name}).Clone
+		inst.repos[name] = testrepo.New(t, testrepo.Spec{Dir: tmp, Name: name})
 	}
 	mustWriteFile(t, filepath.Join(inst.root, "repos.yaml"), reposYAML)
 
 	return inst
+}
+
+// repoPath is where the named target repo is checked out.
+func (i instance) repoPath(name string) string {
+	return i.repos[name].Clone
 }
 
 // installDriver writes a driver manifest and executable under the
@@ -75,7 +78,7 @@ func (i instance) installPathDriver(t *testing.T, name string) {
 // sha reads the base-branch commit a repo's origin currently points at.
 func (i instance) sha(t *testing.T, name string) string {
 	t.Helper()
-	return testrepo.GitOut(t, i.repoPaths[name], "rev-parse", "origin/main")
+	return testrepo.GitOut(t, i.repoPath(name), "rev-parse", "origin/main")
 }
 
 // recordedSHA reads back what repos.yaml says a repo was last mapped at.
@@ -93,7 +96,7 @@ func (i instance) recordedSHA(t *testing.T, name string) string {
 }
 
 func (i instance) contextFile(name string) string {
-	return filepath.Join(i.repoPaths[name], "CONTEXT.md")
+	return filepath.Join(i.repoPath(name), "CONTEXT.md")
 }
 
 func readFile(t *testing.T, path string) string {

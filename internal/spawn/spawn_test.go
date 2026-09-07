@@ -93,15 +93,13 @@ func run(t *testing.T, opts spawn.Options) string {
 
 func TestRunFetchesFirstAndDefaultsToBaseBranch(t *testing.T) {
 	inst := newInstance(t)
-	tmp := filepath.Dir(inst.targetRepo)
 
 	// Simulate the local checkout being stale relative to origin: push a
 	// new commit straight to origin without updating the clone.
-	otherClone := filepath.Join(tmp, "other-clone")
-	testrepo.Git(t, tmp, "clone", "-q", filepath.Join(tmp, "target-repo.git"), otherClone)
+	otherClone := inst.target.Reclone(t, "other-clone").Clone
 	mustWriteFile(t, filepath.Join(otherClone, "new-file.txt"), "new")
 	testrepo.Git(t, otherClone, "add", "-A")
-	gitCommit(t, otherClone, "remote-advances")
+	testrepo.Git(t, otherClone, "commit", "-q", "-m", "remote-advances")
 	testrepo.Git(t, otherClone, "push", "-q", "origin", "main")
 
 	slug := "widget-fix"
@@ -109,7 +107,7 @@ func TestRunFetchesFirstAndDefaultsToBaseBranch(t *testing.T) {
 
 	out := run(t, spawn.Options{Root: inst.root, Slug: slug, Repo: "target"})
 
-	wt := spawn.WorktreePath(inst.targetRepo, slug)
+	wt := spawn.WorktreePath(inst.target.Clone, slug)
 	if _, err := os.Stat(filepath.Join(wt, "new-file.txt")); err != nil {
 		t.Errorf("worktree did not start from freshly-fetched origin/main: %v", err)
 	}
@@ -124,19 +122,19 @@ func TestRunFetchesFirstAndDefaultsToBaseBranch(t *testing.T) {
 func TestRunBaseOverride(t *testing.T) {
 	inst := newInstance(t)
 
-	testrepo.Git(t, inst.targetRepo, "checkout", "-q", "-b", "release/1.0")
-	mustWriteFile(t, filepath.Join(inst.targetRepo, "release-marker.txt"), "r1")
-	testrepo.Git(t, inst.targetRepo, "add", "-A")
-	gitCommit(t, inst.targetRepo, "release branch")
-	testrepo.Git(t, inst.targetRepo, "push", "-q", "origin", "release/1.0")
-	testrepo.Git(t, inst.targetRepo, "checkout", "-q", "main")
+	testrepo.Git(t, inst.target.Clone, "checkout", "-q", "-b", "release/1.0")
+	mustWriteFile(t, filepath.Join(inst.target.Clone, "release-marker.txt"), "r1")
+	testrepo.Git(t, inst.target.Clone, "add", "-A")
+	testrepo.Git(t, inst.target.Clone, "commit", "-q", "-m", "release branch")
+	testrepo.Git(t, inst.target.Clone, "push", "-q", "origin", "release/1.0")
+	testrepo.Git(t, inst.target.Clone, "checkout", "-q", "main")
 
 	slug := "hotfix"
 	inst.workSlug(t, slug)
 
 	out := run(t, spawn.Options{Root: inst.root, Slug: slug, Repo: "target", Base: "release/1.0"})
 
-	wt := spawn.WorktreePath(inst.targetRepo, slug)
+	wt := spawn.WorktreePath(inst.target.Clone, slug)
 	if _, err := os.Stat(filepath.Join(wt, "release-marker.txt")); err != nil {
 		t.Errorf("worktree did not start from the base override: %v", err)
 	}
@@ -152,10 +150,10 @@ func TestRunStackedOnAnotherSlug(t *testing.T) {
 	inst.workSlug(t, base)
 	run(t, spawn.Options{Root: inst.root, Slug: base, Repo: "target"})
 
-	baseWT := spawn.WorktreePath(inst.targetRepo, base)
+	baseWT := spawn.WorktreePath(inst.target.Clone, base)
 	mustWriteFile(t, filepath.Join(baseWT, "base-work.txt"), "base")
 	testrepo.Git(t, baseWT, "add", "-A")
-	gitCommit(t, baseWT, "base slug work")
+	testrepo.Git(t, baseWT, "commit", "-q", "-m", "base slug work")
 
 	stacked := "widget-fix-followup"
 	inst.workSlug(t, stacked)
@@ -164,7 +162,7 @@ func TestRunStackedOnAnotherSlug(t *testing.T) {
 		Stack: stackref.Ref{Repo: "target", Slug: base},
 	})
 
-	stackedWT := spawn.WorktreePath(inst.targetRepo, stacked)
+	stackedWT := spawn.WorktreePath(inst.target.Clone, stacked)
 	if _, err := os.Stat(filepath.Join(stackedWT, "base-work.txt")); err != nil {
 		t.Errorf("stacked worktree did not start from the base slug's branch: %v", err)
 	}
@@ -182,7 +180,7 @@ func TestRunMaterializesContextAndTracksStatus(t *testing.T) {
 
 	out := run(t, spawn.Options{Root: inst.root, Slug: slug, Repo: "target"})
 
-	wt := spawn.WorktreePath(inst.targetRepo, slug)
+	wt := spawn.WorktreePath(inst.target.Clone, slug)
 	if _, err := os.Stat(filepath.Join(wt, spawn.ContextDirName, "ticket.md")); err != nil {
 		t.Errorf("ticket.md was not materialized: %v", err)
 	}
@@ -210,7 +208,7 @@ func TestRunMaterializesContextAndTracksStatus(t *testing.T) {
 		t.Errorf("next-step hint did not respect the configured agent: %s", out2)
 	}
 
-	wt2 := spawn.WorktreePath(inst.targetRepo2, slug)
+	wt2 := spawn.WorktreePath(inst.target2.Clone, slug)
 	if _, err := os.Stat(filepath.Join(wt2, spawn.ContextDirName, spawn.StatusFileName)); !os.IsNotExist(err) {
 		t.Error("status.md (bookkeeping) leaked into the second worktree's materialized context")
 	}
@@ -241,11 +239,11 @@ func TestRunRelativeRootDoesNotNestWorktreeInsideRepo(t *testing.T) {
 	t.Chdir(inst.root)
 	out := run(t, spawn.Options{Root: ".", Slug: slug, Repo: "target"})
 
-	wt := spawn.WorktreePath(inst.targetRepo, slug)
+	wt := spawn.WorktreePath(inst.target.Clone, slug)
 	if _, err := os.Stat(filepath.Join(wt, spawn.ContextDirName, "ticket.md")); err != nil {
 		t.Errorf("ticket.md was not materialized into the real worktree: %v", err)
 	}
-	if status := testrepo.GitOut(t, inst.targetRepo, "status", "--porcelain"); status != "" {
+	if status := testrepo.GitOut(t, inst.target.Clone, "status", "--porcelain"); status != "" {
 		t.Errorf("worktree was nested inside the target repo, polluting its git status: %q", status)
 	}
 
@@ -274,7 +272,7 @@ func TestRunResolvesRepoPathsBelowInstanceRoot(t *testing.T) {
 
 	targetRepo := makeTargetRepo(t, tmp, "target-repo")
 	nested := filepath.Join(root, "repos", "target")
-	if err := os.Rename(targetRepo, nested); err != nil {
+	if err := os.Rename(targetRepo.Clone, nested); err != nil {
 		t.Fatal(err)
 	}
 	mustWriteFile(t, filepath.Join(root, "repos.yaml"),
@@ -312,7 +310,7 @@ func TestRunDeliversHouseRules(t *testing.T) {
 
 	run(t, spawn.Options{Root: inst.root, Slug: slug, Repo: "target"})
 
-	wt := spawn.WorktreePath(inst.targetRepo, slug)
+	wt := spawn.WorktreePath(inst.target.Clone, slug)
 	got, err := os.ReadFile(filepath.Join(wt, spawn.ContextDirName, dossier.HouseRulesFileName))
 	if err != nil {
 		t.Fatalf("%s was not delivered: %v", dossier.HouseRulesFileName, err)
@@ -330,7 +328,7 @@ func TestRunDeliversHouseRules(t *testing.T) {
 	inst.workSlug(t, other)
 	run(t, spawn.Options{Root: inst.root, Slug: other, Repo: "target2"})
 
-	wt2 := spawn.WorktreePath(inst.targetRepo2, other)
+	wt2 := spawn.WorktreePath(inst.target2.Clone, other)
 	if _, err := os.Stat(filepath.Join(wt2, spawn.ContextDirName)); !os.IsNotExist(err) {
 		t.Error("an empty context dir was created for a repo with no house rules and no reference material")
 	}
@@ -390,8 +388,8 @@ func TestRunOpensAWorkspaceRootedAtTheNewWorktree(t *testing.T) {
 		Workspace: recordingIntegration(nil, &got),
 	})
 
-	wt := spawn.WorktreePath(inst.targetRepo, slug)
-	want := workspace.Request{RepoPath: inst.targetRepo, Path: wt, Label: "target:" + slug}
+	wt := spawn.WorktreePath(inst.target.Clone, slug)
+	want := workspace.Request{RepoPath: inst.target.Clone, Path: wt, Label: "target:" + slug}
 	if got != want {
 		t.Errorf("workspace request\n got: %+v\nwant: %+v", got, want)
 	}
@@ -435,7 +433,7 @@ func TestRunSurvivesAWorkspaceThatCannotOpen(t *testing.T) {
 		t.Fatalf("a failing workspace integration failed the spawn: %v", err)
 	}
 
-	wt := spawn.WorktreePath(inst.targetRepo, slug)
+	wt := spawn.WorktreePath(inst.target.Clone, slug)
 	if _, statErr := os.Stat(wt); statErr != nil {
 		t.Errorf("worktree was not created: %v", statErr)
 	}
@@ -494,7 +492,7 @@ func TestRunReportsWhatItCreated(t *testing.T) {
 		Slug:     slug,
 		Repo:     "target",
 		Branch:   slug,
-		Worktree: spawn.WorktreePath(inst.targetRepo, slug),
+		Worktree: spawn.WorktreePath(inst.target.Clone, slug),
 		StartRef: "origin/main",
 		Note:     "based on main",
 	}

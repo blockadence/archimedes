@@ -27,9 +27,8 @@ type instance struct {
 func newInstance(t *testing.T) instance {
 	t.Helper()
 	tmp := t.TempDir()
-	inst := instance{root: filepath.Join(tmp, "instance"), tmp: tmp, repo: filepath.Join(tmp, "app")}
-
-	testrepo.New(t, testrepo.Spec{Dir: tmp, Name: "app"})
+	inst := instance{root: filepath.Join(tmp, "instance"), tmp: tmp}
+	inst.repo = testrepo.New(t, testrepo.Spec{Dir: tmp, Name: "app"}).Clone
 
 	write(t, filepath.Join(inst.root, "repos.yaml"),
 		"repos:\n  - name: app\n    path: ../app\n    base_branch: main\n    context_modeled_sha: null\n")
@@ -42,7 +41,7 @@ func (i instance) commit(t *testing.T, name, content string) {
 	t.Helper()
 	write(t, filepath.Join(i.repo, name), content)
 	testrepo.Git(t, i.repo, "add", "-A")
-	testrepo.Git(t, i.repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "change")
+	testrepo.Git(t, i.repo, "commit", "-q", "-m", "change")
 	testrepo.Git(t, i.repo, "push", "-q", "origin", "main")
 }
 

@@ -27,14 +27,10 @@ func newMaterializeFixture(t *testing.T, slug string) materializeFixture {
 
 	f := materializeFixture{
 		root:     filepath.Join(tmp, "instance"),
-		repoPath: filepath.Join(tmp, "repo"),
+		repoPath: testrepo.Init(t, filepath.Join(tmp, "repo")),
 		slug:     slug,
 	}
 	mustMkdirAll(t, f.root)
-	mustMkdirAll(t, f.repoPath)
-
-	testrepo.Git(t, f.repoPath, "init", "-q", "-b", "main")
-	gitCommit(t, f.repoPath, "init", "--allow-empty")
 
 	f.worktree = spawn.WorktreePath(f.repoPath, slug)
 	testrepo.Git(t, f.repoPath, "worktree", "add", f.worktree, "-b", slug)
