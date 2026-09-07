@@ -144,3 +144,25 @@ func findRepoNode(doc *yaml.Node, repoName string) (*yaml.Node, error) {
 	}
 	return nil, unknown
 }
+
+// LoadInstance resolves an instance root to an absolute path and reads its
+// repos.yaml — the prologue shared by everything that acts on a whole
+// instance rather than on one named repo.
+//
+// The path is absolutized up front because repo paths are recorded
+// relative to the instance, while git, drivers, and the tools those wrap
+// all run with working directories of their own: a relative root would
+// resolve against whichever of those happened to be running.
+func LoadInstance(rootOption string) (root string, m *Manifest, err error) {
+	root, err = filepath.Abs(rootOption)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolving instance root %s: %w", rootOption, err)
+	}
+
+	manifestPath := filepath.Join(root, "repos.yaml")
+	m, err = Load(manifestPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("loading %s: %w", manifestPath, err)
+	}
+	return root, m, nil
+}

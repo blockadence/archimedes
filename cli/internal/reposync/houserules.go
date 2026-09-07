@@ -53,7 +53,7 @@ func RenderHouseRules(rules string) string {
 // progress receives git's and gh's own output; out receives the lines meant
 // for the caller.
 func SyncHouseRules(opts HouseRulesOptions, out, progress io.Writer, run ExecFunc) error {
-	root, m, err := loadInstance(opts.Root)
+	root, m, err := manifest.LoadInstance(opts.Root)
 	if err != nil {
 		return err
 	}

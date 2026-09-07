@@ -60,18 +60,11 @@ type Options struct {
 // record of what happened. in is where an interactive session's "this one
 // is done" confirmation is read from.
 func Run(opts Options, out, progress io.Writer, in io.Reader) error {
-	// Absolutized up front: repo paths are resolved against the instance
-	// root, but git and drivers run with a working directory of their own,
-	// so a relative root would resolve against the wrong thing.
-	root, err := filepath.Abs(opts.Root)
+	root, m, err := manifest.LoadInstance(opts.Root)
 	if err != nil {
-		return fmt.Errorf("resolving instance root %s: %w", opts.Root, err)
+		return err
 	}
 	manifestPath := filepath.Join(root, "repos.yaml")
-	m, err := manifest.Load(manifestPath)
-	if err != nil {
-		return fmt.Errorf("loading %s: %w", manifestPath, err)
-	}
 
 	contextFile := opts.ContextFile
 	if contextFile == "" {

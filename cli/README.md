@@ -43,6 +43,8 @@ Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
 - `sync-house-rules` — port of `template/scripts/sync-house-rules.sh`
 - `apply-convention-pack` — port of
   `template/scripts/apply-convention-pack.sh`
+- `notify` — no script behind it: the staleness and prune-eligibility checks
+  above, run on a schedule instead of by hand
 - `dashboard` — a live view of the above; no script behind it
 - `serve-mcp` — the same instance served over the Model Context Protocol;
   no script behind it either
@@ -156,6 +158,63 @@ a new build tool costs a file, not a field on the shared `Pack` type. A build fi
 `buildscript {}` block of its own is refused: the two lines it needs are
 printed for a human to place by hand, since where they belong inside an
 existing block is a judgment call, not a rewrite worth guessing at.
+
+`notify` asks the same two questions on a schedule instead of by hand: has
+a repo's context map gone stale, and has a worktree become prune-eligible.
+Each condition is reported once, when it becomes true, and again only if it
+clears and comes back — a map that goes staler while still unaddressed is
+not news twice.
+
+Nothing stays resident to make that work. A pass compares what holds now
+against a small state file beside `repos.yaml` and exits, so the thing that
+keeps running is an ordinary scheduler:
+
+```
+*/15 * * * * cd /path/to/instance && archimedes notify
+```
+
+That file is the memory a daemon would otherwise hold in RAM, and it's what
+lets a machine that was asleep for a week report each condition once rather
+than not at all. A pass with no news prints nothing, so a scheduler that
+mails a job's output mails only what's worth reading; `--seed` records
+what's true now without reporting any of it, for adopting the notifier on
+an instance whose backlog you already know about.
+
+Reasoning from absence is what makes that work, and also what it has to be
+careful about: a condition that stops being reported has either cleared or
+gone unasked-about, and only the first should let it notify again. So a
+pass names the repos whose remote wouldn't answer and the units of work
+`gh` wouldn't report on, and carries their recorded conditions forward
+untouched. Without that, one expired `gh` session or one flaky network
+would erase the record and re-announce the whole backlog on the next pass
+that worked — which is how a notifier gets muted. It is also why
+`prune.LookupPRState` reports *why* it came back with no pull request:
+prune only needs the safe answer ("no PR, don't touch it"), but a watch
+needs to know whether anyone actually asked.
+
+Both conditions are read through the packages that own them —
+`contextmap.Survey` and `prune.Scan`, the same reads the dashboard and the
+MCP server make — so a notification can't reach a different conclusion than
+the `context-map` or `prune` run made in response to it. It surveys with
+`FetchedSHA` rather than the dashboard's `LocalSHA`: a watch is the one
+reader with no human waiting on it, and reading whatever the checkout last
+fetched would leave a repo nobody has fetched in weeks looking current —
+exactly the silence this exists to break. A merged unit of work something
+else is still stacked on isn't reported, because `prune` would refuse to
+remove it; it becomes news once the dependent is rebased, which is when
+there is something to do about it.
+
+Where a notification goes is the operator's business. With
+`ARCHIMEDES_NOTIFY_CMD` (or `--command`) set, each one is handed to
+whatever they already run — `terminal-notifier`, `notify-send`, `ntfy`, a
+webhook — invoked via `sh` with the event in its environment
+(`ARCHIMEDES_EVENT_TITLE`, `_MESSAGE`, `_KIND`, `_SUBJECT`, `_DETAIL`,
+`_REMEDY`) and its text on stdin; with none set it is printed. Event data
+never reaches the hook as part of the command string, so a repo or branch
+name can't become shell on the machine watching it. A hook that fails
+leaves its condition out of the state file and fails the pass: the
+scheduler learns the notifier is broken, and the condition is still owed
+rather than filed away as news broken to someone who never heard it.
 
 ### Dashboard (optional)
 

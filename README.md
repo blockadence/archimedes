@@ -102,6 +102,17 @@ second way to look at what `status` and `context-map --dry-run` already
 report, reading the same code they do. See
 [`cli/README.md`](./cli/README.md#dashboard-optional).
 
+The CLI also grows subcommands with no script counterpart. `notify` reports
+the two things you would otherwise have to remember to go and check — a
+repo whose context map has gone stale, a worktree whose PR has merged and
+is ready to prune — once each, when they become true. It keeps no
+background process of its own: each pass compares what holds now against a
+state file beside `repos.yaml` and exits, so a cron or launchd entry is the
+whole mechanism, and a pass with nothing new prints nothing.
+`ARCHIMEDES_NOTIFY_CMD` hands each notification to whatever notifier you
+already run; with it unset they are printed, which is all cron needs to
+turn them into mail. See [`cli/README.md`](./cli/README.md).
+
 `spawn` can additionally open the new worktree as a workspace in a
 terminal workspace manager ([herdr](https://herdr.dev) today), so a unit of
 work arrives in a pane already rooted at its own checkout. It is off unless

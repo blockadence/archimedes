@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/blockadence/archimedes/cli/internal/gitutil"
-	"github.com/blockadence/archimedes/cli/internal/manifest"
 	"github.com/blockadence/archimedes/cli/internal/prune"
 )
 
@@ -53,39 +52,13 @@ func runPrune(out io.Writer, root, slugFilter string, force bool, ghState prune.
 		return err
 	}
 
-	manifestPath := filepath.Join(root, "repos.yaml")
-	m, err := manifest.Load(manifestPath)
+	m, err := loadManifest(root)
 	if err != nil {
-		return fmt.Errorf("loading %s: %w", manifestPath, err)
-	}
-
-	repoPaths := make(map[string]string, len(m.Repos))
-	for _, r := range m.Repos {
-		repoPaths[r.Name] = filepath.Join(root, r.Path)
-	}
-
-	ghSlugs := map[string]string{}
-	prState := func(repo, headBranch string) (string, error) {
-		repoPath, ok := repoPaths[repo]
-		if !ok {
-			return "NONE", nil
-		}
-
-		slug, cached := ghSlugs[repo]
-		if !cached {
-			var err error
-			slug, err = gitutil.GHSlug(repoPath)
-			if err != nil {
-				return "NONE", nil
-			}
-			ghSlugs[repo] = slug
-		}
-
-		return ghState(slug, headBranch)
+		return err
 	}
 
 	workDir := filepath.Join(root, "work")
-	items, err := prune.Scan(workDir, slugFilter, prState)
+	items, err := prune.Scan(workDir, slugFilter, repoPRState(root, m, ghState))
 	if err != nil {
 		return err
 	}
@@ -102,13 +75,16 @@ func runPrune(out io.Writer, root, slugFilter string, force bool, ghState prune.
 			continue
 		}
 
-		repoPath := repoPaths[it.Repo]
-		// gitutil's errors already name the git command and its
-		// arguments, so re-wrapping here would just repeat the path.
-		if err := gitutil.RemoveWorktree(repoPath, it.Worktree); err != nil {
+		repo, err := m.Resolve(root, it.Repo)
+		if err != nil {
 			return err
 		}
-		if err := gitutil.RemoveBranch(repoPath, it.Slug); err != nil {
+		// gitutil's errors already name the git command and its
+		// arguments, so re-wrapping here would just repeat the path.
+		if err := gitutil.RemoveWorktree(repo.Path, it.Worktree); err != nil {
+			return err
+		}
+		if err := gitutil.RemoveBranch(repo.Path, it.Slug); err != nil {
 			return err
 		}
 		if err := prune.RemoveStatusRow(it.StatusPath, it.Repo); err != nil {

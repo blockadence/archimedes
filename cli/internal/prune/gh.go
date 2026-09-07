@@ -2,6 +2,7 @@ package prune
 
 import (
 	"encoding/json"
+	"fmt"
 	"os/exec"
 )
 
@@ -20,13 +21,23 @@ func parsePRListState(data []byte) string {
 }
 
 // LookupPRState asks gh for headBranch's PR state ("MERGED", "CLOSED",
-// "OPEN", ...) against ghSlug ("owner/repo"). Any failure (no gh, no auth,
-// no matching PR) comes back as "NONE" rather than an error, matching
-// lib.sh's `gh pr list ... 2>/dev/null || echo NONE`.
+// "OPEN", ...) against ghSlug ("owner/repo").
+//
+// A failure — no gh, no auth, a rate limit, no network — comes back as
+// "NONE" and says why. The state is what lib.sh's `gh pr list ... ||
+// echo NONE` produced and what prune acts on, so a failure still can't be
+// mistaken for permission to prune. The error is for the callers that need
+// the other half of the answer: a branch with no pull request and a branch
+// nobody could ask about look identical in the state alone, and a watch
+// (internal/notify) that couldn't tell them apart would treat every gh
+// outage as every merged unit of work being cleaned up.
+//
+// gh exits 0 with an empty list when a branch simply has no pull request,
+// so a non-zero exit really does mean the question went unanswered.
 func LookupPRState(ghSlug, headBranch string) (string, error) {
 	out, err := exec.Command("gh", "pr", "list", "--repo", ghSlug, "--head", headBranch, "--json", "state").Output()
 	if err != nil {
-		return "NONE", nil
+		return "NONE", fmt.Errorf("gh pr list --repo %s --head %s: %w", ghSlug, headBranch, err)
 	}
 	return parsePRListState(out), nil
 }
