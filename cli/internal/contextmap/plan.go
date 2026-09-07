@@ -1,8 +1,7 @@
 // Package contextmap sequences a context-mapping pass across every repo in
 // an instance: dependency/base repos first, skipping any repo whose map is
 // already current for its base branch's latest commit, so re-runs stay
-// incremental as repos are added or merged into. It is the port of
-// template/scripts/context-map-all.sh.
+// incremental as repos are added or merged into.
 //
 // It is orchestration only. Which repos need mapping and in what order
 // lives here; how a map actually gets built does not — that's a driver's

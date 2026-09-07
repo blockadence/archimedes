@@ -54,7 +54,7 @@ func mustWriteFile(t *testing.T, path, content string) {
 	}
 }
 
-// makeTargetRepo mirrors tests/spawn_materializes_context.sh's fixture: a
+// makeTargetRepo builds the shape spawn needs to be exercised for real: a
 // bare "origin" plus a clone with a normal .gitignore and one commit on
 // main, so spawn's fetch-first behavior has real remote state to pull, and
 // so the repo's own tracked .gitignore is there to be left alone.
@@ -76,7 +76,7 @@ type instance struct {
 }
 
 // newInstance builds an instance whose repos.yaml points at two sibling
-// target repos, the "../<name>" layout bootstrap.sh produces.
+// target repos, the "../<name>" layout bootstrap produces.
 func newInstance(t *testing.T) instance {
 	t.Helper()
 	tmp := t.TempDir()

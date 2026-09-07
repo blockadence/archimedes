@@ -11,7 +11,7 @@ type prListEntry struct {
 }
 
 // parsePRListState extracts the lead PR's state from `gh pr list --json
-// state` output, mirroring lib.sh's `--jq '.[0].state // "NONE"'`.
+// state` output. No entries, or output that won't parse, is "NONE".
 func parsePRListState(data []byte) string {
 	var entries []prListEntry
 	if err := json.Unmarshal(data, &entries); err != nil || len(entries) == 0 {
@@ -24,13 +24,12 @@ func parsePRListState(data []byte) string {
 // "OPEN", ...) against ghSlug ("owner/repo").
 //
 // A failure — no gh, no auth, a rate limit, no network — comes back as
-// "NONE" and says why. The state is what lib.sh's `gh pr list ... ||
-// echo NONE` produced and what prune acts on, so a failure still can't be
-// mistaken for permission to prune. The error is for the callers that need
-// the other half of the answer: a branch with no pull request and a branch
-// nobody could ask about look identical in the state alone, and a watch
-// (internal/notify) that couldn't tell them apart would treat every gh
-// outage as every merged unit of work being cleaned up.
+// "NONE" and says why. "NONE" is what prune acts on, so a failure still
+// can't be mistaken for permission to prune. The error is for the callers
+// that need the other half of the answer: a branch with no pull request and
+// a branch nobody could ask about look identical in the state alone, and a
+// watch (internal/notify) that couldn't tell them apart would treat every
+// gh outage as every merged unit of work being cleaned up.
 //
 // gh exits 0 with an empty list when a branch simply has no pull request,
 // so a non-zero exit really does mean the question went unanswered.

@@ -30,8 +30,9 @@ func writeDriver(t *testing.T, driversDir, name, manifest, body string) {
 	}
 }
 
-// stubs installs the same cast of well-behaved and misbehaving drivers the
-// shell contract test (tests/run-driver-contract.sh) exercises.
+// stubs installs the cast of well-behaved and misbehaving drivers the
+// contract tests below exercise, so each case names the driver it needs
+// rather than building one.
 func stubs(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

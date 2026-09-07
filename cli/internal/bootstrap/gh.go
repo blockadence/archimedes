@@ -8,13 +8,11 @@ import (
 	"strings"
 )
 
-// listLimit caps how many repos one discovery pass considers, matching
-// bootstrap.sh's `gh repo list --limit 300`.
+// listLimit caps how many repos one discovery pass considers.
 const listLimit = 300
 
 // defaultBaseBranch stands in for a repo gh reports no default branch for
-// — an empty repo, most often — mirroring bootstrap.sh's
-// `.defaultBranchRef.name // "main"`.
+// — an empty repo, most often.
 const defaultBaseBranch = "main"
 
 // OrgRepo is one repo as the forge describes it: the fields

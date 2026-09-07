@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,11 +50,8 @@ func TestContextMapCommandDryRunThenMaps(t *testing.T) {
 		"driver: stub\nrepos:\n  - name: app\n    path: ../app\n    base_branch: main\n")
 	writeFile(t, filepath.Join(root, "drivers", "stub", "driver.yaml"),
 		"name: stub\noutput_mode: path-parameterized\ncommand: run.sh\n")
-	driverBin := filepath.Join(root, "drivers", "stub", "run.sh")
-	writeFile(t, driverBin, "#!/usr/bin/env bash\nset -euo pipefail\necho 'stub mapped' > \"$2\"\n")
-	if err := os.Chmod(driverBin, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeExecutable(t, filepath.Join(root, "drivers", "stub", "run.sh"),
+		"#!/usr/bin/env bash\nset -euo pipefail\necho 'stub mapped' > \"$2\"\n")
 
 	out := execute(t, "context-map", "--root", root, "--dry-run")
 	if !strings.Contains(out, "Planned order: app") || !strings.Contains(out, "Dry run") {
@@ -71,30 +67,5 @@ func TestContextMapCommandDryRunThenMaps(t *testing.T) {
 	}
 	if got, err := os.ReadFile(filepath.Join(repo, "CONTEXT.md")); err != nil || !strings.Contains(string(got), "stub mapped") {
 		t.Errorf("CONTEXT.md = %q (err %v), want the driver's output", got, err)
-	}
-}
-
-// execute runs the whole command tree with args, returning stdout.
-func execute(t *testing.T, args ...string) string {
-	t.Helper()
-	root := newRootCmd()
-	var out bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&bytes.Buffer{})
-	root.SetIn(strings.NewReader(""))
-	root.SetArgs(args)
-	if err := root.Execute(); err != nil {
-		t.Fatalf("archimedes %v: %v\n%s", args, err, out.String())
-	}
-	return out.String()
-}
-
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
 	}
 }

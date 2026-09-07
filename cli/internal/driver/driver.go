@@ -1,9 +1,8 @@
 // Package driver invokes a context-mapping driver by name against a target
-// repo, writing its output to an exact path. It is the port of
-// template/scripts/run-driver.sh, and the only thing orchestration (see
-// internal/contextmap) needs to know about drivers: no specific driver's
-// invocation is hardcoded anywhere else, so swapping which driver is
-// configured never touches orchestration.
+// repo, writing its output to an exact path. It is the only thing
+// orchestration (see internal/contextmap) needs to know about drivers: no
+// specific driver's invocation is hardcoded anywhere else, so swapping
+// which driver is configured never touches orchestration.
 //
 // A driver is a directory under the instance's drivers/ holding a
 // driver.yaml manifest and the executable it names. The manifest's
@@ -205,9 +204,8 @@ func run(bin string, progress io.Writer, args ...string) error {
 }
 
 // executable reports whether path is a regular file with an execute bit
-// set — the port of run-driver.sh's `[ -x "$DRIVER_BIN" ]` check, which
-// catches a manifest naming a command that was never shipped or never made
-// executable before it produces a confusing exec failure.
+// set, catching a manifest naming a command that was never shipped or never
+// made executable before it produces a confusing exec failure.
 func executable(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {

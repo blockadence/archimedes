@@ -34,9 +34,9 @@ git -C "$REPO_PATH" rev-parse --git-dir >/dev/null 2>&1 || {
   exit 1
 }
 # Checked here rather than left to fail later, because "later" is after the
-# scaffolding is already unpacked into someone's repo. The rest of
-# Archimedes needs bash 4+ too (scripts/context-map-all.sh), so this is a
-# statement of the existing requirement, not a new one.
+# scaffolding is already unpacked into someone's repo. This is the driver's
+# own requirement — Archimedes itself is a compiled binary and asks nothing
+# of the shell — so it is stated where it is owed.
 [ "${BASH_VERSINFO[0]}" -ge 4 ] || {
   echo "the spec-kit driver needs bash 4+ (running ${BASH_VERSION}); on macOS, /bin/bash is 3.2 -- install a newer bash and make sure it comes first on PATH" >&2
   exit 1

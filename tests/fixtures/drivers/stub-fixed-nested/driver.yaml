@@ -1,5 +1,0 @@
-name: stub-fixed-nested
-description: Fixed-location stub whose fixed_path is nested several directories deep, for testing.
-output_mode: fixed-location
-fixed_path: .stub/memory/OUT.md
-command: run.sh

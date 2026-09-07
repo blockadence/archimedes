@@ -25,16 +25,47 @@ const HouseRulesFileName = "HOUSE_RULES.md"
 // dossier. It must be recognized as "no rules recorded yet" rather than a
 // real rule — otherwise a never-edited dossier would get its instructional
 // boilerplate delivered as though it were an actual mandated rule.
-//
-// Kept byte-identical to lib.sh's HOUSE_RULES_STUB_BODY; TestStubBodyMatchesLibSh
-// fails if the two drift apart.
 const houseRulesStubBody = "TBD. Mandated decisions that must be respected even if unusual — the kind of\n" +
 	"thing a new contributor (or agent) would otherwise get wrong by using good\n" +
 	"judgment. Kept separate from \"Known gotchas\" below: gotchas are surprising\n" +
 	"facts about the repo, house rules are standing directives. Edit this section\n" +
-	"only here — `sync-house-rules.sh` pushes a durable copy into the repo\n" +
-	"itself, and `spawn.sh` injects an ephemeral copy into every worktree\n" +
-	"spawned for it, so this dossier is the one place changes need to be made."
+	"only here — `archimedes sync-house-rules` pushes a durable copy into the\n" +
+	"repo itself, and `archimedes spawn` injects an ephemeral copy into every\n" +
+	"worktree spawned for it, so this dossier is the one place changes need to\n" +
+	"be made."
+
+// retiredStubBodies are placeholders earlier versions wrote, kept
+// recognizable so an instance scaffolded back then still reads as having no
+// house rules recorded. Reworded boilerplate is still boilerplate, and the
+// cost of forgetting one is this package's worst failure: instructional
+// text committed into someone's repo as a mandated rule. An entry only ever
+// leaves this list when no dossier anywhere can still be carrying it, which
+// is not a thing that can be known — so in practice they stay.
+var retiredStubBodies = []string{
+	// Before the vendored bash scripts were retired, the stub named them
+	// rather than the subcommands that replaced them.
+	"TBD. Mandated decisions that must be respected even if unusual — the kind of\n" +
+		"thing a new contributor (or agent) would otherwise get wrong by using good\n" +
+		"judgment. Kept separate from \"Known gotchas\" below: gotchas are surprising\n" +
+		"facts about the repo, house rules are standing directives. Edit this section\n" +
+		"only here — `sync-house-rules.sh` pushes a durable copy into the repo\n" +
+		"itself, and `spawn.sh` injects an ephemeral copy into every worktree\n" +
+		"spawned for it, so this dossier is the one place changes need to be made.",
+}
+
+// isStub reports whether body is a placeholder nobody has filled in — the
+// one bootstrap writes today, or one it wrote in the past.
+func isStub(body string) bool {
+	if body == houseRulesStubBody {
+		return true
+	}
+	for _, retired := range retiredStubBodies {
+		if body == retired {
+			return true
+		}
+	}
+	return false
+}
 
 // Path is a repo's dossier file inside an instance.
 func Path(dossierDir, repo string) string {
@@ -60,7 +91,7 @@ func HouseRules(dossierDir, repo string) (string, error) {
 	}
 
 	body := section(string(data), HouseRulesHeading)
-	if body == houseRulesStubBody {
+	if isStub(body) {
 		return "", nil
 	}
 	return body, nil

@@ -36,13 +36,10 @@ registration). See `java-gradle.yaml` for a worked example.
 ## Adding a pack for a new language/build tool
 
 1. Add `<pack-name>.yaml` here following the shape above.
-2. Teach the tooling how to scaffold that `build_tool`. Both the CLI
-   (`archimedes apply-convention-pack`) and the vendored
-   `scripts/apply-convention-pack.sh` dispatch on the field, so each is one
-   new case — a scaffolder registered in the CLI's
-   `internal/conventionpack` (`gradle.go` is the worked example to copy),
-   and the matching `case` in the script. Nothing on either side should
-   ever assume Java, Gradle, or any one language/build tool.
+2. Teach `archimedes apply-convention-pack` how to scaffold that
+   `build_tool`. It dispatches on the field, so this is one new case: a
+   scaffolder registered in the CLI's `internal/conventionpack` (`gradle.go`
+   is the worked example to copy). Nothing above that dispatch should ever
+   assume Java, Gradle, or any one language/build tool.
 3. Point a repo at it by setting `convention_pack: <pack-name>` in its
-   `repos.yaml` entry, then run `archimedes apply-convention-pack <repo>`
-   (or `scripts/apply-convention-pack.sh <repo>`).
+   `repos.yaml` entry, then run `archimedes apply-convention-pack <repo>`.

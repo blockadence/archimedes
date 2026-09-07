@@ -1,6 +1,5 @@
 // Package spawn creates the branch+worktree for one unit of work in one
-// target repo: a port of template/scripts/spawn.sh, including the
-// worktree-context materialization from template/scripts/lib.sh (see
+// target repo, including the worktree-context materialization (see
 // materialize.go). Kept independent of cobra/CLI concerns so it can be
 // unit-tested directly.
 package spawn
@@ -71,10 +70,10 @@ type StartPoint struct {
 	Note string
 }
 
-// ResolveStartPoint mirrors spawn.sh's precedence: a stack ref wins over a
-// base override, which wins over the repo's own base branch (fetched fresh
-// as origin/<baseBranch>). stack.Repo (not stack.Slug) is the presence
-// check, matching the original script's `[ -n "$STACK_REPO" ]`.
+// ResolveStartPoint applies the start-point precedence: a stack ref wins
+// over a base override, which wins over the repo's own base branch (fetched
+// fresh as origin/<baseBranch>). stack.Repo (not stack.Slug) is the
+// presence check, so a --stack-on value with no ":" still stacks.
 func ResolveStartPoint(baseBranch, baseOverride string, stack stackref.Ref) StartPoint {
 	switch {
 	case stack.Repo != "":
@@ -113,11 +112,10 @@ func NextStepHint(worktreePath, agentCmd string) string {
 // for the caller. The Result names what was created; it is only meaningful
 // when the returned error is nil.
 func Run(opts Options, out, progress io.Writer) (Result, error) {
-	// Absolutize up front, the way lib.sh's `ROOT="$(cd … && pwd)"` does.
-	// Every path below derives from this, and git is run with its working
-	// directory set to the target repo — so a relative root would resolve
-	// worktree paths against the repo instead of the instance, nesting the
-	// worktree inside the checkout it belongs beside.
+	// Absolutize up front. Every path below derives from this, and git is
+	// run with its working directory set to the target repo — so a relative
+	// root would resolve worktree paths against the repo instead of the
+	// instance, nesting the worktree inside the checkout it belongs beside.
 	root, err := filepath.Abs(opts.Root)
 	if err != nil {
 		return Result{}, fmt.Errorf("resolving instance root %s: %w", opts.Root, err)

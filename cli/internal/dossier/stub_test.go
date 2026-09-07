@@ -3,7 +3,6 @@ package dossier_test
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -87,42 +86,6 @@ func TestWriteStubCreatesMissingDossierDir(t *testing.T) {
 		t.Fatalf("WriteStub: %v", err)
 	}
 	readDossier(t, dir, "r")
-}
-
-var stubHeredocRE = regexp.MustCompile(`(?s)cat > "\$dossier" <<EOF\n(.*?)\nEOF\n`)
-
-// Both implementations scaffold dossiers, and sync-house-rules.sh and
-// spawn's context materialization both parse what they scaffold. If lib.sh's
-// stub is reshaped without updating this package, the two would start
-// producing structurally different dossiers depending on which entry point
-// created the repo. Fail loudly instead.
-func TestStubMatchesLibSh(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "template", "scripts", "lib.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := stubHeredocRE.FindSubmatch(data)
-	if m == nil {
-		t.Fatal("could not find write_dossier_stub's heredoc in lib.sh")
-	}
-
-	want := strings.NewReplacer(
-		"$HOUSE_RULES_HEADING", dossier.HouseRulesHeading,
-		"$HOUSE_RULES_STUB_BODY", stubBodyFromLibSh(t),
-		"$name", "r",
-		"$path", "../r",
-		"$base", "trunk",
-	).Replace(string(m[1])) + "\n"
-
-	dir := t.TempDir()
-	if _, err := dossier.WriteStub(dir, dossier.Stub{Name: "r", Path: "../r", BaseBranch: "trunk"}); err != nil {
-		t.Fatalf("WriteStub: %v", err)
-	}
-
-	if got := readDossier(t, dir, "r"); got != want {
-		t.Errorf("lib.sh's write_dossier_stub has drifted from this package's copy;\n"+
-			"update stubTemplate in stub.go to match.\n got: %q\nwant: %q", got, want)
-	}
 }
 
 func readDossier(t *testing.T, dir, repo string) string {

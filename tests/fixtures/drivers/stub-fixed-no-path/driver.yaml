@@ -1,4 +1,0 @@
-name: stub-fixed-no-path
-description: Declares fixed-location but omits fixed_path, for testing.
-output_mode: fixed-location
-command: run.sh

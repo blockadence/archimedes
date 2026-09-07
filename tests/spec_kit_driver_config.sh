@@ -4,26 +4,27 @@
 # cases anywhere. These tests prove that without running spec-kit: they set
 # up a PATH the `specify` CLI isn't on, so a run gets as far as the driver's
 # own dependency check and stops there. Reaching that error at all means
-# repos.yaml named the driver, run-driver.sh resolved its manifest, and the
+# repos.yaml named the driver, the CLI resolved its manifest, and the
 # driver's command ran -- the whole chain minus the billed part.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
 ROOT="$(cd "$HERE/.." && pwd)"
-RUN_DRIVER="$ROOT/template/scripts/run-driver.sh"
 DRIVER_DIR="$ROOT/template/drivers/spec-kit"
+build_archimedes || exit 1
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# A PATH with the scripts' own dependencies on it but neither `specify` nor
-# `claude`, wherever this machine happens to keep them.
+# A PATH with git on it but neither `specify` nor `claude`, wherever this
+# machine happens to keep them.
 STUB_BIN="$WORK/bin"
 mkdir -p "$STUB_BIN"
-# bash included deliberately: the scripts' `#!/usr/bin/env bash` would
-# otherwise resolve to whatever /usr/bin holds, which on macOS is bash 3.2.
-for tool in bash git yq jq gh; do
+# bash included deliberately: the driver's `#!/usr/bin/env bash` would
+# otherwise resolve to whatever /usr/bin holds, which on macOS is bash 3.2,
+# and spec-kit's needs bash 4+.
+for tool in bash git; do
   resolved="$(command -v "$tool" 2>/dev/null)" && ln -sf "$resolved" "$STUB_BIN/$tool"
 done
 SPECLESS_PATH="$STUB_BIN:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -32,13 +33,13 @@ echo "spec-kit driver manifest:"
 
 MANIFEST="$DRIVER_DIR/driver.yaml"
 assert_file_exists "$MANIFEST" "the driver ships a manifest under drivers/spec-kit/"
-assert_eq "$(yq -r '.name' "$MANIFEST")" "spec-kit" "manifest name matches its directory name"
-assert_eq "$(yq -r '.output_mode' "$MANIFEST")" "fixed-location" \
+assert_eq "$(manifest_field "$MANIFEST" name)" "spec-kit" "manifest name matches its directory name"
+assert_eq "$(manifest_field "$MANIFEST" output_mode)" "fixed-location" \
   "spec-kit is a fixed-location driver -- Spec Kit can't be told where to write"
-DECLARED_FIXED_PATH="$(yq -r '.fixed_path' "$MANIFEST")"
+DECLARED_FIXED_PATH="$(manifest_field "$MANIFEST" fixed_path)"
 assert_eq "$DECLARED_FIXED_PATH" ".specify/memory/constitution.md" \
   "manifest declares the constitution path Spec Kit always writes to"
-COMMAND="$(yq -r '.command' "$MANIFEST")"
+COMMAND="$(manifest_field "$MANIFEST" command)"
 [ -x "$DRIVER_DIR/$COMMAND" ] \
   && pass "the command the manifest names is executable" \
   || fail "the command the manifest names is executable"
@@ -49,7 +50,7 @@ assert_contains "$(cat "$DRIVER_DIR/$COMMAND")" "CONSTITUTION=\"$DECLARED_FIXED_
   "the path run.sh keeps is the same one the manifest declares as fixed_path"
 
 echo ""
-echo "spec-kit driver is reachable through run-driver.sh:"
+echo "spec-kit driver is reachable through archimedes run-driver:"
 
 REPO="$WORK/repo"
 mkdir -p "$REPO"
@@ -63,7 +64,7 @@ mkdir -p "$REPO"
 
 out_path="$WORK/out.md"
 if err="$(PATH="$SPECLESS_PATH" ARCHIMEDES_DRIVERS_DIR="$ROOT/template/drivers" \
-    "$RUN_DRIVER" spec-kit "$REPO" "$out_path" 2>&1 >/dev/null)"; then
+    "$ARCHIMEDES_BIN" run-driver spec-kit "$REPO" "$out_path" 2>&1 >/dev/null)"; then
   fail "a run without the specify CLI installed exits non-zero"
 else
   pass "a run without the specify CLI installed exits non-zero"
@@ -79,7 +80,10 @@ echo ""
 echo "switching an instance to spec-kit is a configuration change only:"
 
 make_origin_and_clone "$WORK" spec-kit-repo
-INSTANCE="$(new_test_instance "$WORK")"
+# An instance is data: an empty directory plus the repos.yaml below is all
+# this pass needs to find.
+INSTANCE="$WORK/instance"
+mkdir -p "$INSTANCE"
 
 cat > "$INSTANCE/repos.yaml" <<EOF
 driver: spec-kit
@@ -94,21 +98,21 @@ EOF
 (
   cd "$INSTANCE"
   export ARCHIMEDES_DRIVERS_DIR="$ROOT/template/drivers"
-  PATH="$SPECLESS_PATH" ./scripts/context-map-all.sh
+  PATH="$SPECLESS_PATH" "$ARCHIMEDES_BIN" context-map
 ) </dev/null >"$WORK/run.log" 2>&1
 run_status=$?
 
 if [ "$run_status" -ne 0 ]; then
-  pass "context-map-all.sh with driver: spec-kit fails on the missing CLI rather than succeeding by accident"
+  pass "a pass with driver: spec-kit fails on the missing CLI rather than succeeding by accident"
 else
-  fail "context-map-all.sh with driver: spec-kit fails on the missing CLI rather than succeeding by accident"
+  fail "a pass with driver: spec-kit fails on the missing CLI rather than succeeding by accident"
 fi
 log="$(cat "$WORK/run.log")"
 assert_contains "$log" "specify CLI not found on PATH" \
   "naming spec-kit in repos.yaml reaches the real driver -- no orchestration change needed to switch"
 case "$log" in
-  *"unknown driver"*) fail "spec-kit is a driver context-map-all.sh can actually find" ;;
-  *) pass "spec-kit is a driver context-map-all.sh can actually find" ;;
+  *"unknown driver"*) fail "spec-kit is a driver a mapping pass can actually find" ;;
+  *) pass "spec-kit is a driver a mapping pass can actually find" ;;
 esac
 
 echo ""
@@ -127,7 +131,8 @@ cp -R "$HERE/fixtures/drivers/stub-ok" "$MERGED_DRIVERS/"
 
 make_origin_and_clone "$WORK" stays-on-default
 make_origin_and_clone "$WORK" switched-to-spec-kit
-INSTANCE2="$(new_test_instance "$WORK")"
+INSTANCE2="$WORK/instance2"
+mkdir -p "$INSTANCE2"
 
 cat > "$INSTANCE2/repos.yaml" <<EOF
 driver: stub-ok
@@ -148,7 +153,7 @@ EOF
 (
   cd "$INSTANCE2"
   export ARCHIMEDES_DRIVERS_DIR="$MERGED_DRIVERS"
-  PATH="$SPECLESS_PATH" ./scripts/context-map-all.sh
+  PATH="$SPECLESS_PATH" "$ARCHIMEDES_BIN" context-map
 ) </dev/null >"$WORK/override.log" 2>&1
 
 override_log="$(cat "$WORK/override.log")"

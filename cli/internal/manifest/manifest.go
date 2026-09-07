@@ -78,8 +78,6 @@ func Load(path string) (*Manifest, error) {
 // Resolve looks name up and returns its entry with Path resolved against
 // root (the instance directory holding repos.yaml), so callers get a
 // usable checkout path instead of the relative one the file records.
-// Mirrors lib.sh's repo_path helper, plus the rest of the entry callers
-// need alongside it.
 func (m *Manifest) Resolve(root, name string) (Repo, error) {
 	r, ok := m.Find(name)
 	if !ok {
@@ -89,9 +87,8 @@ func (m *Manifest) Resolve(root, name string) (Repo, error) {
 	return r, nil
 }
 
-// SetRepoField writes value to one repo's field in the repos.yaml at path:
-// the port of lib.sh's set_repo_field, which did the same with `yq -i`. The
-// field is added if that repo doesn't carry it yet.
+// SetRepoField writes value to one repo's field in the repos.yaml at path.
+// The field is added if that repo doesn't carry it yet.
 //
 // repos.yaml is hand-edited — it ships with explanatory comments and
 // accumulates the operator's own — so the rewrite goes through a yaml.Node

@@ -32,11 +32,17 @@ your-workspace/
 │   │                        # house rules, known gotchas
 │   ├── work/<slug>/          # one folder per active unit of work
 │   ├── drivers/              # pluggable context-mapping drivers
-│   └── scripts/
+│   ├── convention-packs/     # shared build/lint conventions repos declare
+│   └── scaffolding/          # canonical PR/issue templates to push out
 ├── service-a/
 ├── service-b/
 └── ...
 ```
+
+An instance is data. It holds no tooling of its own: the `archimedes`
+binary is installed once per machine and every instance on it is acted on
+by that one install, so there is nothing in an instance to keep in step
+with this repo.
 
 The instance never contains the repos themselves (no submodules, no vendored
 copies) — it references sibling checkouts by relative path. It also never
@@ -57,9 +63,9 @@ other repo in the workspace.
 ### Stacked work within one repo
 
 When a unit of work needs two dependent PRs in the same repo (the second
-can't land until the first merges), `spawn.sh` supports branching a new
-worktree off another in-flight worktree's branch instead of off trunk — the
-"stacked branches" pattern. The stack relationship is tracked explicitly, so
+can't land until the first merges), `archimedes spawn` supports branching a
+new worktree off another in-flight worktree's branch instead of off trunk —
+the "stacked branches" pattern. The stack relationship is tracked explicitly, so
 tooling can prompt a rebase once the base PR merges instead of assuming the
 dependent branch is still current.
 
@@ -68,44 +74,132 @@ dependent branch is still current.
 A dossier's `## House rules` section (distinct from `## Known gotchas`) is
 for mandated decisions that must be respected even if unusual — the kind of
 thing good judgment alone would get wrong. It's the one place they're
-edited, and it's delivered two ways from there: `sync-house-rules.sh` pushes
-a durable, committed `HOUSE_RULES.md` into the target repo (so humans
-browsing it on GitHub see it too), and `spawn.sh` injects an ephemeral copy
-into every worktree it spawns for that repo, automatically.
+edited, and it's delivered two ways from there: `archimedes sync-house-rules`
+pushes a durable, committed `HOUSE_RULES.md` into the target repo (so humans
+browsing it on GitHub see it too), and `archimedes spawn` injects an
+ephemeral copy into every worktree it spawns for that repo, automatically.
 
 ## Getting started
+
+Install the tool once, globally (needs a Go toolchain, and `$GOBIN` —
+`~/go/bin` by default — on your `PATH`):
+
+```
+(cd cli && go install ./cmd/archimedes)
+```
+
+Then scaffold an instance and point it at your org:
 
 ```
 ./scripts/init.sh <instance-name> <parent-dir-for-your-repos>
 cd <parent-dir-for-your-repos>/<instance-name>
-scripts/bootstrap.sh <github-org>       # discovers + clones repos via `gh`
-scripts/context-map-all.sh --dry-run    # see the planned + stale/fresh order
+archimedes bootstrap <github-org>      # discovers + clones repos via `gh`
+archimedes context-map --dry-run       # see the planned + stale/fresh order
 ```
 
-Requires `git`, `gh` (authenticated), `yq` (v4), `jq`. `sync-templates.sh`
-additionally requires [`multi-gitter`](https://github.com/lindell/multi-gitter).
+`init.sh` is the one step that still comes from a checkout of this repo: it
+copies the template's starting data into the new instance and gives it its
+own git history. Everything after that is the installed binary acting on
+that data, so an instance is never refreshed from here, and a second
+instance on the same machine uses the same install.
 
-## Compiled CLI
+Running it requires `git` and `gh` (authenticated). `sync-templates`
+additionally requires
+[`multi-gitter`](https://github.com/lindell/multi-gitter).
 
-A `archimedes` binary is being built at [`cli/`](./cli) to replace the
-vendored bash scripts below with one globally-installed tool (see
-[`cli/README.md`](./cli/README.md)). `bootstrap`, `render-map`,
-`context-map`, `spawn`, `status`, `prune`, `sync-templates`,
-`sync-house-rules` and `apply-convention-pack` are ported; the rest follow
-the same pattern one at a time.
+### Instances made before the scripts were retired
 
-`dashboard` is the one subcommand with no script behind it: a live,
-interactive view of the whole instance — every spawned worktree with its PR
-state and any rebase it's owed, alongside each repo's context-map staleness
-— refreshing in place instead of printing once. It is purely additive, a
-second way to look at what `status` and `context-map --dry-run` already
-report, reading the same code they do. See
+Earlier instances carry a vendored `scripts/` directory and were refreshed
+from a checkout of this repo with `update-from-archimedes.sh`. Both are
+gone. Install the binary as above, then delete the copy:
+
+```
+cd <your-instance> && git rm -r scripts && git commit -m "Retire vendored scripts"
+```
+
+Nothing else has to move: `repos.yaml`, `repos/`, `work/`, `drivers/` and
+`scaffolding/` are the data the subcommands already read, and each
+subcommand takes the same arguments its script did. From then on the
+instance is data only, and upgrading means upgrading the binary.
+
+## Commands
+
+Run from inside an instance, or from anywhere with `--root <instance>`.
+`archimedes <subcommand> --help` for the full flag list; the design notes
+behind each one are in [`cli/README.md`](./cli/README.md).
+
+- `bootstrap <github-org>` — discover org repos via `gh repo list`, clone
+  what's missing, scaffold `repos.yaml` and per-repo dossier stubs.
+- `render-map` — regenerate `WORKSPACE-MAP.md`'s repo list from
+  `repos.yaml` (the `## Relationships` section stays hand-written).
+- `context-map [--dry-run]` — sequence a context-mapping pass across every
+  repo, dependency/base repos first, priming each session with already-mapped
+  dependencies and skipping any repo whose map is already current for its
+  base branch's latest commit (tracked via `context_modeled_sha` in
+  `repos.yaml`), so re-runs after new repos or merges are incremental.
+  Orchestration only — it doesn't assume any particular coding agent, skill,
+  or driver. By default the mapping itself is an interactive, human-in-the-
+  loop session per repo (`ARCHIMEDES_AGENT_CMD`/`ARCHIMEDES_CONTEXT_PROMPT`/
+  `ARCHIMEDES_CONTEXT_FILE` override the defaults); set `repos.yaml`'s
+  `driver` field — or `ARCHIMEDES_DRIVER` — to a name under `drivers/` to
+  build the map unattended instead (see `drivers/README.md`).
+- `run-driver <driver-name> <repo-path> <output-path>` — invoke one
+  driver's context-mapping contract directly, without a pass around it. A
+  driver declares, in its `driver.yaml` manifest, whether it accepts an
+  explicit output path (`output_mode: path-parameterized`) or always writes
+  into whatever repo it's run in (`output_mode: fixed-location`, harvested
+  afterward so the target repo ends up clean). Three drivers ship as working
+  examples: an `openspec` driver wrapping the
+  [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec) for the first mode,
+  and — for the second — a `pocock` driver wrapping Matt Pocock's
+  `domain-modeling` skill and a `spec-kit` driver wrapping
+  [GitHub's Spec Kit](https://github.com/github/spec-kit), which has to
+  scaffold itself into the target repo and strip that back out again.
+- `spawn <slug> <repo> [--base <branch>|--stack-on <repo>:<slug>]` —
+  fetch-first worktree creation for one unit of work in one repo. Also
+  materializes `work/<slug>/`'s contents (a ticket, a spec, whatever
+  reference material the planning session left behind), plus the target
+  repo's house rules (see above), into the new worktree at `.archimedes/`,
+  and makes sure that directory can never show up in `git status`/`git add
+  -A` or get committed there — no `.gitignore` edit needed in the target
+  repo, and removing the worktree removes the copy with it.
+- `status [<slug>] [--json]` — live PR/branch status across every spawned
+  worktree, with a warning past a configurable concurrent-stream cap. Also
+  flags stacked branches whose base merged by squash or rebase, where the
+  dependent branch would otherwise re-propose work that has already landed.
+- `prune [<slug>] [--force]` — list (or, with `--force`, remove)
+  worktrees/branches whose PR has merged or closed. Refuses to remove a
+  branch still acting as another worktree's stack base.
+- `sync-templates [--dry-run] [<repo-name>]` — push the canonical PR/issue
+  templates (`scaffolding/`) into every tracked repo's `.github/` as a pull
+  request, via `multi-gitter`. `--dry-run` shows which repos would receive
+  changes without pushing or opening anything; an optional repo name limits
+  the run to one repo. Requires `multi-gitter` and `gh auth login`.
+- `sync-house-rules <repo> [--dry-run]` — push one repo's house rules
+  (the `## House rules` section of its dossier, `repos/<repo>.md`) into that
+  repo as a durably committed `HOUSE_RULES.md`, via a pull request. Content
+  is per-repo rather than identical across every tracked repo, so — unlike
+  `sync-templates` — this isn't a `multi-gitter` fan-out; it opens the PR
+  itself via `gh`. `--dry-run` shows the pending diff without committing,
+  pushing, or opening anything. A no-op once the target repo's copy already
+  matches the dossier.
+- `apply-convention-pack <repo>` — one-time scaffold: add whatever
+  dependency/plugin reference a repo's declared `convention_pack` (see
+  `repos.yaml` and `convention-packs/`) needs to start pulling in its shared
+  build/lint/static-analysis config. Idempotent; not an ongoing sync.
+- `notify`, `dashboard`, `serve-mcp` — three ways to look at an instance
+  rather than act on one; see below.
+
+`dashboard` is a live, interactive view of the whole instance — every
+spawned worktree with its PR state and any rebase it's owed, alongside each
+repo's context-map staleness — refreshing in place instead of printing once.
+It is purely additive, a second way to look at what `status` and
+`context-map --dry-run` already report, reading the same code they do. See
 [`cli/README.md`](./cli/README.md#dashboard-optional).
 
-The CLI also grows subcommands with no script counterpart. `notify` reports
-the two things you would otherwise have to remember to go and check — a
-repo whose context map has gone stale, a worktree whose PR has merged and
-is ready to prune — once each, when they become true. It keeps no
+`notify` reports the two things you would otherwise have to remember to go
+and check — a repo whose context map has gone stale, a worktree whose PR has
+merged and is ready to prune — once each, when they become true. It keeps no
 background process of its own: each pass compares what holds now against a
 state file beside `repos.yaml` and exits, so a cron or launchd entry is the
 whole mechanism, and a pass with nothing new prints nothing.
@@ -130,70 +224,6 @@ second way in, not a replacement: every tool delegates to the same code the
 equivalent subcommand does. See
 [`cli/README.md`](./cli/README.md#mcp-server).
 
-## Scripts (in `template/scripts/`, vendored into each instance)
-
-- `bootstrap.sh` — discover org repos via `gh repo list`, clone what's
-  missing, scaffold `repos.yaml` and per-repo dossier stubs.
-- `render-map.sh` — regenerate `WORKSPACE-MAP.md`'s repo list from
-  `repos.yaml` (the `## Relationships` section stays hand-written).
-- `context-map-all.sh` — sequence a context-mapping pass across every repo,
-  dependency/base repos first, priming each session with already-mapped
-  dependencies and skipping any repo whose map is already current for its
-  base branch's latest commit (tracked via `context_modeled_sha` in
-  `repos.yaml`), so re-runs after new repos or merges are incremental.
-  Orchestration only — it doesn't assume any particular coding agent, skill,
-  or driver. By default the mapping itself is an interactive, human-in-the-
-  loop session per repo (`ARCHIMEDES_AGENT_CMD`/`ARCHIMEDES_CONTEXT_PROMPT`/
-  `ARCHIMEDES_CONTEXT_FILE` override the defaults); set `ARCHIMEDES_DRIVER`
-  to a name under `drivers/` to build the map unattended instead, via
-  `run-driver.sh` (see `drivers/README.md`).
-- `run-driver.sh <driver-name> <repo-path> <output-path>` — invoke one
-  driver's context-mapping contract directly. A driver declares, in its
-  `driver.yaml` manifest, whether it accepts an explicit output path
-  (`output_mode: path-parameterized`) or always writes into whatever repo
-  it's run in (`output_mode: fixed-location`, harvested afterward so the
-  target repo ends up clean). Three drivers ship as working examples: an
-  `openspec` driver wrapping the
-  [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec) for the first mode,
-  and — for the second — a `pocock` driver wrapping Matt Pocock's
-  `domain-modeling` skill and a `spec-kit` driver wrapping
-  [GitHub's Spec Kit](https://github.com/github/spec-kit), which has to
-  scaffold itself into the target repo and strip that back out again.
-- `spawn.sh <slug> <repo> [--base <branch>|--stack-on <repo>:<slug>]` —
-  fetch-first worktree creation for one unit of work in one repo. Also
-  materializes `work/<slug>/`'s contents (a ticket, a spec, whatever
-  reference material the planning session left behind), plus the target
-  repo's house rules (see below), into the new worktree at `.archimedes/`,
-  and makes sure that directory can never show up in `git status`/`git add
-  -A` or get committed there — no `.gitignore` edit needed in the target
-  repo, and removing the worktree removes the copy with it.
-- `status.sh [<slug>]` — live PR/branch status across every spawned
-  worktree, with a warning past a configurable concurrent-stream cap. The
-  Go CLI's `status` additionally flags stacked branches whose base merged
-  (see `cli/README.md`); the script still prints that as a TODO.
-- `prune.sh [<slug>] [--force]` — list (or, with `--force`, remove)
-  worktrees/branches whose PR has merged or closed. Refuses to remove a
-  branch still acting as another worktree's stack base.
-- `sync-templates.sh [--dry-run] [<repo-name>]` — push the canonical PR/issue
-  templates (`scaffolding/`) into every tracked repo's `.github/` as a pull
-  request, via `multi-gitter`. `--dry-run` shows which repos would receive
-  changes without pushing or opening anything; an optional repo name limits
-  the run to one repo. Requires `multi-gitter` and `gh auth login`.
-- `sync-house-rules.sh <repo> [--dry-run]` — push one repo's house rules
-  (the `## House rules` section of its dossier, `repos/<repo>.md`) into that
-  repo as a durably committed `HOUSE_RULES.md`, via a pull request. Content
-  is per-repo rather than identical across every tracked repo, so — unlike
-  `sync-templates.sh` — this isn't a `multi-gitter` fan-out; it opens the PR
-  itself via `gh`. `--dry-run` shows the pending diff without committing,
-  pushing, or opening anything. A no-op once the target repo's copy already
-  matches the dossier.
-- `apply-convention-pack.sh <repo>` — one-time scaffold: add whatever
-  dependency/plugin reference a repo's declared `convention_pack` (see
-  `repos.yaml` and `convention-packs/`) needs to start pulling in its shared
-  build/lint/static-analysis config. Idempotent; not an ongoing sync.
-- `update-from-archimedes.sh <path-to-this-repo>` — re-vendor `scripts/`,
-  `drivers/`, and `scaffolding/` into an existing instance.
-
 ## Language-tooling convention packs
 
 A repo can declare, via `convention_pack` in `repos.yaml`, which shared
@@ -209,9 +239,7 @@ for another language/build tool.
 ## Status
 
 Personal tool. Unfinished edges are called out as TODOs rather than papered
-over — notably, stacked-branch rebase detection is implemented in the Go
-CLI's `status` subcommand but not in the vendored `status.sh`, which still
-prints it as a TODO. Use at your own judgment.
+over. Use at your own judgment.
 
 ## License
 

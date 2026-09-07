@@ -7,17 +7,17 @@ lifecycle orchestration, not implementation.
   under `work/<slug>/`, using `WORKSPACE-MAP.md` and `repos/*.md` for
   context.
 - A repo's mandated house rules live in its dossier's `## House rules`
-  section (`repos/<repo>.md`) — edit them only there. `spawn.sh` and
-  `sync-house-rules.sh` both read from it, so a change made anywhere else
-  will not stick.
+  section (`repos/<repo>.md`) — edit them only there. `archimedes spawn`
+  and `archimedes sync-house-rules` both read from it, so a change made
+  anywhere else will not stick.
 - Hand off actual code changes to a spawned worktree in the target repo
-  (`scripts/spawn.sh <slug> <repo>`), so that session isn't cluttered with
+  (`archimedes spawn <slug> <repo>`), so that session isn't cluttered with
   every other repo's context.
 - Never duplicate a target repo's own `CONTEXT.md`/`CONTEXT-MAP.md` content
   here, link to it instead. This instance only owns the cross-repo
   relationship layer that has no single-repo home.
 - Keep a cap on concurrent worktree streams matched to actual review
-  bandwidth. `scripts/status.sh` warns past a configurable threshold
+  bandwidth. `archimedes status` warns past a configurable threshold
   (`ARCHIMEDES_MAX_STREAMS`, default 3).
-- Destructive operations (`scripts/prune.sh`) default to a dry run; only
+- Destructive operations (`archimedes prune`) default to a dry run; only
   `--force` deletes anything.

@@ -2,6 +2,12 @@
 # Scaffold a new instance from the Archimedes template, with fresh git
 # history so instance-specific (possibly sensitive) content never lives in
 # this repo's own history.
+#
+# What lands in the instance is data and nothing else — a manifest, dossier
+# and work directories, drivers and scaffolding it owns from here on. The
+# tooling that acts on it is the `archimedes` binary, installed once per
+# machine (see the README), so an instance has nothing to keep up to date
+# with this repo and nothing to re-vendor from it.
 set -euo pipefail
 ARCHIMEDES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -12,10 +18,15 @@ DEST="$DEST_PARENT/$NAME"
 [ -d "$DEST" ] && { echo "$DEST already exists" >&2; exit 1; }
 
 cp -r "$ARCHIMEDES_ROOT/template" "$DEST"
-chmod +x "$DEST"/scripts/*.sh
 git -C "$DEST" init -q
 git -C "$DEST" add -A
 git -C "$DEST" commit -q -m "Scaffold $NAME from Archimedes template"
 
 echo "Instance ready at $DEST"
-echo "Next: cd $DEST && scripts/bootstrap.sh <github-org>"
+if ! command -v archimedes >/dev/null 2>&1; then
+  echo ""
+  echo "The archimedes CLI isn't on your PATH yet. Install it once, globally:"
+  echo "  (cd $ARCHIMEDES_ROOT/cli && go install ./cmd/archimedes)"
+fi
+echo ""
+echo "Next: cd $DEST && archimedes bootstrap <github-org>"

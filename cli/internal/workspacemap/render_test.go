@@ -7,12 +7,10 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/workspacemap"
 )
 
-// Expected outputs below were captured by running the existing
-// template/scripts/render-map.sh (under gawk, since macOS's bundled awk
-// chokes on a multi-line -v assignment) against identical fixtures, to
-// confirm this port matches it. The one intentional divergence is the
-// script's accumulating blank line before "## Relationships" — see the
-// package doc, and TestRenderIsIdempotent below.
+// Expected outputs below are byte-exact: the "## Repos" block is
+// regenerated in place and everything around it, blank lines included, has
+// to come back unchanged. See the package doc, and TestRenderIsIdempotent
+// below.
 
 func TestRenderReplacesExistingRepoBlock(t *testing.T) {
 	existing := "# Workspace Map\n" +

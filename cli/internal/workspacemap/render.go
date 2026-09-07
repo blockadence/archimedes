@@ -2,18 +2,13 @@
 // from an instance's repos.yaml, leaving everything else in the file (most
 // importantly the hand-written "## Relationships" section) untouched.
 //
-// This is a port of template/scripts/render-map.sh's awk pass: replace
-// every line between the "## Repos" heading and the next "## Relationships"
-// heading.
+// The rewrite is positional: replace every line between the "## Repos"
+// heading and the next "## Relationships" heading.
 //
-// It differs from that awk in one respect. The script left blank lines
-// inside the replaced region in place while dropping everything else, so
-// each pass preserved the blank line the previous pass had emitted and
-// added another — a file re-rendered N times carried N blank lines before
-// "## Relationships". Rendering here is idempotent instead: the region is
-// replaced wholesale, so re-running against an already-rendered map is a
-// no-op. This matters more than it used to, now that bootstrap regenerates
-// the map on every run.
+// The region is replaced wholesale rather than filtered line by line, which
+// is what makes rendering idempotent: re-running against an already-rendered
+// map is a no-op, blank lines included. That matters because bootstrap
+// regenerates the map on every run.
 package workspacemap
 
 import (

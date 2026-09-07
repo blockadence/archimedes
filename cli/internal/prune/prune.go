@@ -1,5 +1,5 @@
 // Package prune finds and removes worktrees/branches whose PR has merged
-// or closed — a port of template/scripts/prune.sh. Parsing and candidate
+// or closed. Parsing and candidate
 // selection are pure (Scan takes PR lookup as an injected function so they
 // can be unit-tested without gh or a real git checkout); the gh-facing
 // adapter lives in gh.go, and the git commands that do the actual removal
@@ -47,9 +47,8 @@ func parseRow(line string) (Row, bool) {
 }
 
 // ParseStatusFile parses a status.md's data rows, skipping the fixed
-// 4-line header (title, blank, table header, separator) that spawn.sh
-// always writes — the same convention prune.sh/status.sh's `tail -n +5`
-// relies on.
+// 4-line header (title, blank, table header, separator) that spawn always
+// writes.
 func ParseStatusFile(data []byte) []Row {
 	lines := strings.Split(string(data), "\n")
 	if len(lines) <= 4 {
@@ -148,8 +147,7 @@ func Scan(workDir, slugFilter string, prState PRStateFunc) ([]Item, error) {
 	return items, nil
 }
 
-// RemoveStatusRow deletes every row for repo from the status.md at path,
-// mirroring prune.sh's `sed -i.bak "/| $repo |/d"`.
+// RemoveStatusRow deletes every row for repo from the status.md at path.
 func RemoveStatusRow(path, repo string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {

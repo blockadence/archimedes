@@ -1,5 +1,5 @@
-// Package status reads the work/<slug>/status.md files spawn.sh writes and
-// reports each row's live PR state, mirroring template/scripts/status.sh.
+// Package status reads the work/<slug>/status.md files spawn writes and
+// reports each row's live PR state.
 package status
 
 import (
@@ -19,11 +19,12 @@ type Entry struct {
 }
 
 // headerLines is the fixed title/blank/header/separator preamble every
-// status.md starts with (see spawn.sh). Data rows start on the line after.
+// status.md starts with (see internal/spawn). Data rows start on the line
+// after.
 const headerLines = 4
 
 // ParseFile parses one status.md's data rows into Entries, tagging each
-// with slug (the work/<slug> directory name spawn.sh keyed it under).
+// with slug (the work/<slug> directory name spawn keyed it under).
 func ParseFile(path, slug string) ([]Entry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -85,7 +86,7 @@ func Discover(workDir, slugFilter string) ([]Entry, error) {
 }
 
 // normalizeField trims a table cell and collapses internal whitespace runs
-// to a single space, matching status.sh's `echo "$field" | xargs`.
+// to a single space, so a hand-aligned table parses the same as a terse one.
 func normalizeField(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }

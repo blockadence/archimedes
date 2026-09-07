@@ -1,7 +1,7 @@
 # Drivers
 
 A driver is whatever actually produces a repo's context map — an AI coding
-agent, a wrapped third-party CLI, a script. `scripts/context-map-all.sh`
+agent, a wrapped third-party CLI, a script. `archimedes context-map`
 orchestrates *which* repos need mapping and in what order; it never knows how
 any given driver does its job. That split is the point: swapping the
 configured driver never requires touching orchestration.
@@ -36,8 +36,8 @@ default without editing the file. Leaving every level unset falls back to an
 interactive, human-in-the-loop session.
 
 Naming a driver that doesn't exist under `drivers/` — at either level — is a
-misconfiguration: `scripts/run-driver.sh` fails immediately with an "unknown
-driver" error rather than silently falling back to the interactive session.
+misconfiguration: the run fails immediately with an "unknown driver" error
+rather than silently falling back to the interactive session.
 
 Each driver lives in its own directory here, named after itself:
 
@@ -57,11 +57,11 @@ output_mode: path-parameterized
 command: run.sh            # path to the executable, relative to this directory
 ```
 
-`output_mode` declares which invocation contract the driver honors.
-`scripts/run-driver.sh` supports two modes:
+`output_mode` declares which invocation contract the driver honors. Two
+modes are supported:
 
 - **path-parameterized** — the driver accepts an explicit output location and
-  writes exactly there. `scripts/run-driver.sh <name> <repo-path>
+  writes exactly there. `archimedes run-driver <name> <repo-path>
   <output-path>` invokes it as:
 
   ```
@@ -71,13 +71,13 @@ command: run.sh            # path to the executable, relative to this directory
   `<repo-path>` is an absolute path to the target repo. The driver must
   write its finished context map to exactly `<output-path>` (creating parent
   directories as needed) and exit non-zero — without leaving a file behind —
-  on failure. `run-driver.sh` treats a zero exit with no file at
-  `<output-path>` as an error.
+  on failure. A zero exit with no file at `<output-path>` is treated as an
+  error.
 
 - **fixed-location** — the driver can't be told where to write; it always
   writes into whatever repo it's run in, at a fixed path relative to that
   repo's root. The manifest must also declare `fixed_path` (e.g.
-  `CONTEXT.md`). `scripts/run-driver.sh <name> <repo-path> <output-path>`
+  `CONTEXT.md`). `archimedes run-driver <name> <repo-path> <output-path>`
   invokes it as:
 
   ```
@@ -85,20 +85,20 @@ command: run.sh            # path to the executable, relative to this directory
   ```
 
   The driver must write to exactly `<repo-path>/<fixed_path>` and exit
-  non-zero — without leaving a file behind — on failure. `run-driver.sh`
-  then harvests that file itself: it moves (not copies)
+  non-zero — without leaving a file behind — on failure. Archimedes then
+  harvests that file itself: it moves (not copies)
   `<repo-path>/<fixed_path>` to `<output-path>`, so the canonical copy ends
   up wherever the caller asked and the target repo is left with no trace of
   it. A zero exit with no file at `<repo-path>/<fixed_path>` is treated as
   an error, same as path-parameterized.
 
   `fixed_path` may be nested (`.specify/memory/constitution.md`); after
-  moving the file out, `run-driver.sh` removes the directories that move
-  emptied, stopping at the first one that still holds something. `git
+  moving the file out, the directories that move emptied are removed too,
+  stopping at the first one that still holds something. `git
   status` wouldn't have caught those — git doesn't track directories — but
   they're a trace of the run all the same.
 
-  "No trace" is a joint obligation, and the half `run-driver.sh` can't
+  "No trace" is a joint obligation, and the half Archimedes can't
   discharge belongs to the driver: it must leave the target repo exactly as
   it found it apart from `<fixed_path>`. A driver that only ever writes one
   file (`pocock`) gets this for free. One that has to scaffold a whole
@@ -109,10 +109,10 @@ command: run.sh            # path to the executable, relative to this directory
 
 ## Trying one directly
 
-Every driver can be exercised outside of `context-map-all.sh`:
+Every driver can be exercised outside of a mapping pass:
 
 ```
-scripts/run-driver.sh <name> <path-to-a-repo> <path-to-write-the-map-to>
+archimedes run-driver <name> <path-to-a-repo> <path-to-write-the-map-to>
 ```
 
 ## Available drivers
@@ -141,7 +141,7 @@ scripts/run-driver.sh <name> <path-to-a-repo> <path-to-write-the-map-to>
   `.specify/memory/constitution.md`. So the driver snapshots the repo,
   scaffolds, has the `speckit-constitution` skill fill the constitution in
   from the codebase, then restores everything except the constitution
-  itself, which `run-driver.sh` harvests. Rollback is the driver's exit
+  itself, which Archimedes harvests. Rollback is the driver's exit
   trap, not something on its success path, so a failed `specify init`, a
   session that does nothing, and a Ctrl-C halfway through all leave the repo
   as it was found.

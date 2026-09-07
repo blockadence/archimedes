@@ -16,9 +16,8 @@ type Ref struct {
 	Slug string
 }
 
-// ParseFlag splits a --stack-on value the way spawn.sh's `IFS=':' read -r
-// STACK_REPO STACK_SLUG` does: a value with no ":" yields a non-empty Repo
-// and an empty Slug rather than an error.
+// ParseFlag splits a --stack-on value on its first ":": a value with no
+// ":" yields a non-empty Repo and an empty Slug rather than an error.
 func ParseFlag(value string) Ref {
 	if value == "" {
 		return Ref{}
