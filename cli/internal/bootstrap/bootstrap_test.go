@@ -5,40 +5,27 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/blockadence/archimedes/cli/internal/manifest"
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
 // newOrigin creates a bare repo with one commit on branch, standing in for
-// a repo the org's forge would hand back. Cloning it needs no network.
+// a repo the org's forge would hand back. Cloning it needs no network. Its
+// seed clone is kept out of dir/<name>, the path bootstrap itself clones
+// into — finding one already there is a different case entirely.
 func newOrigin(t *testing.T, dir, name, branch string) string {
 	t.Helper()
-
-	origin := filepath.Join(dir, name+"-origin.git")
-	seed := filepath.Join(dir, name+"-seed")
-	git(t, "", "init", "-q", "--bare", "-b", branch, origin)
-	git(t, "", "clone", "-q", origin, seed)
-	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("hi\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git(t, seed, "add", "-A")
-	git(t, seed, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
-	git(t, seed, "push", "-q", "origin", branch)
-
-	return origin
-}
-
-func git(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
+	return testrepo.New(t, testrepo.Spec{
+		Dir:    dir,
+		Name:   name,
+		Origin: name + "-origin.git",
+		Clone:  name + "-seed",
+		Branch: branch,
+	}).Origin
 }
 
 // newInstance lays out an instance root beside the org's origins, the

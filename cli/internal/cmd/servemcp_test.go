@@ -18,6 +18,7 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/mcpserver"
 	"github.com/blockadence/archimedes/cli/internal/spawn"
 	"github.com/blockadence/archimedes/cli/internal/status"
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
 // These tests are the second acceptance criterion of the MCP server: a tool
@@ -162,14 +163,7 @@ func mcpInstance(t *testing.T) (root string, repos map[string]string) {
 
 	repos = map[string]string{}
 	for _, name := range []string{"app", "shared"} {
-		repo := filepath.Join(tmp, name)
-		run(t, tmp, "git", "init", "-q", "--bare", "-b", "main", filepath.Join(tmp, name+".git"))
-		run(t, tmp, "git", "clone", "-q", filepath.Join(tmp, name+".git"), repo)
-		writeFile(t, filepath.Join(repo, "README.md"), "# "+name+"\n")
-		run(t, repo, "git", "add", "-A")
-		run(t, repo, "git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
-		run(t, repo, "git", "push", "-q", "origin", "main")
-		repos[name] = repo
+		repos[name] = testrepo.New(t, testrepo.Spec{Dir: tmp, Name: name}).Clone
 	}
 
 	root = filepath.Join(tmp, "instance")

@@ -11,6 +11,8 @@
 set -euo pipefail
 
 ARCHIMEDES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/gitfixture.sh
+. "$ARCHIMEDES_ROOT/tests/gitfixture.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -21,13 +23,7 @@ pass() { echo "ok - $1"; }
 # (two target repos, so the same slug can be spawned into both — the
 # multi-repo/stacked-work pattern this instance pattern exists for).
 make_target_repo() { # <name>
-  local name="$1" origin="$TMP/$1.git" clone="$TMP/$1"
-  git init -q --bare -b main "$origin"
-  git clone -q "$origin" "$clone"
-  echo "*.log" > "$clone/.gitignore"
-  git -C "$clone" add -A
-  git -C "$clone" -c user.email=t@t -c user.name=t commit -q -m init
-  git -C "$clone" push -q origin main
+  make_origin_and_clone_at "$TMP/$1.git" "$TMP/$1" .gitignore $'*.log\n'
 }
 make_target_repo target-repo
 make_target_repo target-repo2

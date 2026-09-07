@@ -10,6 +10,8 @@
 set -euo pipefail
 
 ARCHIMEDES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/gitfixture.sh
+. "$ARCHIMEDES_ROOT/tests/gitfixture.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -42,10 +44,7 @@ export PATH="$FAKE_BIN:$PATH"
 # --- fixture: bare "origin" + clone, one commit on main, no HOUSE_RULES.md
 ORIGIN="$TMP/target-repo.git"
 CLONE="$TMP/target-repo"
-git init -q --bare -b main "$ORIGIN"
-git clone -q "$ORIGIN" "$CLONE"
-git -C "$CLONE" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
-git -C "$CLONE" push -q origin main
+make_origin_and_clone_at "$ORIGIN" "$CLONE"
 
 INSTANCE="$TMP/instance"
 cp -r "$ARCHIMEDES_ROOT/template" "$INSTANCE"

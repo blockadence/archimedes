@@ -9,6 +9,8 @@
 set -euo pipefail
 
 ARCHIMEDES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/gitfixture.sh
+. "$ARCHIMEDES_ROOT/tests/gitfixture.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -16,11 +18,7 @@ fail() { echo "FAIL: $1" >&2; exit 1; }
 pass() { echo "ok - $1"; }
 
 make_target_repo() { # <name>
-  local name="$1" origin="$TMP/$1.git" clone="$TMP/$1"
-  git init -q --bare -b main "$origin"
-  git clone -q "$origin" "$clone"
-  git -C "$clone" commit -q --allow-empty -m init
-  git -C "$clone" push -q origin main
+  make_origin_and_clone_at "$TMP/$1.git" "$TMP/$1"
 }
 make_target_repo has-rules
 make_target_repo no-rules

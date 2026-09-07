@@ -7,6 +7,9 @@ set -uo pipefail
 HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TESTS_REPO_ROOT="$(cd "$HELPERS_DIR/.." && pwd)"
 
+# shellcheck source=tests/gitfixture.sh
+. "$HELPERS_DIR/gitfixture.sh"
+
 TESTS_RUN=0
 TESTS_FAILED=0
 
@@ -55,16 +58,7 @@ report() { # call at end of each test file
 # <work-dir>/<name>-origin.git (the bare remote).
 make_origin_and_clone() {
   local work="$1" name="$2"
-  git init -q --bare "$work/$name-origin.git"
-  git clone -q "$work/$name-origin.git" "$work/$name"
-  (
-    cd "$work/$name"
-    git checkout -q -b main
-    echo "hi" > README.md
-    git add -A
-    git -c user.email=test@example.com -c user.name=test commit -qm init
-    git push -q -u origin main
-  )
+  make_origin_and_clone_at "$work/$name-origin.git" "$work/$name" README.md $'hi\n'
 }
 
 # Scaffold a throwaway Archimedes instance under <work-dir>/instance: just

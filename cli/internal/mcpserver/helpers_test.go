@@ -13,16 +13,8 @@ import (
 
 	"github.com/blockadence/archimedes/cli/internal/manifest"
 	"github.com/blockadence/archimedes/cli/internal/mcpserver"
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
-
-func gitOK(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v (in %s): %v\n%s", args, dir, err, out)
-	}
-}
 
 func mustWriteFile(t *testing.T, path, content string) {
 	t.Helper()
@@ -38,16 +30,7 @@ func mustWriteFile(t *testing.T, path, content string) {
 // the tools that fetch and spawn have real remote state to work against.
 func makeRepo(t *testing.T, tmp, name string) string {
 	t.Helper()
-	clonePath := filepath.Join(tmp, name)
-
-	gitOK(t, tmp, "init", "-q", "--bare", "-b", "main", filepath.Join(tmp, name+".git"))
-	gitOK(t, tmp, "clone", "-q", filepath.Join(tmp, name+".git"), clonePath)
-	mustWriteFile(t, filepath.Join(clonePath, "README.md"), "# "+name+"\n")
-	gitOK(t, clonePath, "add", "-A")
-	gitOK(t, clonePath, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
-	gitOK(t, clonePath, "push", "-q", "origin", "main")
-
-	return clonePath
+	return testrepo.New(t, testrepo.Spec{Dir: tmp, Name: name}).Clone
 }
 
 const reposYAML = `repos:
