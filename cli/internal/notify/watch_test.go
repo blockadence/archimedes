@@ -13,6 +13,7 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/manifest"
 	"github.com/blockadence/archimedes/cli/internal/notify"
 	"github.com/blockadence/archimedes/cli/internal/prune"
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
 // instance is a watchable Archimedes instance: a repos.yaml pointing at
@@ -29,9 +30,7 @@ func newInstance(t *testing.T) instance {
 	tmp := t.TempDir()
 	inst := instance{root: filepath.Join(tmp, "instance"), tmp: tmp, repo: filepath.Join(tmp, "app")}
 
-	git(t, tmp, "init", "-q", "--bare", "-b", "main", filepath.Join(tmp, "app.git"))
-	git(t, tmp, "clone", "-q", filepath.Join(tmp, "app.git"), inst.repo)
-	inst.commit(t, "README.md", "# app\n")
+	testrepo.New(t, testrepo.Spec{Dir: tmp, Name: "app"})
 
 	write(t, filepath.Join(inst.root, "repos.yaml"),
 		"repos:\n  - name: app\n    path: ../app\n    base_branch: main\n    context_modeled_sha: null\n")

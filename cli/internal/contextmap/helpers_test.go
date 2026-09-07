@@ -11,6 +11,16 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
+// gitOK runs git in dir, failing the test on error.
+func gitOK(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v (in %s): %v\n%s", args, dir, err, out)
+	}
+}
+
 func gitOut(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
