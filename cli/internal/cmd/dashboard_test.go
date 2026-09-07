@@ -57,7 +57,7 @@ func TestDashboardOptionsFallBackToTheSameDefaultsAsStatus(t *testing.T) {
 func TestRootStillCarriesEveryPortedSubcommand(t *testing.T) {
 	want := []string{
 		"bootstrap", "render-map", "context-map", "spawn", "status", "prune",
-		"sync-templates", "sync-house-rules", "dashboard",
+		"sync-templates", "sync-house-rules", "apply-convention-pack", "dashboard",
 	}
 
 	have := map[string]bool{}
