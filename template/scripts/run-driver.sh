@@ -48,4 +48,17 @@ else
 
   [ -f "$WRITTEN_AT" ] || { echo "driver '$DRIVER_NAME' exited 0 but did not write $WRITTEN_AT" >&2; exit 1; }
   mv "$WRITTEN_AT" "$OUTPUT_PATH"
+
+  # A fixed_path can be nested (a driver wrapping a tool that insists on
+  # writing to, say, .specify/memory/constitution.md). Moving the file out
+  # would then leave its now-empty directories behind -- invisible to `git
+  # status`, which doesn't track empty directories, but still a trace of the
+  # run. Walk back up removing them; rmdir stops at the first directory that
+  # still holds something, so a fixed_path sitting in a pre-existing
+  # directory leaves that directory alone.
+  dir="$(dirname "$FIXED_PATH")"
+  while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
+    rmdir "$REPO_PATH/$dir" 2>/dev/null || break
+    dir="$(dirname "$dir")"
+  done
 fi

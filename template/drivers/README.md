@@ -92,6 +92,21 @@ command: run.sh            # path to the executable, relative to this directory
   it. A zero exit with no file at `<repo-path>/<fixed_path>` is treated as
   an error, same as path-parameterized.
 
+  `fixed_path` may be nested (`.specify/memory/constitution.md`); after
+  moving the file out, `run-driver.sh` removes the directories that move
+  emptied, stopping at the first one that still holds something. `git
+  status` wouldn't have caught those — git doesn't track directories — but
+  they're a trace of the run all the same.
+
+  "No trace" is a joint obligation, and the half `run-driver.sh` can't
+  discharge belongs to the driver: it must leave the target repo exactly as
+  it found it apart from `<fixed_path>`. A driver that only ever writes one
+  file (`pocock`) gets this for free. One that has to scaffold a whole
+  toolchain into the repo before it can produce anything (`spec-kit`) has to
+  undo that scaffolding itself before exiting — see
+  `drivers/spec-kit/repo-snapshot.sh` for the snapshot-then-restore approach
+  that generalizes to any such tool.
+
 ## Trying one directly
 
 Every driver can be exercised outside of `context-map-all.sh`:
@@ -112,3 +127,23 @@ scripts/run-driver.sh <name> <path-to-a-repo> <path-to-write-the-map-to>
   it's run in, so this is a `fixed-location` driver (`fixed_path:
   CONTEXT.md`) — requires the `claude` CLI and the `domain-modeling` skill
   installed.
+- `spec-kit` — wraps [GitHub's Spec Kit](https://github.com/github/spec-kit)
+  (`uv tool install specify-cli --from
+  git+https://github.com/github/spec-kit.git`), also via a headless `claude
+  -p` session. Requires both the `specify` and `claude` CLIs.
+
+  Spec Kit is the awkward case the `fixed-location` mode exists for. It has
+  no "point at a repo, write a report over here" mode at all: `specify init`
+  unpacks templates, helper scripts and agent skills into the repo, and its
+  one whole-repo artifact — the constitution — is always written to
+  `.specify/memory/constitution.md`. So the driver snapshots the repo,
+  scaffolds, has the `speckit-constitution` skill fill the constitution in
+  from the codebase, then restores everything except the constitution
+  itself, which `run-driver.sh` harvests.
+
+  What you get is a different shape of context map from the other two: a
+  repo's *principles and constraints* — the conventions its existing code
+  already follows, the boundaries between its modules, what its dependencies
+  rule out — rather than `openspec`'s structural report or `pocock`'s domain
+  vocabulary. Which of the three is the useful one is a per-repo judgment,
+  which is why the driver is a per-repo setting.

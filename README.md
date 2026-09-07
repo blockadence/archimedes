@@ -115,10 +115,13 @@ pattern one at a time.
   `driver.yaml` manifest, whether it accepts an explicit output path
   (`output_mode: path-parameterized`) or always writes into whatever repo
   it's run in (`output_mode: fixed-location`, harvested afterward so the
-  target repo ends up clean). An `openspec` driver wrapping the
-  [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec) and a `pocock`
-  driver wrapping Matt Pocock's `domain-modeling` skill ship as working
-  examples of each mode.
+  target repo ends up clean). Three drivers ship as working examples: an
+  `openspec` driver wrapping the
+  [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec) for the first mode,
+  and — for the second — a `pocock` driver wrapping Matt Pocock's
+  `domain-modeling` skill and a `spec-kit` driver wrapping
+  [GitHub's Spec Kit](https://github.com/github/spec-kit), which has to
+  scaffold itself into the target repo and strip that back out again.
 - `spawn.sh <slug> <repo> [--base <branch>|--stack-on <repo>:<slug>]` —
   fetch-first worktree creation for one unit of work in one repo. Also
   materializes `work/<slug>/`'s contents (a ticket, a spec, whatever
