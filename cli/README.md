@@ -104,3 +104,45 @@ one place. Both take `--dry-run`.
 Neither shells out to anything but git through `internal/gitutil`; every
 other external command (`multi-gitter`, `gh`) goes through
 `reposync.ExecFunc`, the seam tests replace.
+
+### Terminal workspace integration (opt-in)
+
+`spawn` can also hand the finished worktree to a terminal workspace
+manager, so a new unit of work arrives in a pane already rooted at its own
+checkout instead of needing a manual `cd`. It is off unless you turn it on:
+
+```
+export ARCHIMEDES_WORKSPACE=herdr   # instance-wide, in your shell profile
+archimedes spawn widget-fix target --workspace herdr   # or just this once
+archimedes spawn widget-fix target --workspace off     # ...or not this once
+archimedes spawn widget-fix target --focus             # and switch to it
+```
+
+[herdr](https://herdr.dev) is the one integration implemented today
+(`internal/workspace`). It's invoked as `herdr worktree open`, adopting the
+checkout git already made rather than creating a second one, and labelled
+`<repo>:<slug>` — the same shape `--stack-on` parses — because one slug can
+be spawned into several repos. herdr also opens a workspace for the parent
+repo if it doesn't already have one; that's its own worktree model, not
+something spawn asks for.
+
+Without `--focus` the new workspace opens in the background, so a spawn
+never yanks you out of what you were doing — including a sweep that spawns
+one slug across several repos in a row.
+
+The integration is best-effort by construction. By the time it runs, the
+branch, the worktree, its materialized context, and its status row all
+exist, so nothing that happens here can fail a spawn — the operator would
+only be left cleaning up state that was already complete. A tool that isn't
+installed is reported as a `note:` on stderr, since that's the expected
+state on most machines and says nothing is wrong; a tool that *is*
+installed and still refused the call (its server isn't running, say) gets a
+`warning:` carrying whatever it said for itself. The one thing that is a
+hard error is naming an integration that doesn't exist — a typo fails
+loudly, before any git work, rather than silently withholding the pane you
+asked for.
+
+Adding another workspace manager means adding a case to
+`workspace.Select` and an `Opener` beside `openHerdr`. Everything above
+`internal/workspace` — `spawn`, the flags, the warning path — is written
+against the `Integration` type, not against herdr.
