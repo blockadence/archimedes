@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blockadence/archimedes/cli/internal/dossier"
 	"github.com/blockadence/archimedes/cli/internal/spawn"
 )
 
@@ -154,9 +155,9 @@ func TestMaterializeDeliversHouseRulesWithoutReferenceMaterial(t *testing.T) {
 
 	f.materialize(t, "has-rules")
 
-	got, err := os.ReadFile(f.contextPath(spawn.HouseRulesFileName))
+	got, err := os.ReadFile(f.contextPath(dossier.HouseRulesFileName))
 	if err != nil {
-		t.Fatalf("%s was not materialized: %v", spawn.HouseRulesFileName, err)
+		t.Fatalf("%s was not materialized: %v", dossier.HouseRulesFileName, err)
 	}
 	if string(got) != rules+"\n" {
 		t.Errorf("house rules content diverged\n got: %q\nwant: %q", got, rules+"\n")
@@ -186,8 +187,8 @@ func TestMaterializeDeliversHouseRulesAlongsideReferenceMaterial(t *testing.T) {
 	if _, err := os.Stat(f.contextPath("ticket.md")); err != nil {
 		t.Errorf("ticket.md was not materialized: %v", err)
 	}
-	if _, err := os.Stat(f.contextPath(spawn.HouseRulesFileName)); err != nil {
-		t.Errorf("%s was not materialized: %v", spawn.HouseRulesFileName, err)
+	if _, err := os.Stat(f.contextPath(dossier.HouseRulesFileName)); err != nil {
+		t.Errorf("%s was not materialized: %v", dossier.HouseRulesFileName, err)
 	}
 }
 

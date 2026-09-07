@@ -14,6 +14,13 @@ import (
 // look unusual, as distinct from "Known gotchas" (surprising facts).
 const HouseRulesHeading = "## House rules"
 
+// HouseRulesFileName is the file a repo's house rules are delivered as, in
+// both directions of the dual delivery: the durable copy committed into the
+// repo itself (internal/reposync) and the ephemeral per-worktree copy
+// (internal/spawn). One name, so the two copies stay recognizably the same
+// artifact.
+const HouseRulesFileName = "HOUSE_RULES.md"
+
 // houseRulesStubBody is the placeholder bootstrap writes into a fresh
 // dossier. It must be recognized as "no rules recorded yet" rather than a
 // real rule — otherwise a never-edited dossier would get its instructional
