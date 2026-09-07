@@ -21,7 +21,7 @@ Pass --dry-run to see which repos would receive template changes without
 pushing anything.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			if err := requireBinaries("git", "gh", "multi-gitter"); err != nil {
+			if err := requireBins("git", "gh", "multi-gitter"); err != nil {
 				return err
 			}
 			if len(args) == 1 {

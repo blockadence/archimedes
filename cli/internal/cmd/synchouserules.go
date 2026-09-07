@@ -22,7 +22,7 @@ Pass --dry-run to see the pending change without committing, pushing, or
 opening a pull request.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			if err := requireBinaries("git", "gh"); err != nil {
+			if err := requireBins("git", "gh"); err != nil {
 				return err
 			}
 			opts.Repo = args[0]

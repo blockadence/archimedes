@@ -49,7 +49,7 @@ Dry run by default: lists candidates without touching anything. Pass
 // slug and head branch (production callers pass prune.LookupPRState; tests
 // inject a fake so they don't need a real gh session).
 func runPrune(out io.Writer, root, slugFilter string, force bool, ghState prune.PRStateFunc) error {
-	if err := requireBinaries("git", "gh"); err != nil {
+	if err := requireBins("git", "gh"); err != nil {
 		return err
 	}
 
