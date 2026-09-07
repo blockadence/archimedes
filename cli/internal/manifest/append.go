@@ -1,7 +1,6 @@
 package manifest
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 
@@ -46,17 +45,12 @@ func AppendRepo(path string, r Repo) (bool, error) {
 	repos.Style = 0
 	repos.Content = append(repos.Content, repoNode(r))
 
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(&doc); err != nil {
-		return false, fmt.Errorf("encoding %s: %w", path, err)
-	}
-	if err := enc.Close(); err != nil {
+	out, err := encode(&doc)
+	if err != nil {
 		return false, fmt.Errorf("encoding %s: %w", path, err)
 	}
 
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(path, out, 0o644); err != nil {
 		return false, err
 	}
 
@@ -118,41 +112,4 @@ func repoNode(r Repo) *yaml.Node {
 	set("driver", stringOrNull(r.Driver))
 
 	return entry
-}
-
-func scalarNode(tag, value string) *yaml.Node {
-	return &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: value}
-}
-
-// stringOrNull writes an unset field as an explicit null rather than an
-// empty string, so the key reads as "nothing declared here yet".
-func stringOrNull(value string) *yaml.Node {
-	if value == "" {
-		return scalarNode("!!null", "null")
-	}
-	return scalarNode("!!str", value)
-}
-
-// stringsNode renders a list of names, kept on one line so a repo entry
-// stays scannable.
-func stringsNode(values []string) *yaml.Node {
-	node := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Style: yaml.FlowStyle}
-	for _, v := range values {
-		node.Content = append(node.Content, scalarNode("!!str", v))
-	}
-	return node
-}
-
-// nodeField reads a scalar field off a mapping node, or "" if it has no
-// such key.
-func nodeField(node *yaml.Node, key string) string {
-	if node.Kind != yaml.MappingNode {
-		return ""
-	}
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			return node.Content[i+1].Value
-		}
-	}
-	return ""
 }
