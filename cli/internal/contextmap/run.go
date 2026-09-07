@@ -182,12 +182,12 @@ func interactiveSession(opts Options, m *manifest.Manifest, root string, turn re
 	if len(turn.repo.DependsOn) > 0 {
 		fmt.Fprintln(out, "Depends on (already mapped, prime the session with these):")
 		for _, dep := range turn.repo.DependsOn {
-			depPath, err := m.RepoPath(root, dep)
-			if err != nil {
-				// A dependency that isn't in repos.yaml already
-				// surfaced as an ordering warning; name it anyway
-				// rather than dropping it silently.
-				depPath = dep
+			depPath := dep
+			// A dependency that isn't in repos.yaml already surfaced
+			// as an ordering warning; name it anyway rather than
+			// dropping it silently.
+			if depRepo, err := m.Resolve(root, dep); err == nil {
+				depPath = depRepo.Path
 			}
 			fmt.Fprintf(out, "  - %s: %s\n", dep, filepath.Join(depPath, contextFile))
 		}

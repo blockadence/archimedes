@@ -138,7 +138,9 @@ degrades to a note — the worktree is created either way. See
   -A` or get committed there — no `.gitignore` edit needed in the target
   repo, and removing the worktree removes the copy with it.
 - `status.sh [<slug>]` — live PR/branch status across every spawned
-  worktree, with a warning past a configurable concurrent-stream cap.
+  worktree, with a warning past a configurable concurrent-stream cap. The
+  Go CLI's `status` additionally flags stacked branches whose base merged
+  (see `cli/README.md`); the script still prints that as a TODO.
 - `prune.sh [<slug>] [--force]` — list (or, with `--force`, remove)
   worktrees/branches whose PR has merged or closed. Refuses to remove a
   branch still acting as another worktree's stack base.
@@ -177,8 +179,9 @@ for another language/build tool.
 ## Status
 
 Personal tool. Unfinished edges are called out as TODOs rather than papered
-over — notably, stacked-branch rebase detection in `status.sh` isn't
-implemented yet. Use at your own judgment.
+over — notably, stacked-branch rebase detection is implemented in the Go
+CLI's `status` subcommand but not in the vendored `status.sh`, which still
+prints it as a TODO. Use at your own judgment.
 
 ## License
 

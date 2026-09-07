@@ -100,3 +100,26 @@ func GHSlug(repoPath string) (string, error) {
 	}
 	return url, nil
 }
+
+// HasRef reports whether ref names a commit in the repo at repoPath. Any
+// failure to resolve it — a deleted branch, a remote-tracking ref that was
+// never fetched, a broken repo — reads as absent, since every caller is
+// asking "is this still here?" rather than "why not?".
+func HasRef(repoPath, ref string) bool {
+	_, err := Run(repoPath, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+	return err == nil
+}
+
+// IsAncestor reports whether ancestor is reachable from descendant, i.e.
+// whether descendant's history already contains it (`git merge-base
+// --is-ancestor`). A ref that doesn't resolve is neither an ancestor nor a
+// descendant of anything, so an unknown ref reads as false rather than as
+// an error — callers use this to decide whether a branch has been left
+// behind, and "can't tell" must never masquerade as "yes".
+func IsAncestor(repoPath, ancestor, descendant string) bool {
+	if !HasRef(repoPath, ancestor) || !HasRef(repoPath, descendant) {
+		return false
+	}
+	_, err := Run(repoPath, "merge-base", "--is-ancestor", ancestor, descendant)
+	return err == nil
+}

@@ -72,6 +72,31 @@ degrading to "no PR" — a missing `gh` auth, no network, an unset repo — neve
 fails the rest of the report, matching the original script's `|| echo '{}'`
 fallback.
 
+It also flags stacked branches left behind by a squash- or rebase-merged
+base — the case where a dependent branch would open a pull request
+re-proposing work that has already landed. A row whose note reads `stacked
+on <repo>:<slug>` is flagged when three things hold: the base's commits are
+still in the branch's history, those commits are *not* on the branch's
+`origin/<base branch>`, and the base's pull request has actually merged
+(`gh pr list --state merged`, since a rewriting merge leaves nothing git can
+recognize).
+
+Each condition earns its place. Testing against the base's own tip rather
+than against upstream is what makes the flag stable: it clears when the
+branch is rebased and stays clear as `origin/<base branch>` moves on, where
+an "is the branch behind upstream?" test would re-fire on every unrelated
+merge. The second condition is why a merge-commit or fast-forward base isn't
+flagged — its commits are on upstream as themselves, so the dependent's pull
+request already shows only the dependent's own work and no rebase is owed.
+And without the third, every healthy stack would match.
+
+Both git questions are asked of the *dependent's* checkout, since that's
+where `spawn` resolved the start point (`--stack-on` names the base's repo
+for bookkeeping, but branches from the base's slug in the repo being spawned
+into); only the merged lookup goes to the base's own repo, where its pull
+request lives. Anything unanswerable — no `gh`, no network, an upstream ref
+nobody has fetched — reports no flag rather than guessing.
+
 `prune` removes worktrees, branches, and status rows for units of work whose
 PR has merged or closed. It's a dry run unless `--force` is passed, and it
 refuses to remove a branch still acting as another unit of work's stacked

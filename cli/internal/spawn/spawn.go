@@ -11,34 +11,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/blockadence/archimedes/cli/internal/gitutil"
 	"github.com/blockadence/archimedes/cli/internal/manifest"
+	"github.com/blockadence/archimedes/cli/internal/stackref"
 	"github.com/blockadence/archimedes/cli/internal/workspace"
 )
 
 // DefaultAgentCmd is the next-step hint's fallback when no agent CLI is
 // configured.
 const DefaultAgentCmd = "claude"
-
-// StackRef identifies the branch a new one is stacked on top of, parsed
-// from "<repo>:<slug>".
-type StackRef struct {
-	Repo string
-	Slug string
-}
-
-// ParseStackRef splits a "<repo>:<slug>" value the way spawn.sh's
-// `IFS=':' read -r STACK_REPO STACK_SLUG` does: a value with no ":" yields
-// a non-empty Repo and an empty Slug rather than an error.
-func ParseStackRef(value string) StackRef {
-	if value == "" {
-		return StackRef{}
-	}
-	repo, slug, _ := strings.Cut(value, ":")
-	return StackRef{Repo: repo, Slug: slug}
-}
 
 // Options is one spawn request: which unit of work, into which repo, and
 // what to base it on.
@@ -52,7 +34,7 @@ type Options struct {
 	// Base, when set, overrides the repo's own base branch.
 	Base string
 	// Stack, when its Repo is set, stacks this branch on another slug's.
-	Stack StackRef
+	Stack stackref.Ref
 	// AgentCmd is the agent CLI the next-step hint should suggest. Empty
 	// falls back to DefaultAgentCmd.
 	AgentCmd string
@@ -77,10 +59,10 @@ type StartPoint struct {
 // base override, which wins over the repo's own base branch (fetched fresh
 // as origin/<baseBranch>). stack.Repo (not stack.Slug) is the presence
 // check, matching the original script's `[ -n "$STACK_REPO" ]`.
-func ResolveStartPoint(baseBranch, baseOverride string, stack StackRef) StartPoint {
+func ResolveStartPoint(baseBranch, baseOverride string, stack stackref.Ref) StartPoint {
 	switch {
 	case stack.Repo != "":
-		return StartPoint{Ref: stack.Slug, Note: fmt.Sprintf("stacked on %s:%s", stack.Repo, stack.Slug)}
+		return StartPoint{Ref: stack.Slug, Note: stackref.Note(stack)}
 	case baseOverride != "":
 		return StartPoint{Ref: baseOverride, Note: fmt.Sprintf("based on %s", baseOverride)}
 	default:

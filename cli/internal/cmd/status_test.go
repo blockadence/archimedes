@@ -32,13 +32,28 @@ func writeInstanceFixture(t *testing.T) string {
 	}
 	statusMD := "# my-slug\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
 		"| service-a | my-slug | /wt/service-a | based on main | - |\n" +
-		"| service-b | my-slug | /wt/service-b | stacked on service-a:my-slug | - |\n"
+		"| service-b | my-slug | /wt/service-b | stacked on service-a:auth-api | - |\n"
 	if err := os.WriteFile(filepath.Join(slugDir, "status.md"), []byte(statusMD), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	return dir
 }
+
+// plainSources reports no rebase state at all, for the tests that only
+// care about the table and the guardrail.
+func plainSources() status.Sources {
+	return status.Sources{
+		PR:     fixtureLookup,
+		Refs:   noRefs{},
+		Merged: func(repoPath, headBranch string) bool { return false },
+	}
+}
+
+type noRefs struct{}
+
+func (noRefs) HasRef(repoPath, ref string) bool                      { return false }
+func (noRefs) IsAncestor(repoPath, ancestor, descendant string) bool { return false }
 
 func fixtureLookup(repoPath, headBranch string) (status.PR, error) {
 	if filepath.Base(repoPath) == "service-a" {
@@ -51,7 +66,7 @@ func TestRunStatusHumanTable(t *testing.T) {
 	dir := writeInstanceFixture(t)
 
 	var buf bytes.Buffer
-	if err := runStatus(&buf, dir, "", false, fixtureLookup); err != nil {
+	if err := runStatus(&buf, dir, "", false, plainSources()); err != nil {
 		t.Fatalf("runStatus returned error: %v", err)
 	}
 
@@ -59,7 +74,7 @@ func TestRunStatusHumanTable(t *testing.T) {
 	for _, want := range []string{
 		"SLUG", "REPO", "PR#", "STATE", "NOTE",
 		"my-slug              service-a      42       OPEN       based on main",
-		"my-slug              service-b      -        no PR      stacked on service-a:my-slug",
+		"my-slug              service-b      -        no PR      stacked on service-a:auth-api",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected output to contain %q, got:\n%s", want, got)
@@ -81,7 +96,7 @@ func TestRunStatusFiltersBySlug(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runStatus(&buf, dir, "my-slug", false, fixtureLookup); err != nil {
+	if err := runStatus(&buf, dir, "my-slug", false, plainSources()); err != nil {
 		t.Fatalf("runStatus returned error: %v", err)
 	}
 
@@ -98,7 +113,7 @@ func TestRunStatusJSON(t *testing.T) {
 	dir := writeInstanceFixture(t)
 
 	var buf bytes.Buffer
-	if err := runStatus(&buf, dir, "", true, fixtureLookup); err != nil {
+	if err := runStatus(&buf, dir, "", true, plainSources()); err != nil {
 		t.Fatalf("runStatus returned error: %v", err)
 	}
 
@@ -120,7 +135,7 @@ func TestRunStatusMissingManifestErrors(t *testing.T) {
 	dir := t.TempDir()
 
 	var buf bytes.Buffer
-	if err := runStatus(&buf, dir, "", false, fixtureLookup); err == nil {
+	if err := runStatus(&buf, dir, "", false, plainSources()); err == nil {
 		t.Fatal("expected error when repos.yaml is missing, got nil")
 	}
 }
@@ -130,12 +145,69 @@ func TestRunStatusGuardrailWarning(t *testing.T) {
 	t.Setenv("ARCHIMEDES_MAX_STREAMS", "1")
 
 	var buf bytes.Buffer
-	if err := runStatus(&buf, dir, "", false, fixtureLookup); err != nil {
+	if err := runStatus(&buf, dir, "", false, plainSources()); err != nil {
 		t.Fatalf("runStatus returned error: %v", err)
 	}
 
 	got := buf.String()
 	if !strings.Contains(got, "Warning: 2 active worktree streams open, guardrail is 1. Consider closing some out.") {
 		t.Errorf("expected guardrail warning, got:\n%s", got)
+	}
+}
+
+// squashedBaseRefs stands in for the repo checkouts after service-b's
+// stacked base was squash-merged: my-slug still carries auth-api's
+// commits, and origin/main has that work under new SHAs.
+type squashedBaseRefs struct{}
+
+func (squashedBaseRefs) HasRef(repoPath, ref string) bool { return true }
+
+func (squashedBaseRefs) IsAncestor(repoPath, ancestor, descendant string) bool {
+	return ancestor == "auth-api" && descendant == "my-slug"
+}
+
+func mergedBaseSources() status.Sources {
+	return status.Sources{
+		PR:     fixtureLookup,
+		Refs:   squashedBaseRefs{},
+		Merged: func(repoPath, headBranch string) bool { return true },
+	}
+}
+
+func TestRunStatusFlagsStackedRebase(t *testing.T) {
+	dir := writeInstanceFixture(t)
+
+	var buf bytes.Buffer
+	if err := runStatus(&buf, dir, "", false, mergedBaseSources()); err != nil {
+		t.Fatalf("runStatus returned error: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "my-slug / service-b (stacked on service-a:auth-api) — rebase onto origin/main") {
+		t.Errorf("expected the stacked row flagged for rebase, got:\n%s", got)
+	}
+	if strings.Contains(got, "service-a (based on main)") {
+		t.Errorf("expected the never-stacked row left unflagged, got:\n%s", got)
+	}
+}
+
+func TestRunStatusJSONCarriesRebaseFlag(t *testing.T) {
+	dir := writeInstanceFixture(t)
+
+	var buf bytes.Buffer
+	if err := runStatus(&buf, dir, "", true, mergedBaseSources()); err != nil {
+		t.Fatalf("runStatus returned error: %v", err)
+	}
+
+	var report status.Report
+	if err := json.Unmarshal(buf.Bytes(), &report); err != nil {
+		t.Fatalf("output isn't valid JSON: %v\n%s", err, buf.String())
+	}
+
+	if report.Rows[0].NeedsRebase {
+		t.Errorf("expected service-a unflagged, got: %#v", report.Rows[0])
+	}
+	if !report.Rows[1].NeedsRebase || report.Rows[1].RebaseOnto != "origin/main" {
+		t.Errorf("expected service-b flagged onto origin/main, got: %#v", report.Rows[1])
 	}
 }

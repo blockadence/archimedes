@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/blockadence/archimedes/cli/internal/stackref"
 )
 
 // Row is one data row of a work/<slug>/status.md table.
@@ -122,7 +124,7 @@ func Scan(workDir, slugFilter string, prState PRStateFunc) ([]Item, error) {
 				continue
 			}
 
-			target := fmt.Sprintf("stacked on %s:%s", row.Repo, slug)
+			target := stackref.Note(stackref.Ref{Repo: row.Repo, Slug: slug})
 			var blockers []string
 			for other, content := range contents {
 				if strings.Contains(content, target) {

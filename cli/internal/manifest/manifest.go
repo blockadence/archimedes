@@ -75,14 +75,18 @@ func Load(path string) (*Manifest, error) {
 	return &m, nil
 }
 
-// RepoPath resolves name's local path, relative to root (the instance
-// directory containing repos.yaml). Mirrors lib.sh's repo_path helper.
-func (m *Manifest) RepoPath(root, name string) (string, error) {
+// Resolve looks name up and returns its entry with Path resolved against
+// root (the instance directory holding repos.yaml), so callers get a
+// usable checkout path instead of the relative one the file records.
+// Mirrors lib.sh's repo_path helper, plus the rest of the entry callers
+// need alongside it.
+func (m *Manifest) Resolve(root, name string) (Repo, error) {
 	r, ok := m.Find(name)
 	if !ok {
-		return "", fmt.Errorf("unknown repo: %s", name)
+		return Repo{}, fmt.Errorf("unknown repo: %s", name)
 	}
-	return filepath.Join(root, r.Path), nil
+	r.Path = filepath.Join(root, r.Path)
+	return r, nil
 }
 
 // SetRepoField writes value to one repo's field in the repos.yaml at path:

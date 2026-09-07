@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/blockadence/archimedes/cli/internal/spawn"
+	"github.com/blockadence/archimedes/cli/internal/stackref"
 	"github.com/blockadence/archimedes/cli/internal/workspace"
 )
 
@@ -53,7 +54,7 @@ running degrades to a warning — the worktree is created either way.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
 			opts.Slug, opts.Repo = args[0], args[1]
-			opts.Stack = spawn.ParseStackRef(stackOn)
+			opts.Stack = stackref.ParseFlag(stackOn)
 			opts.AgentCmd = os.Getenv(agentCmdEnvVar)
 
 			ws, err := resolveWorkspace(workspaceName)

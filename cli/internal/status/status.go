@@ -89,3 +89,14 @@ func Discover(workDir, slugFilter string) ([]Entry, error) {
 func normalizeField(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
+
+// BranchName is the git branch a row refers to. spawn names the branch
+// after the slug and records both, so the two normally agree; the branch
+// column is what the row itself claims, so prefer it and fall back to the
+// slug only for a row written without one.
+func (e Entry) BranchName() string {
+	if e.Branch != "" {
+		return e.Branch
+	}
+	return e.Slug
+}

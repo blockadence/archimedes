@@ -6,13 +6,13 @@ import (
 	"testing"
 )
 
-func stubRepoPath(known map[string]string) RepoPath {
-	return func(name string) (string, error) {
+func stubRepos(known map[string]string) RepoLookup {
+	return func(name string) (RepoRef, error) {
 		path, ok := known[name]
 		if !ok {
-			return "", errors.New("unknown repo: " + name)
+			return RepoRef{}, errors.New("unknown repo: " + name)
 		}
-		return path, nil
+		return RepoRef{Path: path, BaseBranch: "main"}, nil
 	}
 }
 
@@ -31,7 +31,7 @@ func TestBuildReportLooksUpEachRow(t *testing.T) {
 		{Slug: "my-slug", Repo: "service-b", Note: "stacked on service-a:my-slug"},
 	}
 
-	repoPath := stubRepoPath(map[string]string{
+	repos := stubRepos(map[string]string{
 		"service-a": "/repos/service-a",
 		"service-b": "/repos/service-b",
 	})
@@ -40,7 +40,7 @@ func TestBuildReportLooksUpEachRow(t *testing.T) {
 		"/repos/service-b@my-slug": {Number: "-", State: "no PR"},
 	})
 
-	got := BuildReport(entries, repoPath, lookup, 3)
+	got := BuildReport(entries, Sources{Repos: repos, PR: lookup, Refs: stubRefs{}, Merged: notMerged}, 3)
 
 	want := []Row{
 		{Slug: "my-slug", Repo: "service-a", PRNumber: "42", PRState: "OPEN", Note: "based on main"},
@@ -66,10 +66,10 @@ func TestBuildReportDegradesFailedLookupsToNoPR(t *testing.T) {
 	entries := []Entry{
 		{Slug: "my-slug", Repo: "unknown-repo", Note: "note"},
 	}
-	repoPath := stubRepoPath(map[string]string{})
+	repos := stubRepos(map[string]string{})
 	lookup := stubLookup(map[string]PR{})
 
-	got := BuildReport(entries, repoPath, lookup, 3)
+	got := BuildReport(entries, Sources{Repos: repos, PR: lookup, Refs: stubRefs{}, Merged: notMerged}, 3)
 
 	want := Row{Slug: "my-slug", Repo: "unknown-repo", PRNumber: "-", PRState: "no PR", Note: "note"}
 	if got.Rows[0] != want {
@@ -82,10 +82,10 @@ func TestBuildReportGuardrail(t *testing.T) {
 	for i := range entries {
 		entries[i] = Entry{Slug: "slug", Repo: "repo"}
 	}
-	repoPath := stubRepoPath(map[string]string{"repo": "/repos/repo"})
+	repos := stubRepos(map[string]string{"repo": "/repos/repo"})
 	lookup := stubLookup(map[string]PR{"/repos/repo@slug": {Number: "-", State: "no PR"}})
 
-	got := BuildReport(entries, repoPath, lookup, 3)
+	got := BuildReport(entries, Sources{Repos: repos, PR: lookup, Refs: stubRefs{}, Merged: notMerged}, 3)
 
 	if got.Count != 4 {
 		t.Errorf("expected count 4, got %d", got.Count)
@@ -108,9 +108,7 @@ func TestFormatHuman(t *testing.T) {
 	got := FormatHuman(report)
 	want := "SLUG                 REPO           PR#      STATE      NOTE                          \n" +
 		"my-slug              service-a      42       OPEN       based on main                 \n" +
-		"\n" +
-		"\n" +
-		todoTrailer + "\n"
+		"\n"
 
 	if got != want {
 		t.Errorf("FormatHuman mismatch\n got: %q\nwant: %q", got, want)
@@ -148,5 +146,112 @@ func TestFormatHumanIncludesGuardrailWarning(t *testing.T) {
 	got := FormatHuman(report)
 	if !strings.Contains(got, "Warning: 4 active worktree streams open, guardrail is 3. Consider closing some out.") {
 		t.Errorf("expected guardrail warning in output, got: %q", got)
+	}
+}
+
+func TestBuildReportFlagsStackedRowWhoseBaseHasMerged(t *testing.T) {
+	entries := []Entry{
+		{Slug: "auth-ui", Repo: "service-a", Branch: "auth-ui", Note: "stacked on service-a:auth-api"},
+		{Slug: "auth-ui", Repo: "service-b", Branch: "auth-ui", Note: "based on main"},
+	}
+	repos := stubRepos(map[string]string{
+		"service-a": "/repos/service-a",
+		"service-b": "/repos/service-b",
+	})
+	lookup := stubLookup(map[string]PR{
+		"/repos/service-a@auth-ui": {Number: "7", State: "OPEN"},
+		"/repos/service-b@auth-ui": {Number: "8", State: "OPEN"},
+	})
+	// auth-ui still carries auth-api's commits, and origin/main has that
+	// work under new SHAs — the state a squash merge leaves.
+	refs := stubRefs{
+		present: map[string]bool{
+			"/repos/service-a@auth-ui":     true,
+			"/repos/service-a@auth-api":    true,
+			"/repos/service-a@origin/main": true,
+			"/repos/service-b@auth-ui":     true,
+			"/repos/service-b@origin/main": true,
+		},
+		ancestors: map[string]bool{"/repos/service-a@auth-api..auth-ui": true},
+	}
+
+	got := BuildReport(entries, Sources{Repos: repos, PR: lookup, Refs: refs, Merged: merged}, 3)
+
+	if !got.Rows[0].NeedsRebase {
+		t.Errorf("expected the stacked row to be flagged, got: %#v", got.Rows[0])
+	}
+	if got.Rows[0].RebaseOnto != "origin/main" {
+		t.Errorf("expected rebase target origin/main, got %q", got.Rows[0].RebaseOnto)
+	}
+	if got.Rows[1].NeedsRebase {
+		t.Errorf("expected the never-stacked row to be left alone, got: %#v", got.Rows[1])
+	}
+}
+
+func TestBuildReportClearsFlagOnceRebased(t *testing.T) {
+	entries := []Entry{
+		{Slug: "auth-ui", Repo: "service-a", Branch: "auth-ui", Note: "stacked on service-a:auth-api"},
+	}
+	repos := stubRepos(map[string]string{"service-a": "/repos/service-a"})
+	lookup := stubLookup(map[string]PR{"/repos/service-a@auth-ui": {Number: "7", State: "OPEN"}})
+	// The rebase replayed auth-ui's own commits onto origin/main, so
+	// auth-api's are no longer in its history.
+	refs := stubRefs{present: map[string]bool{
+		"/repos/service-a@auth-ui":     true,
+		"/repos/service-a@auth-api":    true,
+		"/repos/service-a@origin/main": true,
+	}}
+
+	got := BuildReport(entries, Sources{Repos: repos, PR: lookup, Refs: refs, Merged: merged}, 3)
+
+	if got.Rows[0].NeedsRebase {
+		t.Errorf("expected no flag after the branch was rebased, got: %#v", got.Rows[0])
+	}
+	if got.Rows[0].RebaseOnto != "" {
+		t.Errorf("expected no rebase target on an unflagged row, got %q", got.Rows[0].RebaseOnto)
+	}
+}
+
+func TestBuildReportFallsBackToSlugWhenBranchColumnIsEmpty(t *testing.T) {
+	entries := []Entry{
+		{Slug: "auth-ui", Repo: "service-a", Note: "stacked on service-a:auth-api"},
+	}
+	repos := stubRepos(map[string]string{"service-a": "/repos/service-a"})
+	lookup := stubLookup(map[string]PR{"/repos/service-a@auth-ui": {Number: "7", State: "OPEN"}})
+	refs := stubRefs{
+		present: map[string]bool{
+			"/repos/service-a@auth-ui":     true,
+			"/repos/service-a@auth-api":    true,
+			"/repos/service-a@origin/main": true,
+		},
+		ancestors: map[string]bool{"/repos/service-a@auth-api..auth-ui": true},
+	}
+
+	got := BuildReport(entries, Sources{Repos: repos, PR: lookup, Refs: refs, Merged: merged}, 3)
+
+	if !got.Rows[0].NeedsRebase {
+		t.Errorf("expected the slug to stand in for a missing branch column, got: %#v", got.Rows[0])
+	}
+}
+
+func TestFormatHumanListsRebaseNeededRows(t *testing.T) {
+	report := Report{
+		Rows: []Row{
+			{Slug: "auth-ui", Repo: "service-a", PRNumber: "7", PRState: "OPEN", Note: "stacked on service-a:auth-api", NeedsRebase: true, RebaseOnto: "origin/main"},
+			{Slug: "auth-ui", Repo: "service-b", PRNumber: "8", PRState: "OPEN", Note: "based on main"},
+		},
+		Count:        2,
+		GuardrailMax: 3,
+	}
+
+	got := FormatHuman(report)
+	if !strings.Contains(got, "Rebase needed") {
+		t.Errorf("expected a rebase-needed section, got:\n%s", got)
+	}
+	if !strings.Contains(got, "auth-ui / service-a (stacked on service-a:auth-api) — rebase onto origin/main") {
+		t.Errorf("expected the flagged row spelled out, got:\n%s", got)
+	}
+	if strings.Contains(got, "service-b (based on main)") {
+		t.Errorf("expected unflagged rows left out of the section, got:\n%s", got)
 	}
 }
