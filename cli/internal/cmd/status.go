@@ -5,12 +5,18 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/blockadence/archimedes/cli/internal/status"
 )
+
+// maxStreamsEnvVar names the environment variable holding the open-worktree
+// guardrail threshold. It lives here with the CLI's other environment
+// overrides rather than in internal/status, since which variable carries a
+// setting is a CLI concern and the package that parses it shouldn't have to
+// know.
+const maxStreamsEnvVar = "ARCHIMEDES_MAX_STREAMS"
 
 func newStatusCmd() *cobra.Command {
 	var root string
@@ -48,27 +54,12 @@ going stale. The flag clears once the branch has been rebased.`,
 }
 
 // runStatus builds and prints the report. src carries the report's PR,
-// ref, and merged-state sources; its Repos is filled in here, since only
-// this layer knows the instance root the manifest resolves against.
+// ref, and merged-state sources; status.Collect fills in the rest.
 func runStatus(w io.Writer, root, slugFilter string, jsonOutput bool, src status.Sources) error {
-	m, err := loadManifest(root)
+	report, err := status.Collect(root, slugFilter, src, status.ParseGuardrailMax(os.Getenv(maxStreamsEnvVar)))
 	if err != nil {
 		return err
 	}
-	src.Repos = func(name string) (status.RepoRef, error) {
-		r, err := m.Resolve(root, name)
-		if err != nil {
-			return status.RepoRef{}, err
-		}
-		return status.RepoRef{Path: r.Path, BaseBranch: r.BaseBranch}, nil
-	}
-
-	entries, err := status.Discover(filepath.Join(root, "work"), slugFilter)
-	if err != nil {
-		return fmt.Errorf("discovering status files: %w", err)
-	}
-
-	report := status.BuildReport(entries, src, status.ParseGuardrailMax(os.Getenv("ARCHIMEDES_MAX_STREAMS")))
 
 	if jsonOutput {
 		enc := json.NewEncoder(w)
