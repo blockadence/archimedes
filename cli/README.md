@@ -33,6 +33,8 @@ by also breaking the fixture.
 Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
 
 - `render-map` — port of `template/scripts/render-map.sh`
+- `context-map` — port of `template/scripts/context-map-all.sh` (plus
+  `run-driver.sh`, as `internal/driver`)
 - `spawn` — port of `template/scripts/spawn.sh`
 - `status` — port of `template/scripts/status.sh`
 - `prune` — port of `template/scripts/prune.sh`
@@ -56,3 +58,17 @@ fallback.
 PR has merged or closed. It's a dry run unless `--force` is passed, and it
 refuses to remove a branch still acting as another unit of work's stacked
 base.
+
+`context-map` sequences a mapping pass across every repo, dependency/base
+repos first, skipping any repo already current for its base branch's latest
+commit (`--dry-run` reports that plan without acting on it). It splits the
+same two ways the scripts did: `internal/contextmap` decides *which* repos
+need mapping and in what order, `internal/driver` knows *how* to invoke one
+driver — so swapping the configured driver never touches orchestration, and
+neither half hardcodes any particular driver. Which driver runs is resolved
+most-specific-first: a repo's own `driver` field, then `repos.yaml`'s
+top-level one, then `ARCHIMEDES_DRIVER`; with none set, each repo becomes an
+interactive session the operator confirms. Recording a repo as mapped
+rewrites `repos.yaml` through a `yaml.Node` round-trip
+(`manifest.SetRepoField`), so the comments and unmodeled fields in that
+hand-edited file survive, the way `yq -i` left them.
