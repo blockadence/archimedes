@@ -8,14 +8,6 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
-// gitCommit commits everything staged in dir with a fixed identity, so
-// tests don't depend on the machine's git config.
-func gitCommit(t *testing.T, dir, message string, extraArgs ...string) {
-	t.Helper()
-	args := append([]string{"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", message}, extraArgs...)
-	testrepo.Git(t, dir, args...)
-}
-
 func mustMkdirAll(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(path, 0o755); err != nil {
@@ -34,21 +26,21 @@ func mustWriteFile(t *testing.T, path, content string) {
 // bare "origin" plus a clone with a normal .gitignore and one commit on
 // main, so spawn's fetch-first behavior has real remote state to pull, and
 // so the repo's own tracked .gitignore is there to be left alone.
-func makeTargetRepo(t *testing.T, tmp, name string) (clonePath string) {
+func makeTargetRepo(t *testing.T, tmp, name string) testrepo.Repo {
 	t.Helper()
 	return testrepo.New(t, testrepo.Spec{
 		Dir:   tmp,
 		Name:  name,
 		Files: map[string]string{".gitignore": "*.log\n"},
-	}).Clone
+	})
 }
 
 // instance is an Archimedes instance root wired to two target repos, the
 // multi-repo shape the worktree pattern exists for.
 type instance struct {
-	root        string
-	targetRepo  string
-	targetRepo2 string
+	root    string
+	target  testrepo.Repo
+	target2 testrepo.Repo
 }
 
 // newInstance builds an instance whose repos.yaml points at two sibling
@@ -58,9 +50,9 @@ func newInstance(t *testing.T) instance {
 	tmp := t.TempDir()
 
 	inst := instance{
-		root:        filepath.Join(tmp, "instance"),
-		targetRepo:  makeTargetRepo(t, tmp, "target-repo"),
-		targetRepo2: makeTargetRepo(t, tmp, "target-repo2"),
+		root:    filepath.Join(tmp, "instance"),
+		target:  makeTargetRepo(t, tmp, "target-repo"),
+		target2: makeTargetRepo(t, tmp, "target-repo2"),
 	}
 
 	mustMkdirAll(t, inst.root)

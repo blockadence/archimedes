@@ -72,7 +72,7 @@ func TestRunMapsWithAFixedLocationDriver(t *testing.T) {
 		if got := readFile(t, inst.contextFile(name)); !strings.Contains(got, "stub-fixed mapped") {
 			t.Errorf("%s CONTEXT.md = %q, want the driver's output harvested into it", name, got)
 		}
-		assertNoFile(t, inst.repoPaths[name]+"/OUT.md", "harvesting leaves no trace, so the target repo")
+		assertNoFile(t, inst.repoPath(name)+"/OUT.md", "harvesting leaves no trace, so the target repo")
 		if got, want := inst.recordedSHA(t, name), inst.sha(t, name); got != want {
 			t.Errorf("%s recorded sha = %q, want %q", name, got, want)
 		}
@@ -271,7 +271,7 @@ func TestRunHonorsAnAlternateContextFileName(t *testing.T) {
 		t.Fatalf("Run returned error: %v\n%s", err, out)
 	}
 
-	if got := readFile(t, inst.repoPaths["app"]+"/docs/DOMAIN.md"); !strings.Contains(got, "stub-ok mapped") {
+	if got := readFile(t, inst.repoPath("app")+"/docs/DOMAIN.md"); !strings.Contains(got, "stub-ok mapped") {
 		t.Errorf("map = %q, want it at the configured context file path", got)
 	}
 	assertNoFile(t, inst.contextFile("app"), "with a configured context file name, the default location")
@@ -286,9 +286,9 @@ func TestRunInteractiveSessionPrimesDependenciesAndRecordsOnConfirmation(t *test
 	}
 
 	for _, want := range []string{
-		"cd " + inst.repoPaths["app"] + " && my-agent",
+		"cd " + inst.repoPath("app") + " && my-agent",
 		"Depends on (already mapped, prime the session with these):",
-		"- shared: " + inst.repoPaths["shared"] + "/CONTEXT.md",
+		"- shared: " + inst.repoPath("shared") + "/CONTEXT.md",
 		"Dependencies: shared.",
 	} {
 		if !strings.Contains(out, want) {
