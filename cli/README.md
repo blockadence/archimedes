@@ -26,6 +26,27 @@ Each subcommand lives in its own `internal/cmd/<name>.go`, exposing a
 unit-tested directly (see `internal/workspacemap` for the pattern the
 `render-map` subcommand follows).
 
+A subcommand that is about to *work inside* one named repo — spawn a
+worktree in it, edit its build file, push a commit — asks
+`internal/manifest` for it rather than repeating the lookup:
+`LoadInstance` reads the instance's `repos.yaml`, and `Manifest.Checkout`
+turns a repo name into that repo's entry, its checkout path resolved
+against the instance root, and whether anything is cloned there yet
+(`CheckoutOf` answers the same for an entry already in hand, for a caller
+walking every repo). The two shortfalls stay apart — `Listed` for a name
+`repos.yaml` doesn't carry, `Cloned` for one it carries but nobody has
+cloned — because commands react differently on purpose: a mapping pass
+skips an uncloned repo and carries on where `spawn` refuses, and each
+command that refuses words its own message. `Ready()` is for the ones that
+treat both the same.
+
+`Manifest.Resolve` is the same lookup without the disk: it answers where a
+repo *would* be and nothing about whether it is there. That is what a
+reader wants — `status` resolving the repo named on a `status.md` row, the
+PR-state lookup behind `prune` and `notify` — since none of them are about
+to work in the checkout, and a repo that isn't cloned is a row reporting
+"no PR" rather than a command that has to stop.
+
 Anything that shells out to `git` goes through `internal/gitutil` rather
 than calling `exec.Command("git", ...)` directly, so "run git and interpret
 the result" lives in one place. Helpers that more than one subcommand needs
@@ -269,7 +290,8 @@ every command works exactly as it did before — the dashboard is additive and
 nothing depends on it.
 
 That parity is what the shared seams are for. `status.ManifestRepos` is the
-one place a repo name becomes a checkout path plus a base branch, and
+one place a *status row's* repo name becomes a checkout path plus a base
+branch (over `manifest.Resolve`, the disk-free lookup above), and
 `contextmap.Survey` is the one place "assess every repo, dependency order
 first" lives — `context-map` walks its pass through the same
 `contextmap.State` the dashboard reads through.
