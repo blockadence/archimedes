@@ -102,20 +102,14 @@ func shellQuote(s string) string {
 // progress receives multi-gitter's own output; out receives the lines meant
 // for the caller.
 func SyncTemplates(opts TemplatesOptions, out, progress io.Writer, run ExecFunc) error {
-	root, err := filepath.Abs(opts.Root)
+	root, m, err := loadInstance(opts.Root)
 	if err != nil {
-		return fmt.Errorf("resolving instance root %s: %w", opts.Root, err)
+		return err
 	}
 
 	scaffoldDir := filepath.Join(root, ScaffoldingDirName)
 	if info, err := os.Stat(scaffoldDir); err != nil || !info.IsDir() {
 		return fmt.Errorf("no scaffolding directory at %s; the canonical templates live there", scaffoldDir)
-	}
-
-	manifestPath := filepath.Join(root, "repos.yaml")
-	m, err := manifest.Load(manifestPath)
-	if err != nil {
-		return fmt.Errorf("loading %s: %w", manifestPath, err)
 	}
 
 	// The repo list comes straight from the instance's manifest — the same
@@ -131,10 +125,11 @@ func SyncTemplates(opts TemplatesOptions, out, progress io.Writer, run ExecFunc)
 		slugs = append(slugs, slug)
 	}
 	if len(slugs) == 0 {
+		reposYAML := filepath.Join(root, "repos.yaml")
 		if opts.Repo != "" {
-			return fmt.Errorf("no repos matched %q in %s", opts.Repo, manifestPath)
+			return fmt.Errorf("no repos matched %q in %s", opts.Repo, reposYAML)
 		}
-		return fmt.Errorf("no repos listed in %s", manifestPath)
+		return fmt.Errorf("no repos listed in %s", reposYAML)
 	}
 
 	token, err := ghToken(run, progress)
@@ -148,10 +143,10 @@ func SyncTemplates(opts TemplatesOptions, out, progress io.Writer, run ExecFunc)
 	}
 	defer cleanup()
 
-	fmt.Fprintf(out, "Syncing templates from %s into %d repo(s): %s\n",
+	fmt.Fprintf(progress, "Syncing templates from %s into %d repo(s): %s\n",
 		scaffoldDir, len(slugs), strings.Join(slugs, ", "))
 	if opts.DryRun {
-		fmt.Fprintln(out, "Dry run: multi-gitter will report changes without pushing or opening pull requests.")
+		fmt.Fprintln(progress, "Dry run: multi-gitter will report changes without pushing or opening pull requests.")
 	}
 
 	// multi-gitter's per-repo report is the result of the run, so it goes to

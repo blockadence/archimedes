@@ -14,12 +14,6 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/manifest"
 )
 
-// HouseRulesFileName is the durable, committed copy of a repo's house rules
-// inside that repo — the copy humans browsing it on GitHub see. The
-// ephemeral per-worktree copy an agent sees is written by internal/spawn
-// under the same name.
-const HouseRulesFileName = "HOUSE_RULES.md"
-
 // The branch, commit, and pull request the house-rules sync opens in the
 // target repo. Fixed, so re-running updates the same pull request.
 const (
@@ -40,7 +34,10 @@ type HouseRulesOptions struct {
 }
 
 // RenderHouseRules turns a dossier's House rules section into the file
-// committed to the target repo.
+// committed to the target repo. It ends in a newline, where the shell
+// version's command substitution stripped one — so a repo synced by the old
+// script sees a single whitespace-only change on its next sync, and none
+// after that (see sameContent).
 func RenderHouseRules(rules string) string {
 	return "# House rules\n\n" + rules + "\n"
 }
@@ -56,15 +53,9 @@ func RenderHouseRules(rules string) string {
 // progress receives git's and gh's own output; out receives the lines meant
 // for the caller.
 func SyncHouseRules(opts HouseRulesOptions, out, progress io.Writer, run ExecFunc) error {
-	root, err := filepath.Abs(opts.Root)
+	root, m, err := loadInstance(opts.Root)
 	if err != nil {
-		return fmt.Errorf("resolving instance root %s: %w", opts.Root, err)
-	}
-
-	manifestPath := filepath.Join(root, "repos.yaml")
-	m, err := manifest.Load(manifestPath)
-	if err != nil {
-		return fmt.Errorf("loading %s: %w", manifestPath, err)
+		return err
 	}
 
 	repo, ok := m.Find(opts.Repo)
@@ -101,19 +92,19 @@ func SyncHouseRules(opts HouseRulesOptions, out, progress io.Writer, run ExecFun
 		return err
 	}
 
-	targetFile := filepath.Join(repoPath, HouseRulesFileName)
+	targetFile := filepath.Join(repoPath, dossier.HouseRulesFileName)
 	current, err := os.ReadFile(targetFile)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("reading %s: %w", targetFile, err)
 	}
 
 	if sameContent(string(current), want) {
-		fmt.Fprintf(out, "%s: %s already current on %s.\n", opts.Repo, HouseRulesFileName, repo.BaseBranch)
+		fmt.Fprintf(out, "%s: %s already current on %s.\n", opts.Repo, dossier.HouseRulesFileName, repo.BaseBranch)
 		return nil
 	}
 
 	if opts.DryRun {
-		fmt.Fprintf(out, "%s: would update %s:\n", opts.Repo, HouseRulesFileName)
+		fmt.Fprintf(out, "%s: would update %s:\n", opts.Repo, dossier.HouseRulesFileName)
 		fmt.Fprint(out, unifiedDiff(string(current), want))
 		return nil
 	}
@@ -126,7 +117,7 @@ func SyncHouseRules(opts HouseRulesOptions, out, progress io.Writer, run ExecFun
 	// to put it back — including the failure ones.
 	syncErr := commitAndPush(repoPath, targetFile, want, progress)
 	if syncErr == nil {
-		syncErr = createPR(repo, opts.Repo, repoPath, dossierDir, run, out, progress)
+		syncErr = createPR(repo, repoPath, dossierDir, run, out, progress)
 	}
 
 	if err := gitutil.RunOut(repoPath, progress, "checkout", repo.BaseBranch); err != nil && syncErr == nil {
@@ -148,8 +139,8 @@ func unifiedDiff(current, want string) string {
 	diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
 		A:        diffLines(current),
 		B:        diffLines(want),
-		FromFile: HouseRulesFileName + " (in repo)",
-		ToFile:   HouseRulesFileName + " (from dossier)",
+		FromFile: dossier.HouseRulesFileName + " (in repo)",
+		ToFile:   dossier.HouseRulesFileName + " (from dossier)",
 		Context:  3,
 	})
 	if err != nil {
@@ -175,7 +166,7 @@ func commitAndPush(repoPath, targetFile, content string, progress io.Writer) err
 	if err := os.WriteFile(targetFile, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", targetFile, err)
 	}
-	if err := gitutil.RunOut(repoPath, progress, "add", HouseRulesFileName); err != nil {
+	if err := gitutil.RunOut(repoPath, progress, "add", dossier.HouseRulesFileName); err != nil {
 		return err
 	}
 	if err := gitutil.RunOut(repoPath, progress, "commit", "-q", "-m", houseRulesCommitMessage); err != nil {
@@ -188,7 +179,7 @@ func commitAndPush(repoPath, targetFile, content string, progress io.Writer) err
 // reported rather than returned: the usual cause is a pull request for this
 // branch already existing, which means the sync has done its job and the
 // push just updated it.
-func createPR(repo manifest.Repo, repoName, repoPath, dossierDir string, run ExecFunc, out, progress io.Writer) error {
+func createPR(repo manifest.Repo, repoPath, dossierDir string, run ExecFunc, out, progress io.Writer) error {
 	slug, err := gitutil.GHSlug(repoPath)
 	if err != nil {
 		return err
@@ -196,7 +187,7 @@ func createPR(repo manifest.Repo, repoName, repoPath, dossierDir string, run Exe
 
 	body := fmt.Sprintf("Updates %s from this repo's dossier in Archimedes (%s). "+
 		"Edit the dossier, not this file, and re-run `archimedes sync-house-rules %s`.",
-		HouseRulesFileName, dossier.Path(dossierDir, repoName), repoName)
+		dossier.HouseRulesFileName, dossier.Path(dossierDir, repo.Name), repo.Name)
 
 	args := []string{"pr", "create",
 		"--repo", slug,
@@ -210,7 +201,7 @@ func createPR(repo manifest.Repo, repoName, repoPath, dossierDir string, run Exe
 	// diagnostics join the rest of the progress output.
 	if err := run("gh", args, out, progress); err != nil {
 		fmt.Fprintf(progress, "%s: PR create failed or a PR for %s already exists; check manually. (%v)\n",
-			repoName, HouseRulesBranch, err)
+			repo.Name, HouseRulesBranch, err)
 	}
 	return nil
 }

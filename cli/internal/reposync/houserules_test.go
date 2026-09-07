@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blockadence/archimedes/cli/internal/dossier"
 	"github.com/blockadence/archimedes/cli/internal/reposync"
 )
 
@@ -55,7 +56,7 @@ func TestSyncHouseRulesDryRunShowsPendingContentAndChangesNothing(t *testing.T) 
 	}
 
 	clone := inst.repoPath("target")
-	if _, err := os.Stat(filepath.Join(clone, reposync.HouseRulesFileName)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(clone, dossier.HouseRulesFileName)); !os.IsNotExist(err) {
 		t.Error("dry run wrote HOUSE_RULES.md into the local clone")
 	}
 	if got := gitOut(t, clone, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
@@ -79,7 +80,7 @@ func TestSyncHouseRulesPushesBranchAndOpensPR(t *testing.T) {
 	}
 
 	clone := inst.repoPath("target")
-	pushed := gitOut(t, clone, "show", "origin/"+reposync.HouseRulesBranch+":"+reposync.HouseRulesFileName)
+	pushed := gitOut(t, clone, "show", "origin/"+reposync.HouseRulesBranch+":"+dossier.HouseRulesFileName)
 	for _, want := range []string{"# House rules", "Never force-push to `main`.", "Every migration needs a paired rollback script."} {
 		if !strings.Contains(pushed, want) {
 			t.Errorf("pushed HOUSE_RULES.md missing %q:\n%s", want, pushed)
@@ -134,7 +135,7 @@ func TestSyncHouseRulesAlreadyCurrentIsANoOp(t *testing.T) {
 
 	// Simulate the sync PR having merged: the target repo's base branch
 	// already carries exactly the content the dossier would produce.
-	mustWriteFile(t, filepath.Join(clone, reposync.HouseRulesFileName), reposync.RenderHouseRules(testRules))
+	mustWriteFile(t, filepath.Join(clone, dossier.HouseRulesFileName), reposync.RenderHouseRules(testRules))
 	gitOK(t, clone, "add", "-A")
 	gitOK(t, clone, "commit", "-q", "-m", "house rules")
 	gitOK(t, clone, "push", "-q", "origin", "main")
