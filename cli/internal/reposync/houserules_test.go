@@ -10,6 +10,7 @@ import (
 
 	"github.com/blockadence/archimedes/cli/internal/dossier"
 	"github.com/blockadence/archimedes/cli/internal/reposync"
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
 const testRules = "Never force-push to `main`.\nEvery migration needs a paired rollback script."
@@ -59,10 +60,10 @@ func TestSyncHouseRulesDryRunShowsPendingContentAndChangesNothing(t *testing.T) 
 	if _, err := os.Stat(filepath.Join(clone, dossier.HouseRulesFileName)); !os.IsNotExist(err) {
 		t.Error("dry run wrote HOUSE_RULES.md into the local clone")
 	}
-	if got := gitOut(t, clone, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
+	if got := testrepo.GitOut(t, clone, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
 		t.Errorf("dry run left the clone on %q, want main", got)
 	}
-	if branches := gitOut(t, clone, "branch", "--list", reposync.HouseRulesBranch); branches != "" {
+	if branches := testrepo.GitOut(t, clone, "branch", "--list", reposync.HouseRulesBranch); branches != "" {
 		t.Errorf("dry run created the sync branch: %q", branches)
 	}
 	if fake.count("gh") != 0 {
@@ -80,14 +81,14 @@ func TestSyncHouseRulesPushesBranchAndOpensPR(t *testing.T) {
 	}
 
 	clone := inst.repoPath("target")
-	pushed := gitOut(t, clone, "show", "origin/"+reposync.HouseRulesBranch+":"+dossier.HouseRulesFileName)
+	pushed := testrepo.GitOut(t, clone, "show", "origin/"+reposync.HouseRulesBranch+":"+dossier.HouseRulesFileName)
 	for _, want := range []string{"# House rules", "Never force-push to `main`.", "Every migration needs a paired rollback script."} {
 		if !strings.Contains(pushed, want) {
 			t.Errorf("pushed HOUSE_RULES.md missing %q:\n%s", want, pushed)
 		}
 	}
 
-	if got := gitOut(t, clone, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
+	if got := testrepo.GitOut(t, clone, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
 		t.Errorf("sync left the clone on %q, want main", got)
 	}
 
@@ -124,7 +125,7 @@ func TestSyncHouseRulesExistingPRIsReportedNotFatal(t *testing.T) {
 	if !strings.Contains(out, "already exists") && !strings.Contains(out, "check manually") {
 		t.Errorf("the existing-PR situation wasn't surfaced: %s", out)
 	}
-	if got := gitOut(t, inst.repoPath("target"), "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
+	if got := testrepo.GitOut(t, inst.repoPath("target"), "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
 		t.Errorf("a failed PR create left the clone on %q, want main", got)
 	}
 }
@@ -136,9 +137,9 @@ func TestSyncHouseRulesAlreadyCurrentIsANoOp(t *testing.T) {
 	// Simulate the sync PR having merged: the target repo's base branch
 	// already carries exactly the content the dossier would produce.
 	mustWriteFile(t, filepath.Join(clone, dossier.HouseRulesFileName), reposync.RenderHouseRules(testRules))
-	gitOK(t, clone, "add", "-A")
-	gitOK(t, clone, "commit", "-q", "-m", "house rules")
-	gitOK(t, clone, "push", "-q", "origin", "main")
+	testrepo.Git(t, clone, "add", "-A")
+	testrepo.Git(t, clone, "commit", "-q", "-m", "house rules")
+	testrepo.Git(t, clone, "push", "-q", "origin", "main")
 
 	fake := &fakeExec{}
 	out, err := syncHouseRules(t, reposync.HouseRulesOptions{Root: inst.root, Repo: "target"}, fake)
@@ -152,7 +153,7 @@ func TestSyncHouseRulesAlreadyCurrentIsANoOp(t *testing.T) {
 	if fake.count("gh") != 0 {
 		t.Errorf("an already-current sync still called gh: %v", fake.calls)
 	}
-	if branches := gitOut(t, clone, "branch", "--list", reposync.HouseRulesBranch); branches != "" {
+	if branches := testrepo.GitOut(t, clone, "branch", "--list", reposync.HouseRulesBranch); branches != "" {
 		t.Errorf("an already-current sync created the sync branch: %q", branches)
 	}
 }

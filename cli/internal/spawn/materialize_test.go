@@ -8,6 +8,7 @@ import (
 
 	"github.com/blockadence/archimedes/cli/internal/dossier"
 	"github.com/blockadence/archimedes/cli/internal/spawn"
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 )
 
 // materializeFixture is a minimal instance root plus one target repo and a
@@ -32,11 +33,11 @@ func newMaterializeFixture(t *testing.T, slug string) materializeFixture {
 	mustMkdirAll(t, f.root)
 	mustMkdirAll(t, f.repoPath)
 
-	gitOK(t, f.repoPath, "init", "-q", "-b", "main")
+	testrepo.Git(t, f.repoPath, "init", "-q", "-b", "main")
 	gitCommit(t, f.repoPath, "init", "--allow-empty")
 
 	f.worktree = spawn.WorktreePath(f.repoPath, slug)
-	gitOK(t, f.repoPath, "worktree", "add", f.worktree, "-b", slug)
+	testrepo.Git(t, f.repoPath, "worktree", "add", f.worktree, "-b", slug)
 
 	return f
 }
@@ -199,12 +200,12 @@ func TestMaterializeArtifactInvisibleToGitStatusAndAdd(t *testing.T) {
 
 	f.materialize(t, "target")
 
-	if got := gitOut(t, f.worktree, "status", "--porcelain"); got != "" {
+	if got := testrepo.GitOut(t, f.worktree, "status", "--porcelain"); got != "" {
 		t.Errorf("git status surfaced the materialized context: %q", got)
 	}
 
-	gitOK(t, f.worktree, "add", "-A")
-	if got := gitOut(t, f.worktree, "status", "--porcelain"); got != "" {
+	testrepo.Git(t, f.worktree, "add", "-A")
+	if got := testrepo.GitOut(t, f.worktree, "status", "--porcelain"); got != "" {
 		t.Errorf("git add -A staged the materialized context: %q", got)
 	}
 }

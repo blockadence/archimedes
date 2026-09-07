@@ -3,7 +3,6 @@ package reposync_test
 import (
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,28 +24,6 @@ func mustWriteFile(t *testing.T, path, content string) {
 	}
 }
 
-// gitOK runs git in dir, failing the test on error.
-func gitOK(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v (in %s): %v\n%s", args, dir, err, out)
-	}
-}
-
-// gitOut runs git in dir and returns trimmed stdout, failing the test on error.
-func gitOut(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git %v (in %s): %v", args, dir, err)
-	}
-	return strings.TrimSpace(string(out))
-}
-
 // makeTargetRepo builds a throwaway bare "origin" plus a clone of it with
 // one commit on main, so the syncs have real remote state to fetch from and
 // push to without touching the network.
@@ -54,7 +31,7 @@ func makeTargetRepo(t *testing.T, tmp, name string) string {
 	t.Helper()
 	clone := testrepo.New(t, testrepo.Spec{Dir: tmp, Name: name}).Clone
 	// The syncs push the branch they're on without naming a refspec.
-	gitOK(t, clone, "config", "push.default", "current")
+	testrepo.Git(t, clone, "config", "push.default", "current")
 	return clone
 }
 
@@ -93,7 +70,7 @@ func (i instance) repoPath(name string) string {
 func (i instance) setGitHubRemote(t *testing.T, name, slug string) {
 	t.Helper()
 	repo := i.repoPath(name)
-	gitOK(t, repo, "remote", "set-url", "origin", "https://github.com/"+slug+".git")
+	testrepo.Git(t, repo, "remote", "set-url", "origin", "https://github.com/"+slug+".git")
 }
 
 // writeDossier writes repos/<name>.md with the given House rules body.

@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -149,13 +147,7 @@ func readFile(t *testing.T, path string) string {
 // commit, the bookkeeping a completed mapping pass leaves behind.
 func setSHA(t *testing.T, i instance, name string) {
 	t.Helper()
-	cmd := exec.Command("git", "rev-parse", "origin/main")
-	cmd.Dir = i.repoPaths[name]
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	sha := strings.TrimSpace(string(out))
+	sha := testrepo.GitOut(t, i.repoPaths[name], "rev-parse", "origin/main")
 	if err := manifest.SetRepoField(filepath.Join(i.root, "repos.yaml"), name, manifest.FieldContextModeledSHA, sha); err != nil {
 		t.Fatal(err)
 	}

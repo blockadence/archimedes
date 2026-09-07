@@ -12,6 +12,7 @@ import (
 	"github.com/blockadence/archimedes/cli/internal/dossier"
 	"github.com/blockadence/archimedes/cli/internal/spawn"
 	"github.com/blockadence/archimedes/cli/internal/stackref"
+	"github.com/blockadence/archimedes/cli/internal/testrepo"
 	"github.com/blockadence/archimedes/cli/internal/workspace"
 )
 
@@ -97,11 +98,11 @@ func TestRunFetchesFirstAndDefaultsToBaseBranch(t *testing.T) {
 	// Simulate the local checkout being stale relative to origin: push a
 	// new commit straight to origin without updating the clone.
 	otherClone := filepath.Join(tmp, "other-clone")
-	gitOK(t, tmp, "clone", "-q", filepath.Join(tmp, "target-repo.git"), otherClone)
+	testrepo.Git(t, tmp, "clone", "-q", filepath.Join(tmp, "target-repo.git"), otherClone)
 	mustWriteFile(t, filepath.Join(otherClone, "new-file.txt"), "new")
-	gitOK(t, otherClone, "add", "-A")
+	testrepo.Git(t, otherClone, "add", "-A")
 	gitCommit(t, otherClone, "remote-advances")
-	gitOK(t, otherClone, "push", "-q", "origin", "main")
+	testrepo.Git(t, otherClone, "push", "-q", "origin", "main")
 
 	slug := "widget-fix"
 	inst.workSlug(t, slug)
@@ -112,7 +113,7 @@ func TestRunFetchesFirstAndDefaultsToBaseBranch(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(wt, "new-file.txt")); err != nil {
 		t.Errorf("worktree did not start from freshly-fetched origin/main: %v", err)
 	}
-	if got := gitOut(t, wt, "rev-parse", "--abbrev-ref", "HEAD"); got != slug {
+	if got := testrepo.GitOut(t, wt, "rev-parse", "--abbrev-ref", "HEAD"); got != slug {
 		t.Errorf("branch name = %q, want %q", got, slug)
 	}
 	if !bytes.Contains([]byte(out), []byte("based on main")) {
@@ -123,12 +124,12 @@ func TestRunFetchesFirstAndDefaultsToBaseBranch(t *testing.T) {
 func TestRunBaseOverride(t *testing.T) {
 	inst := newInstance(t)
 
-	gitOK(t, inst.targetRepo, "checkout", "-q", "-b", "release/1.0")
+	testrepo.Git(t, inst.targetRepo, "checkout", "-q", "-b", "release/1.0")
 	mustWriteFile(t, filepath.Join(inst.targetRepo, "release-marker.txt"), "r1")
-	gitOK(t, inst.targetRepo, "add", "-A")
+	testrepo.Git(t, inst.targetRepo, "add", "-A")
 	gitCommit(t, inst.targetRepo, "release branch")
-	gitOK(t, inst.targetRepo, "push", "-q", "origin", "release/1.0")
-	gitOK(t, inst.targetRepo, "checkout", "-q", "main")
+	testrepo.Git(t, inst.targetRepo, "push", "-q", "origin", "release/1.0")
+	testrepo.Git(t, inst.targetRepo, "checkout", "-q", "main")
 
 	slug := "hotfix"
 	inst.workSlug(t, slug)
@@ -153,7 +154,7 @@ func TestRunStackedOnAnotherSlug(t *testing.T) {
 
 	baseWT := spawn.WorktreePath(inst.targetRepo, base)
 	mustWriteFile(t, filepath.Join(baseWT, "base-work.txt"), "base")
-	gitOK(t, baseWT, "add", "-A")
+	testrepo.Git(t, baseWT, "add", "-A")
 	gitCommit(t, baseWT, "base slug work")
 
 	stacked := "widget-fix-followup"
@@ -185,7 +186,7 @@ func TestRunMaterializesContextAndTracksStatus(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(wt, spawn.ContextDirName, "ticket.md")); err != nil {
 		t.Errorf("ticket.md was not materialized: %v", err)
 	}
-	if status := gitOut(t, wt, "status", "--porcelain"); status != "" {
+	if status := testrepo.GitOut(t, wt, "status", "--porcelain"); status != "" {
 		t.Errorf("git status surfaced the materialized context: %q", status)
 	}
 	if !bytes.Contains([]byte(out), []byte("Worktree ready: "+wt)) {
@@ -244,7 +245,7 @@ func TestRunRelativeRootDoesNotNestWorktreeInsideRepo(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(wt, spawn.ContextDirName, "ticket.md")); err != nil {
 		t.Errorf("ticket.md was not materialized into the real worktree: %v", err)
 	}
-	if status := gitOut(t, inst.targetRepo, "status", "--porcelain"); status != "" {
+	if status := testrepo.GitOut(t, inst.targetRepo, "status", "--porcelain"); status != "" {
 		t.Errorf("worktree was nested inside the target repo, polluting its git status: %q", status)
 	}
 
@@ -287,7 +288,7 @@ func TestRunResolvesRepoPathsBelowInstanceRoot(t *testing.T) {
 	t.Chdir(root)
 	run(t, spawn.Options{Root: ".", Slug: slug, Repo: "target"})
 
-	if status := gitOut(t, nested, "status", "--porcelain"); status != "" {
+	if status := testrepo.GitOut(t, nested, "status", "--porcelain"); status != "" {
 		t.Errorf("worktree was nested inside the target repo, polluting its git status: %q", status)
 	}
 	wt := spawn.WorktreePath(nested, slug)
@@ -319,7 +320,7 @@ func TestRunDeliversHouseRules(t *testing.T) {
 	if string(got) != rules+"\n" {
 		t.Errorf("house rules diverged from the dossier\n got: %q\nwant: %q", got, rules+"\n")
 	}
-	if status := gitOut(t, wt, "status", "--porcelain"); status != "" {
+	if status := testrepo.GitOut(t, wt, "status", "--porcelain"); status != "" {
 		t.Errorf("the ephemeral house-rules copy surfaced in git status: %q", status)
 	}
 
