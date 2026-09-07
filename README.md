@@ -90,9 +90,28 @@ additionally requires [`multi-gitter`](https://github.com/lindell/multi-gitter).
 A `archimedes` binary is being built at [`cli/`](./cli) to replace the
 vendored bash scripts below with one globally-installed tool (see
 [`cli/README.md`](./cli/README.md)). `bootstrap`, `render-map`,
-`context-map`, `spawn`, `status`, `prune`, `sync-templates` and
-`sync-house-rules` are ported; the rest follow the same pattern one at a
-time.
+`context-map`, `spawn`, `status`, `prune`, `sync-templates`,
+`sync-house-rules` and `apply-convention-pack` are ported; the rest follow
+the same pattern one at a time.
+
+`dashboard` is the one subcommand with no script behind it: a live,
+interactive view of the whole instance — every spawned worktree with its PR
+state and any rebase it's owed, alongside each repo's context-map staleness
+— refreshing in place instead of printing once. It is purely additive, a
+second way to look at what `status` and `context-map --dry-run` already
+report, reading the same code they do. See
+[`cli/README.md`](./cli/README.md#dashboard-optional).
+
+The CLI also grows subcommands with no script counterpart. `notify` reports
+the two things you would otherwise have to remember to go and check — a
+repo whose context map has gone stale, a worktree whose PR has merged and
+is ready to prune — once each, when they become true. It keeps no
+background process of its own: each pass compares what holds now against a
+state file beside `repos.yaml` and exits, so a cron or launchd entry is the
+whole mechanism, and a pass with nothing new prints nothing.
+`ARCHIMEDES_NOTIFY_CMD` hands each notification to whatever notifier you
+already run; with it unset they are printed, which is all cron needs to
+turn them into mail. See [`cli/README.md`](./cli/README.md).
 
 `spawn` can additionally open the new worktree as a workspace in a
 terminal workspace manager ([herdr](https://herdr.dev) today), so a unit of
@@ -102,6 +121,14 @@ you opt in with `ARCHIMEDES_WORKSPACE=herdr` or `--workspace herdr`
 background), and a workspace manager that isn't installed or isn't running
 degrades to a note — the worktree is created either way. See
 [`cli/README.md`](./cli/README.md#terminal-workspace-integration-opt-in).
+
+`serve-mcp` serves one instance over the Model Context Protocol, so an
+MCP-capable agent tool can list tracked repos, read worktree and PR status,
+check context-map staleness, and spawn a unit of work as structured tool
+calls rather than shelling out to the CLI and parsing its tables. It is a
+second way in, not a replacement: every tool delegates to the same code the
+equivalent subcommand does. See
+[`cli/README.md`](./cli/README.md#mcp-server).
 
 ## Scripts (in `template/scripts/`, vendored into each instance)
 

@@ -63,7 +63,8 @@ running degrades to a warning — the worktree is created either way.`,
 			}
 			opts.Workspace = ws
 
-			return spawn.Run(opts, c.OutOrStdout(), c.ErrOrStderr())
+			_, err = spawn.Run(opts, c.OutOrStdout(), c.ErrOrStderr())
+			return err
 		},
 	}
 

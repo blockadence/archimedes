@@ -67,6 +67,13 @@ Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
 - `prune` — port of `template/scripts/prune.sh`
 - `sync-templates` — port of `template/scripts/sync-templates.sh`
 - `sync-house-rules` — port of `template/scripts/sync-house-rules.sh`
+- `apply-convention-pack` — port of
+  `template/scripts/apply-convention-pack.sh`
+- `notify` — no script behind it: the staleness and prune-eligibility checks
+  above, run on a schedule instead of by hand
+- `dashboard` — a live view of the above; no script behind it
+- `serve-mcp` — the same instance served over the Model Context Protocol;
+  no script behind it either
 
 `bootstrap` discovers a GitHub org's repos, clones the ones not already
 checked out beside the instance, and scaffolds each one's `repos.yaml` entry
@@ -156,6 +163,128 @@ Neither shells out to anything but git through `internal/gitutil`; every
 other external command (`multi-gitter`, `gh`) goes through
 `reposync.ExecFunc`, the seam tests replace.
 
+`apply-convention-pack` wires one repo up to the shared build/lint
+convention it declares, by adding whatever reference that repo's build tool
+needs to start pulling in the pack's published config artifact. Both halves
+are instance data — the pack name from the repo's `repos.yaml` entry, the
+definition from the instance's `convention-packs/<name>.yaml` — so there is
+no config of its own to keep in step with either.
+
+It is one-time scaffolding rather than sync: afterwards the repo owns that
+reference like any other dependency, and nothing pushes updates back into
+it later. Re-running is a no-op, and the edit is left uncommitted for a
+human to review.
+
+`internal/conventionpack` dispatches on the pack's `build_tool`, so adding
+a second language/build tool is one entry in its `scaffolders` map plus the
+function it names — `gradle.go` is the worked example. Nothing above that
+dispatch knows Java or Gradle, down to the pack's build-tool-named block,
+which stays undecoded until a scaffolder asks for it in its own shape; so
+a new build tool costs a file, not a field on the shared `Pack` type. A build file that already carries a
+`buildscript {}` block of its own is refused: the two lines it needs are
+printed for a human to place by hand, since where they belong inside an
+existing block is a judgment call, not a rewrite worth guessing at.
+
+`notify` asks the same two questions on a schedule instead of by hand: has
+a repo's context map gone stale, and has a worktree become prune-eligible.
+Each condition is reported once, when it becomes true, and again only if it
+clears and comes back — a map that goes staler while still unaddressed is
+not news twice.
+
+Nothing stays resident to make that work. A pass compares what holds now
+against a small state file beside `repos.yaml` and exits, so the thing that
+keeps running is an ordinary scheduler:
+
+```
+*/15 * * * * cd /path/to/instance && archimedes notify
+```
+
+That file is the memory a daemon would otherwise hold in RAM, and it's what
+lets a machine that was asleep for a week report each condition once rather
+than not at all. A pass with no news prints nothing, so a scheduler that
+mails a job's output mails only what's worth reading; `--seed` records
+what's true now without reporting any of it, for adopting the notifier on
+an instance whose backlog you already know about.
+
+Reasoning from absence is what makes that work, and also what it has to be
+careful about: a condition that stops being reported has either cleared or
+gone unasked-about, and only the first should let it notify again. So a
+pass names the repos whose remote wouldn't answer and the units of work
+`gh` wouldn't report on, and carries their recorded conditions forward
+untouched. Without that, one expired `gh` session or one flaky network
+would erase the record and re-announce the whole backlog on the next pass
+that worked — which is how a notifier gets muted. It is also why
+`prune.LookupPRState` reports *why* it came back with no pull request:
+prune only needs the safe answer ("no PR, don't touch it"), but a watch
+needs to know whether anyone actually asked.
+
+Both conditions are read through the packages that own them —
+`contextmap.Survey` and `prune.Scan`, the same reads the dashboard and the
+MCP server make — so a notification can't reach a different conclusion than
+the `context-map` or `prune` run made in response to it. It surveys with
+`FetchedSHA` rather than the dashboard's `LocalSHA`: a watch is the one
+reader with no human waiting on it, and reading whatever the checkout last
+fetched would leave a repo nobody has fetched in weeks looking current —
+exactly the silence this exists to break. A merged unit of work something
+else is still stacked on isn't reported, because `prune` would refuse to
+remove it; it becomes news once the dependent is rebased, which is when
+there is something to do about it.
+
+Where a notification goes is the operator's business. With
+`ARCHIMEDES_NOTIFY_CMD` (or `--command`) set, each one is handed to
+whatever they already run — `terminal-notifier`, `notify-send`, `ntfy`, a
+webhook — invoked via `sh` with the event in its environment
+(`ARCHIMEDES_EVENT_TITLE`, `_MESSAGE`, `_KIND`, `_SUBJECT`, `_DETAIL`,
+`_REMEDY`) and its text on stdin; with none set it is printed. Event data
+never reaches the hook as part of the command string, so a repo or branch
+name can't become shell on the machine watching it. A hook that fails
+leaves its condition out of the state file and fails the pass: the
+scheduler learns the notifier is broken, and the condition is still owed
+rather than filed away as news broken to someone who never heard it.
+
+### Dashboard (optional)
+
+`archimedes dashboard` opens a live view of the whole instance: the worktree
+table `status` prints — PR state, stack notes, the rebase-needed list, the
+concurrent-stream guardrail — next to the per-repo context-map staleness
+`context-map --dry-run` reports. It retakes the reading every 30 seconds
+(`--refresh`, or `0` for on-demand only), on `r`, and quits on `q`.
+
+It is a presentation layer and nothing else. `internal/dashboard` collects a
+`Snapshot` by calling the same `status.BuildReport` and `contextmap.Assess`
+the two subcommands call, renders it, and loops; nothing about what a row
+*means* is decided there. So the dashboard can't drift from the CLI, and
+every command works exactly as it did before — the dashboard is additive and
+nothing depends on it.
+
+That parity is what the shared seams are for. `status.ManifestRepos` is the
+one place a repo name becomes a checkout path plus a base branch, and
+`contextmap.Survey` is the one place "assess every repo, dependency order
+first" lives — `context-map` walks its pass through the same
+`contextmap.State` the dashboard reads through.
+
+The one deliberate difference is the network. A mapping pass fetches before
+assessing, because it's about to spend a driver run on the answer; a
+dashboard refresh reads `origin/<base branch>` as the checkout last saw it,
+because a screen that repaints every 30 seconds must not drag the network in
+with it. That's the `contextmap.SHALookup` seam — `FetchedSHA` for a pass,
+`LocalSHA` for a reading — and it means a repo nobody has fetched lately can
+under-report, which is the safe direction: the dashboard stays quiet about a
+pass that's due rather than inventing one.
+
+Everything narrower than an unreadable `repos.yaml` is carried in the
+snapshot rather than raised: a row whose `gh` lookup failed reads "no PR", a
+repo whose base branch couldn't be resolved says so in its own row, and a
+refresh that fails outright leaves the last good reading on screen under a
+visible error. A dashboard that blanks itself over one unreachable repo
+would be worse than one showing that repo as unknown.
+
+`Collect` and `Render` are ordinary functions over data — no terminal, no
+clock — and `Model` takes its clock by injection, so the whole thing is
+tested by driving messages through `Update` and asserting on frames. Only
+`internal/cmd/dashboard.go` touches a terminal; without one (a pipe, a CI
+log) it refuses and points at `archimedes status`, which answers the same
+question in a form a pipe can hold.
 ### Terminal workspace integration (opt-in)
 
 `spawn` can also hand the finished worktree to a terminal workspace
@@ -197,3 +326,87 @@ Adding another workspace manager means adding a case to
 `workspace.Select` and an `Opener` beside `openHerdr`. Everything above
 `internal/workspace` — `spawn`, the flags, the warning path — is written
 against the `Integration` type, not against herdr.
+
+### MCP server
+
+`serve-mcp` serves one instance over the Model Context Protocol, so an
+MCP-capable agent tool can query and act on repo/worktree state as
+structured tool calls instead of shelling out to this CLI and parsing its
+tables:
+
+```
+archimedes serve-mcp --root /path/to/instance
+```
+
+It speaks over stdin/stdout and runs until the client disconnects, so it is
+started by the agent tool rather than by hand. Everything else — git's own
+output, any warning — goes to stderr, because stdout carries the protocol
+itself.
+
+Four tools, matching the subcommands an agent would otherwise have had to
+run:
+
+| Tool | Reports | Equivalent |
+| --- | --- | --- |
+| `list_repos` | every tracked repo, its checkout, base branch, dependencies and context-map bookkeeping | `repos.yaml` itself |
+| `repo_status` | every spawned worktree, its live PR state, the rebase flag and the guardrail verdict | `status --json` |
+| `context_map_status` | which repos' maps are stale, and the dependency order a pass would rebuild them in | `context-map --dry-run` |
+| `spawn_worktree` | the branch and worktree it created for one unit of work | `spawn` |
+
+The first three are annotated read-only; `spawn_worktree` is the one that
+writes, and both its description and the server's instructions say so.
+
+It is a second way in, not a second implementation. Each tool is a thin
+mapping from a tool call onto the same `internal/` package the subcommand
+calls — `status.Collect`, `contextmap.Survey`, `spawn.Run` — so the two
+paths can't drift on what the instance currently looks like. That's what
+`internal/cmd/servemcp_test.go` pins: it asks the same instance the same
+question both ways and compares the answers, so a change that only moves
+one of them fails there.
+
+The staleness tool shares `contextmap.Survey` with the dashboard, and the
+`SHALookup` seam is what lets one primitive serve both: it passes
+`FetchedSHA`, because it answers the question `context-map --dry-run`
+answers and that one measures staleness against the remote, where the
+dashboard passes `LocalSHA` rather than drag the network into a screen
+refresh. `mcpserver.Plan` is the wire projection of the `[]RepoState` that
+comes back — JSON tags and schema descriptions belong to the protocol
+boundary, not to `contextmap`.
+
+Four things the CLI does that a tool call deliberately doesn't. No
+interactive mapping session is offered, which is why the context-map tool
+surveys staleness rather than running a pass. No terminal workspace is
+opened: a pane appearing on the operator's machine is something they ask
+for at their own prompt, not a side effect of an agent's tool call. A
+spawn's `cd <worktree> && <agent>` next-step hint is dropped, since its
+whole content is already in the result and it is addressed to a person who
+isn't there; git's own output still reaches the log.
+
+And a repo whose state can't be read — an unreachable remote, a base branch
+that isn't there — is reported as an `error` on that repo rather than
+failing the call, where a pass stops at the first one. That is the one
+place a tool answers differently from its command, and deliberately: a pass
+is about to spend a driver run and can't proceed on an unknown, while a
+reader asking "what needs mapping?" is still better off with the answer for
+every other repo than with nothing. It is `RepoState.Err`'s documented
+contract, and the dashboard reads it the same way.
+
+The server is bound to one instance by `--root` for its lifetime, resolved to
+an absolute path when the server is built — a client won't share the working
+directory the server was started from, so every path a tool reports is one it
+can open. No tool takes a path to another instance.
+
+It reads the same environment as the subcommands (`ARCHIMEDES_MAX_STREAMS`,
+`ARCHIMEDES_DRIVER`, `ARCHIMEDES_DRIVERS_DIR`, `ARCHIMEDES_CONTEXT_FILE`), and
+carries each setting in the form the environment holds it so the *same*
+parser decides what it means — `ARCHIMEDES_MAX_STREAMS=0` is a guardrail of
+zero to a tool call exactly as it is to `archimedes status`, not an unset
+field falling back to the default. It requires `git` but not `gh`: a PR
+lookup degrades to "no PR" rather than failing, so demanding `gh` would
+refuse to start a server on a machine where `archimedes status` itself works.
+
+It is built on the official
+[Go MCP SDK](https://github.com/modelcontextprotocol/go-sdk); tool schemas
+are inferred from the Go argument and result types in
+`internal/mcpserver/tools.go`, so a field gains a schema entry by being
+declared, not by being described twice.
