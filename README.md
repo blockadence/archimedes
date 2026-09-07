@@ -90,9 +90,9 @@ additionally requires [`multi-gitter`](https://github.com/lindell/multi-gitter).
 A `archimedes` binary is being built at [`cli/`](./cli) to replace the
 vendored bash scripts below with one globally-installed tool (see
 [`cli/README.md`](./cli/README.md)). `bootstrap`, `render-map`,
-`context-map`, `spawn`, `status`, `prune`, `sync-templates` and
-`sync-house-rules` are ported; the rest follow the same pattern one at a
-time.
+`context-map`, `spawn`, `status`, `prune`, `sync-templates`,
+`sync-house-rules` and `apply-convention-pack` are ported; the rest follow
+the same pattern one at a time.
 
 `spawn` can additionally open the new worktree as a workspace in a
 terminal workspace manager ([herdr](https://herdr.dev) today), so a unit of

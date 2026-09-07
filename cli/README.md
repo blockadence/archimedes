@@ -41,6 +41,8 @@ Walking skeleton, growing one subcommand at a time from `template/scripts/*.sh`:
 - `prune` — port of `template/scripts/prune.sh`
 - `sync-templates` — port of `template/scripts/sync-templates.sh`
 - `sync-house-rules` — port of `template/scripts/sync-house-rules.sh`
+- `apply-convention-pack` — port of
+  `template/scripts/apply-convention-pack.sh`
 
 `bootstrap` discovers a GitHub org's repos, clones the ones not already
 checked out beside the instance, and scaffolds each one's `repos.yaml` entry
@@ -129,6 +131,28 @@ one place. Both take `--dry-run`.
 Neither shells out to anything but git through `internal/gitutil`; every
 other external command (`multi-gitter`, `gh`) goes through
 `reposync.ExecFunc`, the seam tests replace.
+
+`apply-convention-pack` wires one repo up to the shared build/lint
+convention it declares, by adding whatever reference that repo's build tool
+needs to start pulling in the pack's published config artifact. Both halves
+are instance data — the pack name from the repo's `repos.yaml` entry, the
+definition from the instance's `convention-packs/<name>.yaml` — so there is
+no config of its own to keep in step with either.
+
+It is one-time scaffolding rather than sync: afterwards the repo owns that
+reference like any other dependency, and nothing pushes updates back into
+it later. Re-running is a no-op, and the edit is left uncommitted for a
+human to review.
+
+`internal/conventionpack` dispatches on the pack's `build_tool`, so adding
+a second language/build tool is one entry in its `scaffolders` map plus the
+function it names — `gradle.go` is the worked example. Nothing above that
+dispatch knows Java or Gradle, down to the pack's build-tool-named block,
+which stays undecoded until a scaffolder asks for it in its own shape; so
+a new build tool costs a file, not a field on the shared `Pack` type. A build file that already carries a
+`buildscript {}` block of its own is refused: the two lines it needs are
+printed for a human to place by hand, since where they belong inside an
+existing block is a judgment call, not a rewrite worth guessing at.
 
 ### Terminal workspace integration (opt-in)
 
