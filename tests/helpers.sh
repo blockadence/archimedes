@@ -27,6 +27,13 @@ assert_contains() { # <haystack> <needle> <label>
   esac
 }
 
+assert_not_contains() { # <haystack> <needle> <label>
+  case "$1" in
+    *"$2"*) fail "$3 (expected not to contain [$2], got [$1])" ;;
+    *) pass "$3" ;;
+  esac
+}
+
 assert_file_exists() { # <path> <label>
   [ -f "$1" ] && pass "$2" || fail "$2 (no file at $1)"
 }

@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes/internal/driver"
+	"github.com/blockadence/gh-archimedes/internal/driver"
 )
 
 func newRunDriverCmd() *cobra.Command {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
 // fatalPanic is what recorder.Fatalf panics with, so that — like the real

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/mcpserver"
-	"github.com/blockadence/archimedes/internal/spawn"
-	"github.com/blockadence/archimedes/internal/status"
+	"github.com/blockadence/gh-archimedes/internal/mcpserver"
+	"github.com/blockadence/gh-archimedes/internal/spawn"
+	"github.com/blockadence/gh-archimedes/internal/status"
 )
 
 // quietSources answers every live lookup without touching gh or the

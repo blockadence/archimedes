@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/driver"
+	"github.com/blockadence/gh-archimedes/internal/driver"
 )
 
 // writeDriver installs a stub driver named name under driversDir: its

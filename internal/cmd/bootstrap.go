@@ -3,7 +3,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes/internal/bootstrap"
+	"github.com/blockadence/gh-archimedes/internal/bootstrap"
 )
 
 func newBootstrapCmd() *cobra.Command {

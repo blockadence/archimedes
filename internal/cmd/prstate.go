@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/blockadence/archimedes/internal/gitutil"
-	"github.com/blockadence/archimedes/internal/manifest"
-	"github.com/blockadence/archimedes/internal/prune"
+	"github.com/blockadence/gh-archimedes/internal/gitutil"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/prune"
 )
 
 // repoPRState adapts a "owner/repo" pull request lookup to the repo names

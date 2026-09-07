@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
 func TestContextMapOptionsFromEnvironment(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/prune"
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/prune"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
 // setupInstance builds an instance root with one target repo (with a

@@ -23,6 +23,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/blockadence/gh-archimedes/internal/invocation"
 )
 
 // Kind is which of the watched conditions an event reports.
@@ -58,10 +60,10 @@ const (
 // would act on every merged row under that slug, which is more than the
 // one repo:slug the notification names, and prune already puts the
 // confirmation step exactly there.
-const (
-	remedyContextMap = "archimedes context-map"
-	remedyPrune      = "archimedes prune %s"
-)
+func remedyContextMap() string { return invocation.Name() + " context-map" }
+func remedyPrune(slug string) string {
+	return fmt.Sprintf("%s prune %s", invocation.Name(), slug)
+}
 
 // Event is one condition that is true about the instance right now: what
 // kind of condition it is, what it is about, why it holds, and what to run

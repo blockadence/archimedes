@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/status"
+	"github.com/blockadence/gh-archimedes/internal/status"
 )
 
 func writeInstanceFixture(t *testing.T) string {

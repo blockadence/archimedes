@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/manifest"
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
 // newOrigin creates a bare repo with one commit on branch, standing in for

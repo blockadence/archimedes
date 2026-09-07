@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blockadence/archimedes/internal/dossier"
-	"github.com/blockadence/archimedes/internal/gitutil"
+	"github.com/blockadence/gh-archimedes/internal/dossier"
+	"github.com/blockadence/gh-archimedes/internal/gitutil"
 )
 
 // ContextDirName is the conventional, inside-the-worktree location for

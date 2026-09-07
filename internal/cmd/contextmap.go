@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes"
-	"github.com/blockadence/archimedes/internal/contextmap"
+	"github.com/blockadence/gh-archimedes"
+	"github.com/blockadence/gh-archimedes/internal/contextmap"
 )
 
 // Environment variables a context-mapping pass honors, so an operator can

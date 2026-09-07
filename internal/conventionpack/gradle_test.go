@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/conventionpack"
+	"github.com/blockadence/gh-archimedes/internal/conventionpack"
 )
 
 const existingBuildFile = "plugins {\n    id 'java'\n}\n\nrepositories {\n    mavenCentral()\n}\n"

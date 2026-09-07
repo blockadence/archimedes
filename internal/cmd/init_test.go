@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
 // init is the one subcommand that runs before an instance exists, so there
@@ -57,4 +57,24 @@ func TestInitNeedsBothANameAndAParentDirectory(t *testing.T) {
 
 	executeErr(t, "init", "widgets")
 	executeErr(t, "init", "widgets", parent, "extra")
+}
+
+// init's parting line is the one piece of runtime output that tells an
+// operator what to type next, and it is the first thing anybody sees. Under
+// a gh extension install `archimedes bootstrap` is not a command they have.
+func TestInitPointsAtTheNextCommandInTheFormTheOperatorCanRun(t *testing.T) {
+	for _, tc := range []struct{ ghExtension, want string }{
+		{"", "&& archimedes bootstrap"},
+		{"1", "&& gh archimedes bootstrap"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			t.Setenv("GH_EXTENSION", tc.ghExtension)
+
+			out := execute(t, "init", "widgets", initParent(t))
+
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("init's next step does not say %q:\n%s", tc.want, out)
+			}
+		})
+	}
 }

@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes/internal/status"
+	"github.com/blockadence/gh-archimedes/internal/status"
 )
 
 // maxStreamsEnvVar caps how many worktree streams can be open before a

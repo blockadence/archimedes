@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/prune"
+	"github.com/blockadence/gh-archimedes/internal/prune"
 )
 
 func writeStatus(t *testing.T, dir, slug, body string) string {

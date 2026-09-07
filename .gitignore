@@ -22,3 +22,6 @@ Thumbs.db
 # Go CLI build output
 /archimedes
 /archimedes.exe
+
+# Release artifacts, built into dist/ by .github/release-build.sh
+/dist/

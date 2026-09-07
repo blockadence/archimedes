@@ -1,6 +1,6 @@
 package status
 
-import "github.com/blockadence/archimedes/internal/stackref"
+import "github.com/blockadence/gh-archimedes/internal/stackref"
 
 // GitRefs answers the questions stacked-rebase detection asks of a
 // checkout. Both are reads of refs already on disk — no fetching — so a

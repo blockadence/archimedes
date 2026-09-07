@@ -9,7 +9,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/blockadence/archimedes/internal/driver"
+	"github.com/blockadence/gh-archimedes/internal/driver"
 )
 
 // A Set is two layers, and what these tests are about is which of them

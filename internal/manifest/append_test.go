@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
 
 func writeManifest(t *testing.T, dir, content string) string {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/contextmap"
+	"github.com/blockadence/gh-archimedes/internal/contextmap"
 )
 
 // runPass drives one mapping pass and returns what the operator sees on the

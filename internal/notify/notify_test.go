@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/notify"
+	"github.com/blockadence/gh-archimedes/internal/notify"
 )
 
 var (

@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"strconv"
 
-	"github.com/blockadence/archimedes/internal/gitutil"
+	"github.com/blockadence/gh-archimedes/internal/gitutil"
 )
 
 // PR is one row's live PR state, as reported by `gh pr list`.

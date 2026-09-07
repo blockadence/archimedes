@@ -6,10 +6,10 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/blockadence/archimedes/internal/contextmap"
-	"github.com/blockadence/archimedes/internal/manifest"
-	"github.com/blockadence/archimedes/internal/prune"
-	"github.com/blockadence/archimedes/internal/stackref"
+	"github.com/blockadence/gh-archimedes/internal/contextmap"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/prune"
+	"github.com/blockadence/gh-archimedes/internal/stackref"
 )
 
 // DefaultStateFile is where a watch remembers what it has already reported,
@@ -189,7 +189,7 @@ func Conditions(root, contextFile string, prState prune.PRStateFunc, progress io
 			continue
 		}
 		stale.Detail = s.Reason
-		stale.Remedy = remedyContextMap
+		stale.Remedy = remedyContextMap()
 		snap.Firing = append(snap.Firing, stale)
 	}
 
@@ -222,7 +222,7 @@ func Conditions(root, contextFile string, prState prune.PRStateFunc, progress io
 			Kind:    PruneEligible,
 			Subject: stackref.Ref{Repo: it.Repo, Slug: it.Slug}.String(),
 			Detail:  it.PRState,
-			Remedy:  fmt.Sprintf(remedyPrune, it.Slug),
+			Remedy:  remedyPrune(it.Slug),
 		})
 	}
 

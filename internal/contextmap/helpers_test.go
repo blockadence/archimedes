@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/manifest"
-	"github.com/blockadence/archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
 func mustWriteFile(t *testing.T, path, content string) {

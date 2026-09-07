@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/contextmap"
-	"github.com/blockadence/archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/contextmap"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
 
 func repos(specs ...[]string) []manifest.Repo {

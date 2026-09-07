@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blockadence/archimedes/internal/dashboard"
+	"github.com/blockadence/gh-archimedes/internal/dashboard"
 )
 
 func TestRunDashboardWithoutATerminalPointsAtStatus(t *testing.T) {

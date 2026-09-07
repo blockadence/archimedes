@@ -3,7 +3,7 @@ package stackref_test
 import (
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/stackref"
+	"github.com/blockadence/gh-archimedes/internal/stackref"
 )
 
 func TestParseFlag(t *testing.T) {

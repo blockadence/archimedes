@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes/internal/spawn"
-	"github.com/blockadence/archimedes/internal/stackref"
-	"github.com/blockadence/archimedes/internal/workspace"
+	"github.com/blockadence/gh-archimedes/internal/spawn"
+	"github.com/blockadence/gh-archimedes/internal/stackref"
+	"github.com/blockadence/gh-archimedes/internal/workspace"
 )
 
 // agentCmdEnvVar names the environment variable that overrides the agent

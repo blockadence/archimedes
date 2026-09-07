@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes/internal/reposync"
+	"github.com/blockadence/gh-archimedes/internal/invocation"
+	"github.com/blockadence/gh-archimedes/internal/reposync"
 )
 
 func newSyncHouseRulesCmd() *cobra.Command {
@@ -12,14 +15,14 @@ func newSyncHouseRulesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync-house-rules <repo>",
 		Short: "Push one repo's house rules into it as a committed HOUSE_RULES.md",
-		Long: `Pushes a repo's house rules — the "## House rules" section of its dossier,
+		Long: fmt.Sprintf(`Pushes a repo's house rules — the "## House rules" section of its dossier,
 repos/<repo>.md — into that repo as a durably committed HOUSE_RULES.md, via
 a pull request. The dossier is the single source of truth: the same section
-is what "archimedes spawn" injects into each worktree, so a house rule only
+is what "%[1]s spawn" injects into each worktree, so a house rule only
 ever needs editing there.
 
 Pass --dry-run to see the pending change without committing, pushing, or
-opening a pull request.`,
+opening a pull request.`, invocation.Name()),
 		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := requireBins("git", "gh"); err != nil {

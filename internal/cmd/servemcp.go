@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"fmt"
 	"io"
 	"os"
 
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes/internal/mcpserver"
+	"github.com/blockadence/gh-archimedes/internal/invocation"
+	"github.com/blockadence/gh-archimedes/internal/mcpserver"
+	"github.com/blockadence/gh-archimedes/internal/version"
 )
 
 func newServeMCPCmd() *cobra.Command {
@@ -15,7 +18,7 @@ func newServeMCPCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve-mcp",
 		Short: "Serve this instance to MCP-capable agent tools over stdio",
-		Long: `Serves one Archimedes instance over the Model Context Protocol, so an
+		Long: fmt.Sprintf(`Serves one Archimedes instance over the Model Context Protocol, so an
 MCP-capable agent tool can list tracked repos, read worktree and pull-request
 status, check context-map staleness, and spawn a unit of work as structured
 tool calls — rather than shelling out to this CLI and parsing its tables.
@@ -30,7 +33,7 @@ so it is started by the agent tool rather than by hand. Everything else —
 git's own output, and any warning — goes to stderr, since stdout carries the
 protocol itself. Register it with a client roughly as:
 
-  archimedes serve-mcp --root /path/to/instance`,
+  %[1]s serve-mcp --root /path/to/instance`, invocation.Name()),
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			// git only, not gh: every gh lookup a tool makes goes
@@ -56,7 +59,7 @@ protocol itself. Register it with a client roughly as:
 func serveMCPOptions(root string, env func(string) string, progress io.Writer) mcpserver.Options {
 	return mcpserver.Options{
 		Root:    root,
-		Version: version,
+		Version: version.Current(),
 		// Handed over unparsed: mcpserver runs it through the same
 		// status.ParseGuardrailMax the status command does, so one setting
 		// can't mean two thresholds.

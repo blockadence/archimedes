@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
 
 // instance writes a repos.yaml listing one repo at repos/service-a and

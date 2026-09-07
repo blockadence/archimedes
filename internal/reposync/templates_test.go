@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/manifest"
-	"github.com/blockadence/archimedes/internal/reposync"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/reposync"
 )
 
 func TestSelectReposFilters(t *testing.T) {

@@ -15,10 +15,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/blockadence/archimedes/internal/dossier"
-	"github.com/blockadence/archimedes/internal/gitutil"
-	"github.com/blockadence/archimedes/internal/manifest"
-	"github.com/blockadence/archimedes/internal/workspacemap"
+	"github.com/blockadence/gh-archimedes/internal/dossier"
+	"github.com/blockadence/gh-archimedes/internal/gitutil"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/workspacemap"
 )
 
 // emptyManifest seeds an instance that has no repos.yaml yet.

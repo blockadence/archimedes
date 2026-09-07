@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/archimedes/internal/conventionpack"
+	"github.com/blockadence/gh-archimedes/internal/conventionpack"
 )
 
 // javaGradlePack is template/convention-packs/java-gradle.yaml, the shipped

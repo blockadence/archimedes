@@ -13,7 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blockadence/archimedes/internal/stackref"
+	"github.com/blockadence/gh-archimedes/internal/stackref"
 )
 
 // Row is one data row of a work/<slug>/status.md table.

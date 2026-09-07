@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blockadence/archimedes/internal/gitutil"
-	"github.com/blockadence/archimedes/internal/prune"
+	"github.com/blockadence/gh-archimedes/internal/gitutil"
+	"github.com/blockadence/gh-archimedes/internal/prune"
 )
 
 func newPruneCmd() *cobra.Command {

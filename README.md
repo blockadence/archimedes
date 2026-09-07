@@ -90,8 +90,30 @@ Install the tool once, globally (needs a Go toolchain, and `$GOBIN` —
 `~/go/bin` by default — on your `PATH`):
 
 ```
-go install github.com/blockadence/archimedes/cmd/archimedes@latest
+go install github.com/blockadence/gh-archimedes/cmd/archimedes@latest
 ```
+
+Or, if you would rather not install a Go toolchain to get it, take the same
+binary out of a release as a `gh` extension:
+
+```
+gh extension install blockadence/gh-archimedes
+```
+
+That is the same program either way, and the two installs are
+interchangeable — a `gh archimedes` prefix in place of `archimedes` is the
+whole of the difference, and every command below works under either. (The
+`gh-` on the repository name is gh's requirement of anything installable
+that way, not a claim about which install is the real one.) See
+[`docs/cli.md`](./docs/cli.md#the-two-installs) for what a release carries
+and how to cut one.
+
+If you installed before the repository was renamed, the old
+`go install github.com/blockadence/archimedes/...` path no longer resolves.
+GitHub's redirect does not cover it — the module it serves now declares the
+new path, and Go refuses a module whose declared path isn't the one asked
+for. Re-run either install above. Nothing else moves: an existing binary
+keeps working until you replace it, and no instance is touched either way.
 
 Then scaffold an instance and point it at your org:
 

@@ -22,7 +22,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/blockadence/archimedes/internal/gitutil"
+	"github.com/blockadence/gh-archimedes/internal/gitutil"
 )
 
 // Create scaffolds an instance named name under destParent from the
