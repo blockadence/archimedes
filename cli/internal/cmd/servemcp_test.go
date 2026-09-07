@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -179,7 +178,7 @@ func TestContextMapStatusToolMatchesTheDryRun(t *testing.T) {
 	root, repos := mcpInstance(t)
 	// shared is mapped and current; app has never been mapped.
 	writeFile(t, filepath.Join(repos["shared"], "CONTEXT.md"), "# shared\n")
-	sha := strings.TrimSpace(runOut(t, repos["shared"], "git", "rev-parse", "origin/main"))
+	sha := testrepo.GitOut(t, repos["shared"], "rev-parse", "origin/main")
 	writeFile(t, filepath.Join(root, "repos.yaml"),
 		"repos:\n"+
 			"  - name: app\n    path: ../app\n    base_branch: main\n    depends_on: [shared]\n"+
@@ -221,7 +220,7 @@ func TestSpawnWorktreeToolMatchesTheSpawnCommand(t *testing.T) {
 	// Same branch, same worktree layout, same recorded row — the only
 	// difference between the two units of work is the name they were asked
 	// for under.
-	if got := runOut(t, repos["app"], "git", "worktree", "list"); !strings.Contains(got, result.Worktree) {
+	if got := testrepo.GitOut(t, repos["app"], "worktree", "list"); !strings.Contains(got, result.Worktree) {
 		t.Errorf("the tool's worktree %q isn't one git knows about:\n%s", result.Worktree, got)
 	}
 	cliRow := readStatus(t, root, "via-cli")
@@ -241,18 +240,6 @@ func readStatus(t *testing.T, root, slug string) string {
 		t.Fatalf("reading %s's status file: %v", slug, err)
 	}
 	return string(data)
-}
-
-// runOut runs a command in dir and returns its stdout.
-func runOut(t *testing.T, dir string, name string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("%s %v (in %s): %v", name, args, dir, err)
-	}
-	return string(out)
 }
 
 // A guardrail of zero is a real setting, not an unset one: every open

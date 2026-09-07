@@ -17,6 +17,9 @@ type fatalPanic struct{}
 // recorder stands in for *testing.T so a test can assert on how the helpers
 // fail without failing itself. testing.TB can't be implemented outside the
 // testing package, so it embeds the real one and overrides what it watches.
+// That override is only Fatalf: a helper that ever failed some other way
+// would reach the embedded real t and kill the test doing the asserting, so
+// "the helpers fail via Fatalf" is a contract this fake depends on.
 type recorder struct {
 	testing.TB
 	failed bool
