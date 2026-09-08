@@ -153,17 +153,24 @@ func TestIsAncestor(t *testing.T) {
 	}
 }
 
-// HasCommitIdentity guards a commit, so what it must agree with is git's own
-// answer to the same question — asserted here by committing, or failing to,
-// in the repository it was asked about.
-func TestHasCommitIdentity(t *testing.T) {
+// HasConfiguredIdentity guards a commit nobody typed, so what it has to
+// agree with is git's own answer to "is there an identity somebody set on
+// purpose" — asserted here by committing, or failing to, in the repository
+// it was asked about, on the three machines where git's answer to that and
+// its answer to "can I commit at all" are the same one.
+func TestHasConfiguredIdentity(t *testing.T) {
 	tests := []struct {
 		name  string
 		setup func(testing.TB)
 		want  bool
 	}{
-		{"configured", testrepo.IsolateGit, true},
-		{"none at all", testrepo.StripGitIdentity, false},
+		{"configured in git's config", testrepo.IsolateGit, true},
+		// The environment is configuration too, and the case that would be
+		// lost by reading user.name and user.email: a CI system that sets an
+		// identity there set it deliberately, and a commit under it is one
+		// somebody asked for.
+		{"configured in the environment", environmentIdentity, true},
+		{"nothing at all", testrepo.StripGitIdentity, false},
 	}
 
 	for _, tt := range tests {
@@ -172,18 +179,84 @@ func TestHasCommitIdentity(t *testing.T) {
 			dir := t.TempDir()
 			testrepo.Git(t, dir, "init", "-q")
 
-			if got := gitutil.HasCommitIdentity(dir); got != tt.want {
-				t.Errorf("HasCommitIdentity = %v, want %v", got, tt.want)
+			if got := gitutil.HasConfiguredIdentity(dir); got != tt.want {
+				t.Errorf("HasConfiguredIdentity = %v, want %v", got, tt.want)
 			}
 			if got := canCommit(t, dir); got != tt.want {
-				t.Errorf("git itself commits = %v, so HasCommitIdentity's %v is the wrong answer", got, tt.want)
+				t.Errorf("git itself commits = %v, so HasConfiguredIdentity's %v is the wrong answer", got, tt.want)
 			}
 		})
 	}
 }
 
-// canCommit reports whether git will actually make a commit in dir, which is
-// the only thing HasCommitIdentity is a prediction of. It runs git itself
+// The fourth machine, and the decision this function carries: nothing
+// configured, but an OS account git can guess a usable identity from, so git
+// commits and this says no anyway. Whether the guess succeeds is a property
+// of the box — a full name on a developer's macOS one, nothing on a CI
+// runner — so where there is nothing to guess there is nothing here to
+// assert, and the test skips rather than passing quietly on the machine that
+// cannot exercise it.
+func TestHasConfiguredIdentityRefusesTheOneGitGuesses(t *testing.T) {
+	testrepo.UnconfigureGitIdentity(t)
+	dir := t.TempDir()
+	testrepo.Git(t, dir, "init", "-q")
+
+	if !canCommit(t, dir) {
+		t.Skip("this machine's account carries no name for git to guess an identity from")
+	}
+	if gitutil.HasConfiguredIdentity(dir) {
+		t.Error("HasConfiguredIdentity = true for an identity git guessed from the account, which nobody configured")
+	}
+}
+
+// Half configured is not configured. An operator who has set a user.name and
+// no user.email has supplied one of the two things a commit needs, and git
+// fills the other from the account — so the author would be half theirs and
+// half a hostname nobody chose, which is the same objection in miniature.
+//
+// This one is portable where the test above is not: what git has left to
+// guess here is only ever half the ident, so the answer is the same on a
+// developer's box and on a runner, and the rule cannot rot into an "either
+// one will do" that passes for the wrong reason.
+func TestHasConfiguredIdentityRefusesAHalfConfiguredOne(t *testing.T) {
+	tests := []struct{ name, key, value string }{
+		{"name configured, address left to git", "user.name", "t"},
+		{"address configured, name left to git", "user.email", "t@t"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testrepo.UnconfigureGitIdentity(t)
+			dir := t.TempDir()
+			testrepo.Git(t, dir, "init", "-q")
+			testrepo.Git(t, dir, "config", tt.key, tt.value)
+
+			if gitutil.HasConfiguredIdentity(dir) {
+				t.Errorf("HasConfiguredIdentity = true with only %s set, so the other half of the author is still whoever git guessed", tt.key)
+			}
+		})
+	}
+}
+
+// environmentIdentity is the machine whose identity is in GIT_AUTHOR_* and
+// GIT_COMMITTER_* and nowhere else: a CI system that sets it there on
+// purpose. Unconfigured first, so what the test binary inherited cannot be
+// what it ends up measuring.
+func environmentIdentity(t testing.TB) {
+	t.Helper()
+	testrepo.UnconfigureGitIdentity(t)
+	for _, name := range []string{"GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"} {
+		t.Setenv(name, "t")
+	}
+	for _, name := range []string{"GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"} {
+		t.Setenv(name, "t@t")
+	}
+}
+
+// canCommit reports whether git will actually make a commit in dir. It is
+// what HasConfiguredIdentity used to be a prediction of and deliberately no
+// longer is: on the machine above the two diverge, and that divergence is
+// the decision. Everywhere else they must still agree. It runs git itself
 // rather than going through testrepo's runner, which is the one place in
 // this module's tests that is the right way round: the runner fails the test
 // when git does, and here git failing is the answer being asked for.

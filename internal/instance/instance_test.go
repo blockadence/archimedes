@@ -107,7 +107,7 @@ func TestCreateStartsTheInstanceOnItsOwnFreshHistory(t *testing.T) {
 // me who you are". The files are the valuable half of what init does, and
 // they land; the commit is the half that needs an operator git does not
 // have yet, and it waits for them.
-func TestCreateScaffoldsWithoutCommittingWhenGitHasNoIdentity(t *testing.T) {
+func TestCreateScaffoldsWithoutCommittingWhenGitItselfHasNoIdentity(t *testing.T) {
 	testrepo.StripGitIdentity(t)
 	parent := t.TempDir()
 
@@ -145,15 +145,26 @@ func TestCreateScaffoldsWithoutCommittingWhenGitHasNoIdentity(t *testing.T) {
 
 // The second criterion of the issue this came from, asserted rather than
 // argued: an instance is the operator's own repository and its first commit
-// is in its history forever, so no identity of ours may ever appear in one.
-func TestCreateNeverCommitsUnderAnIdentityItInvented(t *testing.T) {
-	testrepo.StripGitIdentity(t)
+// is in its history forever, so no identity nobody chose may appear in one.
+//
+// The machine here is the one most operators are actually on — nothing
+// configured, and git free to guess a name from the OS account. Where the
+// account carries one, as it does on macOS, git would commit under it
+// happily and no warning of ours would ever be read, because the commit
+// would already have succeeded. So this asserts the outcome on both boxes:
+// on that one it is the decision, and on a runner with nothing to guess from
+// it is the case above by another route.
+func TestCreateNeverCommitsUnderAnIdentityNobodyConfigured(t *testing.T) {
+	testrepo.UnconfigureGitIdentity(t)
 
 	res, err := instance.Create(fakeTemplate(), "widgets", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	if res.Committed {
+		t.Error("Committed = true, but nobody configured the identity it would be under")
+	}
 	if out := testrepo.GitOut(t, res.Path, "log", "--all", "--format=%an <%ae>"); out != "" {
 		t.Errorf("an instance carries an author nobody configured: %s", out)
 	}

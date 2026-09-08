@@ -2,14 +2,26 @@
 // on its own fresh git history, so instance-specific (possibly sensitive)
 // content never lives in this repo's history.
 //
-// "On its own history" is as far as it goes on a machine where git has no
-// identity to commit under, which is every fresh laptop, container and CI
-// runner: the instance is written and its repository initialized, and the
-// first commit waits for the operator. Create says which of the two
-// happened so its caller can pass that on. It will not invent an identity
-// to close the gap — an instance is the operator's own repository and its
-// first commit is in that history forever, so a fabricated author there is
-// worse than an instance that is merely uncommitted.
+// "On its own history" is as far as it goes where nobody has configured git
+// an identity to commit under, which is every fresh laptop, container and CI
+// runner and every operator who has not got round to it: the instance is
+// written and its repository initialized, and the first commit waits for
+// them. Create says which of the two happened so its caller can pass that
+// on. It will not close the gap with an identity nobody chose — an instance
+// is the operator's own repository and its first commit is in that history
+// forever, so an author they never picked is worse there than an instance
+// that is merely uncommitted.
+//
+// That holds even where git would have committed. Given no configuration git
+// guesses an identity from the OS account and uses it if the guess comes
+// back usable, which on a developer's macOS box it does; the guess is a name
+// and a hostname, and it would sit in the instance's first commit for good.
+// Whether that counts as an author the operator chose was the question, and
+// the answer is no: it is git's right answer for a commit somebody typed and
+// the wrong one for a commit this package makes on their behalf. So the bar
+// is an identity in config or in the environment (gitutil's
+// HasConfiguredIdentity), and the caller has to say that this is stricter
+// than git, or an operator on that box reads a skipped commit as a bug.
 //
 // What lands in an instance is data and nothing else — a manifest, dossier
 // and work directories, scaffolding it owns from here on, and an empty
@@ -85,13 +97,14 @@ func scaffold(src fs.FS, name, dest string) (committed bool, err error) {
 
 	// Asked after `git init` rather than before, so an identity set on this
 	// repository alone counts the same as a global one — and asked at all
-	// because the alternative is handing an operator git's "Please tell me
-	// who you are" as the first thing this tool ever says to them.
+	// because the alternative is either git's "Please tell me who you are"
+	// as the first thing this tool ever says to an operator, or a first
+	// commit authored by whoever git guessed they were.
 	//
 	// Nothing is staged on the way out. What such an operator is told to run
 	// is `git add -A && git commit`, and an index left half-filled here would
 	// make that line quietly wrong about what it commits.
-	if !gitutil.HasCommitIdentity(dest) {
+	if !gitutil.HasConfiguredIdentity(dest) {
 		return false, nil
 	}
 
