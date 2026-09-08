@@ -95,10 +95,9 @@ jobs:
 
       # A full version rather than a floating major, unlike the three
       # actions/* steps above, and not a pinning policy creeping in: this
-      # action stopped publishing major tags at v8 on purpose, so `@v7` --
-      # the last one that exists -- is a branch that has had no release
-      # since March 2026 and will not get the next deprecation's fix. What
-      # is left is the version tag, which upstream makes immutable. The
+      # action stopped publishing major tags with its v8, so `@v7` is the
+      # newest one that exists and its line has had no release since March
+      # 2026. docs/cli.md, "The Node the actions run on", has the rest. The
       # breaking changes between v5 and here are a manifest format we never
       # used, a cache default we do not set, and caching turned off for
       # `pull_request_target`, `workflow_run` and `release` -- none of which
