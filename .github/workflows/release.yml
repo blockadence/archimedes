@@ -8,6 +8,10 @@
 # A tag with a `-` in it (v0.2.0-rc.1) publishes as a prerelease, which
 # `gh extension install` will not hand to anyone -- the safe way to check
 # this workflow end to end.
+#
+# The run also attests to what it built, so that "is this the binary the
+# repository produced?" is answerable by whoever downloaded it. README's
+# install section carries the command; the reasoning is on the inputs below.
 name: release
 
 on:
@@ -15,8 +19,12 @@ on:
     tags:
       - "v*"
 
+# Read-only for the file, so that every grant below is something one job
+# asked for rather than something every job inherited. This workflow needs
+# no secret of its own at all -- neither the publish nor the attestation
+# uses anything but the token GitHub mints for the run.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # The gate. This is release.yml's only defense against publishing twelve
@@ -29,6 +37,17 @@ jobs:
   release:
     needs: test
     runs-on: ubuntu-latest
+    # What a compromise of this workflow would cost, in one place and named.
+    # `contents` creates the release and uploads the assets. The other two
+    # are the whole of what signing costs: `id-token` mints the short-lived
+    # OIDC token that stands in for a signing key, and `attestations`
+    # records the result against the repository. All three belong to this
+    # job and not to the file -- at the top they would also be handed to the
+    # gate, which runs the suite and an `npm install -g` with them.
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: cli/gh-extension-precompile@v2
@@ -36,3 +55,25 @@ jobs:
           go_version_file: go.mod
           # See the script for why this build isn't the action's own.
           build_script_override: .github/release-build.sh
+          # Runs actions/attest-build-provenance over dist/, binding each
+          # published asset to the workflow, repository and commit that
+          # produced it. Someone holding only the download and the
+          # repository name can check that binding with
+          # `gh attestation verify`.
+          generate_attestations: true
+          # No `gpg_fingerprint:`, and that is a decision rather than an
+          # omission. The action accepts one and passes it to its release
+          # script, but a GPG signature needs a long-lived private key, and
+          # the place it would live is a repository secret -- exactly the
+          # credential whose theft would let someone sign a malicious build,
+          # standing here forever for a tool this size. The attestation
+          # above answers the same question with an identity minted per run
+          # and never stored, so what a leak of this repository's secrets
+          # could do is unchanged by any of this.
+          #
+          # What that trades away: verification is gh-shaped and
+          # GitHub-shaped. It needs `gh attestation verify` rather than any
+          # tool that predates it, the evidence lives in GitHub's
+          # transparency log rather than in a file beside the asset, and it
+          # would not survive this repository moving off GitHub. If that
+          # last one ever happens, this is the input to revisit.

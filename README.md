@@ -108,6 +108,34 @@ that way, not a claim about which install is the real one.) See
 [`docs/cli.md`](./docs/cli.md#the-two-installs) for what a release carries
 and how to cut one.
 
+That install downloads a binary and runs it, and TLS to github.com is the
+whole of what it checks — it says the bytes came from GitHub, not that they
+are the bytes this repository built. Every release asset is attested to by
+the workflow run that produced it, so that binding is checkable against this
+repository from the asset alone:
+
+```
+gh release download --repo blockadence/gh-archimedes --pattern '*darwin-arm64'
+gh attestation verify gh-archimedes_*_darwin-arm64 --repo blockadence/gh-archimedes
+```
+
+Substitute the `<os>-<arch>` you actually run — asset names end with it,
+and on Windows with a `.exe` after that, so match the pattern accordingly.
+The command prints the repository and the workflow that produced the file,
+and fails on anything a release run of this repository did not build — which
+is what a swapped asset cannot fake, the signing identity being minted per
+run rather than a key somebody holds. Add `--format json` for the commit and
+the run behind it.
+
+Check the asset you downloaded, not the copy `gh extension install` left in
+`~/.local/share/gh/extensions/`. On an Apple Silicon Mac, `gh` ad-hoc
+codesigns what it installs, which rewrites the file — so verifying that copy
+reports no attestation for a binary that is perfectly genuine.
+
+All of this is optional and nothing installs differently without it. There
+is no GPG signature to check instead;
+[`docs/cli.md`](./docs/cli.md#cutting-a-release) says why.
+
 If you installed before the repository was renamed, the old
 `go install github.com/blockadence/archimedes/...` path no longer resolves.
 GitHub's redirect does not cover it — the module it serves now declares the

@@ -92,6 +92,29 @@ manifest_field() {
   sed -n "s/^$2: *//p" "$1"
 }
 
+# One job's body out of a GitHub workflow: everything indented under
+# `  <name>:` up to the next job. Enough structure for the two files that
+# read workflows -- ci_gates_release.sh and release_provenance.sh -- to tell
+# "the release job needs the test job" from "the file contains the word
+# needs somewhere". Shared rather than copied into both, so their two
+# readings of the same YAML cannot drift apart.
+# <workflow-file> <job-name>
+workflow_job_block() {
+  awk -v want="  $2:" '
+    $0 == want { inblock = 1; next }
+    inblock && /^  [^ ]/ { inblock = 0 }
+    inblock { print }
+  ' "$1"
+}
+
+# The names of every job in a workflow, one per line. <workflow-file>
+workflow_job_names() {
+  awk '
+    /^jobs:/ { injobs = 1; next }
+    injobs && /^  [^ #]/ && /:/ { sub(/:.*/, ""); gsub(/ /, ""); print }
+  ' "$1"
+}
+
 # A throwaway one-commit git repo with just enough of a domain in it for a
 # context-mapping driver to have something to say about. Shared by the
 # driver e2e tests so they're all pointed at the same target -- what varies

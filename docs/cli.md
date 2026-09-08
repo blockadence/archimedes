@@ -188,6 +188,56 @@ name against the platform it is installing onto is how gh picks the file to
 download. A rename that appends anything after that leaves a release that
 looks fine on GitHub and installs on nothing.
 
+The run also sets the action's `generate_attestations`, which puts
+`actions/attest-build-provenance` over `dist/` before the assets are
+uploaded. Each asset comes out bound to the workflow, repository and commit
+that built it, and anyone holding the download can check that binding:
+
+```
+gh attestation verify <the-binary> --repo blockadence/gh-archimedes
+```
+
+That command belongs in `README.md`'s install section, next to `gh extension
+install`, and is there — an attestation nobody is told how to check is
+ceremony rather than evidence, and the install is where the person who would
+check it is standing. This section is the design note, not the instruction.
+
+What it says to check is the downloaded *asset*, and that detail is not
+cosmetic: on `darwin-arm64` gh ad-hoc codesigns an extension binary in place
+after downloading it (`codesignBinary` in cli/cli's extension manager), which
+rewrites the file. The installed copy therefore hashes to something the
+attestation does not cover, and pointing an operator at it would produce a
+verification failure on a genuine build — the most expensive kind of wrong
+answer this could give.
+
+One limit worth knowing rather than discovering: the action attests *after*
+its release script has already created the release and uploaded the assets,
+so a failing attest step leaves a published release whose assets carry no
+attestation. It fails the workflow, and it is visible as a red release run,
+but nothing withdraws the release. Re-running the job is the fix; that
+ordering is the action's and not ours to change.
+
+Attestations rather than GPG, deliberately, and `release.yml` says so on the
+`gpg_fingerprint` input it does not pass. The action supports both. The
+difference is what each costs to hold: an attestation is signed with an OIDC
+token minted for the one run and never stored, so adopting it changes
+nothing about what a leak of this repository's secrets would be worth, while
+a GPG signature needs a long-lived private key sitting in a repository
+secret — the one credential whose theft would let someone sign a malicious
+build. For a tool this size that liability outweighs what it buys, which is
+verification by tools that predate all of this and evidence that survives
+the repository moving off GitHub. Both of those are real, and both are the
+reason the input is commented rather than deleted.
+
+Signing needs two grants publishing does not: `id-token: write` to mint the
+token, and `attestations: write` to record the result. They live on the
+`release` job, along with the `contents: write` that was already there, and
+the file's own `permissions:` is `contents: read`. That split is the point —
+at the top of the file those grants would also reach the test gate, which
+runs the suite and installs an npm package, and the blast radius of a tag is
+supposed to be one job. No secret is involved anywhere in it; the run's own
+`GITHUB_TOKEN` is the whole of what either half uses.
+
 ### Why the repository is named `gh-archimedes`
 
 gh will only install an extension from a repository whose name starts with
