@@ -247,7 +247,10 @@ Two things follow for a driver you write:
   nothing to forward to before there is a process. What makes it harmless is
   ordering. Snapshot and arm first, scaffold second, and a signal that beats
   your traps also beats anything there would have been to undo. Both shipped
-  drivers are written that way.
+  drivers that put a repo back — `pocock` and `spec-kit` — are written that
+  way. `openspec` is not, and does not need to be: it is
+  path-parameterized, so it never promised the repo back and rolls nothing
+  back on any exit path.
 
 Only the *first* signal is forwarded. An operator who hits Ctrl-C again
 because the first appeared to do nothing is told what is being waited for

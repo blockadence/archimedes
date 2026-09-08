@@ -147,8 +147,8 @@ type relay struct {
 // there is a process. What bounds it is a driver-side ordering rather than
 // anything arranged here: a driver that arms its traps before it lets
 // anything write to the target repo has nothing in there to roll back
-// during that window. Both shipped drivers do, and drivers/README.md asks
-// it of the next one.
+// during that window. The two shipped drivers that put a repo back do,
+// and drivers/README.md asks it of the next one.
 func watchForInterrupts(progress io.Writer) *relay {
 	r := &relay{progress: progress}
 	if !canForwardInterrupts {
