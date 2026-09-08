@@ -138,8 +138,9 @@ flattening hard wraps first because `archimedes` and its subcommand can sit
 on two lines. What a subcommand writes into an instance is covered by being
 in the instance rather than by anything naming it; a subcommand added later
 is covered by joining that scaffolding, which is also what holds it to
-`TestAScaffoldedInstanceIsTheSameHoweverItWasInvoked`. Two companions hold the other end: that
-the README section still exists and still shows both forms, and that
+`TestAScaffoldedInstanceIsTheSameHoweverItWasInvoked`. Two companions hold
+the other end: that the README section still exists and still shows both
+forms, and that
 `AGENTS.md` still names it, since a renamed heading would leave the one
 cross-reference an agent follows pointing at nothing. A sentence added
 later that spells an invocation out fails the suite rather than shipping.
@@ -162,10 +163,11 @@ worktrees beside them again, so one directory higher would be reading
 repositories this tool only writes into, whose content is deliberately
 fixed under both installs. The test stands one of those files in beside the
 instance and asserts it was never read, so moving the root fails saying so
-rather than quietly starting to police somebody else's repo. `scaffolding/` is the opposite case and stays in: it
-lives inside the instance and is pushed into other repos, which is a
-stricter rule than this one rather than a different one, so it has nothing
-here to fail.
+rather than quietly starting to police somebody else's repo.
+
+`scaffolding/` is the opposite case and stays in: it lives inside the
+instance and is pushed into other repos, which is a stricter rule than this
+one rather than a different one, so it has nothing here to fail.
 
 ### Version
 
