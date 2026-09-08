@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,6 +78,70 @@ func TestInitPointsAtTheNextCommandInTheFormTheOperatorCanRun(t *testing.T) {
 				t.Errorf("init's next step does not say %q:\n%s", tc.want, out)
 			}
 		})
+	}
+}
+
+// What init writes is the instance's own content from the moment it lands:
+// committed to its history, edited by its operator, read by teammates and
+// agents on machines that may have the other install or neither. So unlike
+// the parting line above, none of it may record which install scaffolded it
+// -- one identical instance, whoever ran the command.
+func TestInitWritesTheSameInstanceHoweverItWasInvoked(t *testing.T) {
+	scaffold := func(ghExtension string) map[string]string {
+		t.Setenv("GH_EXTENSION", ghExtension)
+		parent := initParent(t)
+		execute(t, "init", "widgets", parent)
+
+		root := filepath.Join(parent, "widgets")
+		files := map[string]string{}
+		// The instance's own git history is excluded: two runs commit at
+		// two times, so it differs by hash for a reason that is not this.
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case d.IsDir():
+				if d.Name() == ".git" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			files[rel] = string(content)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return files
+	}
+
+	standalone, extension := scaffold(""), scaffold("1")
+
+	if len(standalone) == 0 {
+		t.Fatal("scaffolded nothing to compare")
+	}
+	for path, want := range standalone {
+		got, ok := extension[path]
+		if !ok {
+			t.Errorf("the gh extension install scaffolds no %s", path)
+			continue
+		}
+		if got != want {
+			t.Errorf("%s differs by install:\nstandalone:\n%s\ngh extension:\n%s", path, want, got)
+		}
+	}
+	for path := range extension {
+		if _, ok := standalone[path]; !ok {
+			t.Errorf("the gh extension install scaffolds an extra %s", path)
+		}
 	}
 }
 

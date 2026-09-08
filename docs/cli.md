@@ -84,6 +84,41 @@ Two kinds of mention deliberately stay fixed, and the test is scoped to
 
 **The binary knows which build it is.** See below.
 
+### What an instance's own docs name
+
+The template `init` scaffolds sits on the file side of that line and cannot
+be settled by holding one form fixed: an instance's `README.md`,
+`AGENTS.md` and `drivers/README.md` exist to tell a reader what to run, and
+half of those readers installed the other way. Substituting the invoking
+form as `init` writes is the tempting fix and is wrong for the reason the
+bullet above is right — the instance's committed content would then record
+which install created it, and read wrong for the teammate with the other
+one. `TestInitWritesTheSameInstanceHoweverItWasInvoked` holds that shut,
+and `tests/gh_extension_packaging.sh` holds it shut against the real
+release artifact.
+
+So the template names no invocation at all. It names the subcommand alone —
+`spawn`, `run-driver <name> <repo-path> <output-path>`, "the `drivers`
+listing" — and says once, in `README.md` under "Running a command", what an
+operator puts in front of it. `AGENTS.md` points at that section rather
+than restating it, because its reader is a coding agent that will do as it
+is told and otherwise reach for a binary that may not be on the `PATH`. The
+only fenced invocation in the whole template is the one in that section,
+which shows both forms.
+
+That is a prose convention, so it is guarded like one:
+`TestTheInstanceTemplateNamesNoCommandHalfItsReadersHaventGot` walks every
+embedded template file against the real subcommand list, flattening hard
+wraps first because `archimedes` and its subcommand can sit on two lines.
+Its two companions hold the other end: that the README section still exists
+and still shows both forms, and that `AGENTS.md` still names it, since a
+renamed heading would leave the one cross-reference an agent follows
+pointing at nothing. A sentence added later that spells an invocation out
+fails the suite rather than shipping. Instances
+that already exist keep the docs they were scaffolded with: nothing
+refreshes a template file into an instance, which is the same rule that
+makes the seeded content theirs (see "Two embedded trees").
+
 ### Version
 
 `--version` has to answer "which build is this?", and a downloaded release
@@ -132,6 +167,11 @@ The workflow runs the test suites first (`needs: test`, calling the same
 job a push runs) and publishes only if they pass, so a tag on a red tree
 produces no release, no assets, and no half-uploaded matrix.
 
+That gate is the free suite, deliberately: it needs no credential and
+reaches no billed API, so a release never waits on somebody else's service.
+The billed half — the two live driver tests — is a `workflow_dispatch` away
+and worth running by hand first; see [The live driver tests](#the-live-driver-tests).
+
 `cli/gh-extension-precompile` builds the platform matrix, creates the
 release, and attaches the binaries. A tag containing a `-` (`v0.2.0-rc.1`)
 publishes as a prerelease, which `gh extension install` will not hand to
@@ -152,6 +192,56 @@ Asset names end with `<os>-<arch>`, because matching the tail of an asset
 name against the platform it is installing onto is how gh picks the file to
 download. A rename that appends anything after that leaves a release that
 looks fine on GitHub and installs on nothing.
+
+The run also sets the action's `generate_attestations`, which puts
+`actions/attest-build-provenance` over `dist/` before the assets are
+uploaded. Each asset comes out bound to the workflow, repository and commit
+that built it, and anyone holding the download can check that binding:
+
+```
+gh attestation verify <the-binary> --repo blockadence/gh-archimedes
+```
+
+That command belongs in `README.md`'s install section, next to `gh extension
+install`, and is there — an attestation nobody is told how to check is
+ceremony rather than evidence, and the install is where the person who would
+check it is standing. This section is the design note, not the instruction.
+
+What it says to check is the downloaded *asset*, and that detail is not
+cosmetic: on `darwin-arm64` gh ad-hoc codesigns an extension binary in place
+after downloading it (`codesignBinary` in cli/cli's extension manager), which
+rewrites the file. The installed copy therefore hashes to something the
+attestation does not cover, and pointing an operator at it would produce a
+verification failure on a genuine build — the most expensive kind of wrong
+answer this could give.
+
+One limit worth knowing rather than discovering: the action attests *after*
+its release script has already created the release and uploaded the assets,
+so a failing attest step leaves a published release whose assets carry no
+attestation. It fails the workflow, and it is visible as a red release run,
+but nothing withdraws the release. Re-running the job is the fix; that
+ordering is the action's and not ours to change.
+
+Attestations rather than GPG, deliberately, and `release.yml` says so on the
+`gpg_fingerprint` input it does not pass. The action supports both. The
+difference is what each costs to hold: an attestation is signed with an OIDC
+token minted for the one run and never stored, so adopting it changes
+nothing about what a leak of this repository's secrets would be worth, while
+a GPG signature needs a long-lived private key sitting in a repository
+secret — the one credential whose theft would let someone sign a malicious
+build. For a tool this size that liability outweighs what it buys, which is
+verification by tools that predate all of this and evidence that survives
+the repository moving off GitHub. Both of those are real, and both are the
+reason the input is commented rather than deleted.
+
+Signing needs two grants publishing does not: `id-token: write` to mint the
+token, and `attestations: write` to record the result. They live on the
+`release` job, along with the `contents: write` that was already there, and
+the file's own `permissions:` is `contents: read`. That split is the point —
+at the top of the file those grants would also reach the test gate, which
+runs the suite and installs an npm package, and the blast radius of a tag is
+supposed to be one job. No secret is involved anywhere in it; the run's own
+`GITHUB_TOKEN` is the whole of what either half uses.
 
 ### Why the repository is named `gh-archimedes`
 
@@ -302,8 +392,7 @@ as skipped and names it in the summary rather than folding it into "0
 failed" — the distinction between a suite that passed and a suite that
 mostly didn't run. Two files are opt-in that way, because they make a real,
 billed `claude -p` call: `tests/pocock-driver-e2e.sh` and
-`tests/spec-kit-driver-e2e.sh`, both behind `ARCHIMEDES_TEST_LIVE_DRIVERS=1`
-and both run by hand rather than by CI.
+`tests/spec-kit-driver-e2e.sh`, both behind `ARCHIMEDES_TEST_LIVE_DRIVERS=1`.
 
 ```
 ARCHIMEDES_TEST_LIVE_DRIVERS=1 ./tests/run-all.sh   # includes the live e2e files
@@ -314,6 +403,52 @@ only the `openspec` CLI (`npm install -g @fission-ai/openspec`), which the
 workflow installs so that it runs there too — pinned to a version there,
 since that install is the one part of a release gate that reaches the
 network, and an upstream reword should not be able to hold up a tag.
+
+## The live driver tests
+
+Those two files are the only place the drivers meet the real tools they
+wrap, so they cannot simply stay skipped — but they also cannot run on a
+push, since a gate that spends money and needs a credential is a gate that
+fails when somebody else's API is down. They run instead in
+`.github/workflows/live-drivers.yml`: weekly on a Monday-morning cron, and
+on demand via `workflow_dispatch`, which is the pre-tag ritual — dispatch
+it, watch it go green, then push the tag. A red run files an issue labelled
+`live-drivers` (and comments on that same issue while it stays red) rather
+than relying on anyone noticing a square.
+
+What that costs, so the schedule isn't a surprise on a bill: two headless
+sessions per run against a throwaway repo holding one small source file, on
+the order of $0.10–$0.50 a session — so $0.20–$1.00 a run, and $10–$52 a
+year across the 52 weekly runs. Treat those as estimates until the first
+month's usage lands, then correct the numbers here and in the workflow's
+header comment. Changing the cadence is one line.
+
+The credential is an `ANTHROPIC_API_KEY` secret on a `live-drivers`
+[deployment environment][envs], not a repository secret, so only a job that
+names that environment can read it. One-time setup: create the environment
+under Settings → Environments and add the secret there. Resist adding a
+required reviewer to that environment, tempting as it is on a workflow that
+spends money: the protection rule gates *every* job naming the environment,
+so the weekly run would sit waiting for an approval nobody knows to give,
+and the schedule this issue exists to create would quietly stop. Add the
+secret *only* to the environment: `secrets.ANTHROPIC_API_KEY`
+resolves a repository-level secret of the same name just as happily, so a
+repo-wide one would quietly undo the scoping without changing a line of
+YAML. Until the environment exists the workflow fails on its first step
+with a message saying so, rather than deep in a test log. Nothing triggers this workflow from a pull
+request, which is deliberate and pinned by `tests/ci_runs_live_drivers.sh`:
+a fork's PR runs the base repo's workflow files, so a `pull_request`
+trigger on a job holding that key would hand it to anyone.
+
+[envs]: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment
+
+What the live files add over the free suite is the upstream half only —
+that the real `claude` and `specify` CLIs still behave the way the drivers
+assume. Each driver's own orchestration is covered on every push against
+stub CLIs: `tests/pocock_driver_run.sh` and `tests/spec_kit_driver_run.sh`.
+That split is why a weekly cadence is enough. A change of ours that breaks
+a driver fails on the push that made it; only a change of theirs waits for
+Monday.
 
 ## Test fixtures
 
