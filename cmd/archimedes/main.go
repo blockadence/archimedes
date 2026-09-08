@@ -15,7 +15,10 @@ func main() {
 	// out — so this only decides the exit status. Printing the error
 	// again here would show every failure twice, and the second copy is
 	// the one that mangles a multi-line message.
+	//
+	// Which status is cmd.ExitStatus's question: one for an ordinary
+	// failure, and the driver's own for a run a signal stopped.
 	if err := cmd.Execute(context.Background()); err != nil {
-		os.Exit(1)
+		os.Exit(cmd.ExitStatus(err))
 	}
 }

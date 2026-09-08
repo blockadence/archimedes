@@ -247,13 +247,40 @@ func pruneEmptied(repoPath, fixedPath string) {
 }
 
 // run executes the driver, streaming both its streams to progress so
-// whatever it reports reaches the operator.
+// whatever it reports reaches the operator — including whatever it has to
+// say on its way out when a signal aimed at archimedes is passed on to it.
+//
+// Started and waited for rather than Run, because there is something to do
+// in between: a driver is put in a process group of its own and handed the
+// interrupts archimedes receives, and archimedes then keeps waiting for the
+// rollback that follows. See interrupt.go for the whole of that.
 func run(bin string, progress io.Writer, args ...string) error {
+	out := &serialized{w: progress}
+
 	cmd := exec.Command(bin, args...)
-	cmd.Stdout = progress
-	cmd.Stderr = progress
-	if err := cmd.Run(); err != nil {
+	cmd.Stdout = out
+	cmd.Stderr = out
+	isolateProcessGroup(cmd)
+
+	relay := watchForInterrupts(out)
+	if err := cmd.Start(); err != nil {
+		if sig, ok := relay.release(); ok {
+			return stoppedBy(sig, nil)
+		}
 		return fmt.Errorf("%s: %w", bin, err)
+	}
+	relay.forwardTo(cmd.Process.Pid)
+	waitErr := cmd.Wait()
+
+	// Asked before the wait's own error, because a driver that was told to
+	// stop exits non-zero by design: reporting that as an ordinary failure
+	// would lose both the reason the run ended and the status a caller
+	// reads to find out whether the repo was left clean.
+	if sig, ok := relay.release(); ok {
+		return stoppedBy(sig, cmd.ProcessState)
+	}
+	if waitErr != nil {
+		return fmt.Errorf("%s: %w", bin, waitErr)
 	}
 	return nil
 }

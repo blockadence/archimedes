@@ -219,6 +219,50 @@ modes are supported:
   the files back, names them, and fails the run rather than harvesting a map
   from a session that would not keep to what it was told.
 
+## Being stopped
+
+A driver runs in a process group of its own, and every `SIGINT` or `SIGTERM`
+that reaches Archimedes is passed on to that group — the command, and
+anything it started. Archimedes then goes back to waiting: it does not exit
+until the driver has, so whatever the driver writes on its way out reaches
+the operator.
+
+Two things follow for a driver you write:
+
+- **You are the only thing that can put the target repo back.** The signal
+  is delivered so that your cleanup gets to run, and Archimedes waits so
+  that it has time to. Nothing outside your process undoes what a run left
+  in someone else's repository. `lib/repo-snapshot.sh` is the route, and its
+  `exit_on_interrupt` is what turns the signal into a trip through your exit
+  trap.
+- **Exit `128 +` the signal's number** — 130 for a `SIGINT`, 143 for a
+  `SIGTERM`. Archimedes passes that straight through to whoever ran it
+  rather than inventing a status of its own, so it is the only thing a
+  supervisor, a `timeout(1)` or a parent harness has to read to find out how
+  a run ended and whether the repo was left clean.
+- **Arm the traps before anything writes to the target repo.** A run can be
+  stopped in its first milliseconds, and a signal that arrives before your
+  traps are set is one your shell takes the default action on — no exit
+  trap, no rollback. Archimedes cannot close that window for you: there is
+  nothing to forward to before there is a process. What makes it harmless is
+  ordering. Snapshot and arm first, scaffold second, and a signal that beats
+  your traps also beats anything there would have been to undo. Both shipped
+  drivers that put a repo back — `pocock` and `spec-kit` — are written that
+  way. `openspec` is not, and does not need to be: it is
+  path-parameterized, so it never promised the repo back and rolls nothing
+  back on any exit path.
+
+Only the *first* signal is forwarded. An operator who hits Ctrl-C again
+because the first appeared to do nothing is told what is being waited for
+instead, because a second copy would land in a rollback already running and
+leave the repo between two states. So a driver gets one interrupt and as
+long as it needs to act on it.
+
+What no arrangement here can cover is `SIGKILL`, which can neither be
+forwarded nor trapped: a driver killed that way leaves the target repo
+exactly as its session left it. `lib/repo-snapshot.sh` names that window and
+the others beside it.
+
 ## Trying one directly
 
 Every driver can be exercised outside of a mapping pass, with
