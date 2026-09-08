@@ -18,6 +18,15 @@
 # or a real agent session does, and ask one question afterwards: is the repo
 # as it was found?
 #
+# Then ask it again of the repo an operator actually has, which is a dirty
+# one, with the session writing over the part that made it dirty. That is the
+# one shape of "as it was found" no driver can deliver -- nothing keeps a copy
+# of what an uncommitted file said -- so what is required there is the nearest
+# thing that can be: the repo comes back dirty in exactly the way it started
+# dirty, and the run says which of the operator's files it wrote over. A floor
+# that asked only the first question would read stronger than any driver under
+# it, which is the failure this file exists to prevent, not to commit.
+#
 # This is a floor, not a replacement. What each driver does about the
 # leftovers it finds is its own business and the two shipped ones answer
 # differently on purpose (spec-kit restores and succeeds, pocock restores
@@ -68,6 +77,13 @@ SESSION_LOG="$WORK/session-wrote"
 export CONFORMANCE_LEFTOVER="conformance-leftover.md"
 export CONFORMANCE_LEFTOVER_DIR="conformance-leftovers"
 export CONFORMANCE_EMPTY_DIR="conformance-empty"
+
+# Work the operator already had in the repo, uncommitted, when the run
+# started. Seeded only for the second pass below, and the stub writes over it
+# only where it finds it, so the first pass is untouched. A repo somebody is
+# working in is normally in this state, which is why it gets a pass of its own
+# rather than a line in the one above.
+export CONFORMANCE_PRIOR_WORK="operator-uncommitted.md"
 
 # Every driver directory under <drivers-dir> whose manifest declares
 # fixed-location, name-ordered. Read from the manifests because that is
@@ -177,6 +193,16 @@ if [ -n "$tracked" ] && [ "$tracked" != "$fixed" ]; then
   wrote "$tracked"
 fi
 
+# Work that was already in the repo, uncommitted, before this run started --
+# the shape no cleanup can undo, because nothing kept a copy of what it said.
+# Written directly rather than through write_file: that one refuses to touch
+# the fixed path and logs a path the driver is expected to have removed, and
+# neither is true here.
+if [ -n "${CONFORMANCE_PRIOR_WORK:-}" ] && [ -f "$repo/$CONFORMANCE_PRIOR_WORK" ]; then
+  printf '%s\n' "written over by the session" > "$repo/$CONFORMANCE_PRIOR_WORK"
+  wrote "$CONFORMANCE_PRIOR_WORK"
+fi
+
 # A directory the run created and left empty. git tracks no directories, so
 # a driver that asked `git status` whether it had finished cleaning up would
 # be told yes.
@@ -199,10 +225,15 @@ STUB
 # to judge -- what counts as a pass differs between the drivers this holds
 # to the contract and the deliberately broken one that proves it can tell.
 #
+# Passing a third argument seeds the repo with work the operator had left
+# uncommitted, which the stub session then writes over. That case cannot share
+# the first one's verdict -- the repo is meant to come back dirty, in exactly
+# the way it started dirty -- so it has its own assertions below.
+#
 # Returns non-zero, silently, only when the check cannot be carried out at
 # all -- the driver names no CLI to stand in for.
-run_with_misbehaving_session() { # <drivers-dir> <driver-name>
-  local dir="$1" name="$2" manifest driver_command fixed clis cli
+run_with_misbehaving_session() { # <drivers-dir> <driver-name> [<seed-prior-work>]
+  local dir="$1" name="$2" prior="${3:-}" manifest driver_command fixed clis cli
   manifest="$dir/$name/driver.yaml"
   driver_command="$dir/$name/$(manifest_field "$manifest" command)"
   fixed="$(manifest_field "$manifest" fixed_path)"
@@ -225,6 +256,7 @@ run_with_misbehaving_session() { # <drivers-dir> <driver-name>
 
   rm -rf "$REPO"
   make_widget_repo "$REPO"
+  [ -n "$prior" ] && printf '%s\n' "notes the operator had not committed" > "$REPO/$CONFORMANCE_PRIOR_WORK"
   rm -f "$SESSION_LOG" "$SESSION_LOG.calls" "$WORK/harvested.md"
 
   # ARCHIMEDES_DRIVERS_DIR rather than the copy inside the binary, so the
@@ -248,6 +280,13 @@ session_wrote_beyond_the_fixed_path() {
   grep -qxF "$CONFORMANCE_LEFTOVER" "$SESSION_LOG" 2>/dev/null
 }
 
+# The same question for the second pass: did the session get as far as writing
+# over the work the repo already had? Asked for the same reason -- a driver
+# that never reached a session leaves that file untouched too.
+session_wrote_over_the_prior_work() {
+  grep -qxF "$CONFORMANCE_PRIOR_WORK" "$SESSION_LOG" 2>/dev/null
+}
+
 # The verdict on a run that has just happened, for a driver expected to keep
 # the contract: did the session get far enough for there to be anything to
 # keep, and did the repo come back as it was found? Written once because the
@@ -262,6 +301,42 @@ assert_kept_the_repo_as_it_found_it() {
     cat "$WORK/run.log" >&2
   fi
   assert_widget_repo_pristine "$REPO" "$1"
+}
+
+# The verdict on the second pass, where the repo was already dirty and the
+# session wrote over the part that made it dirty. Two different things are
+# being asked, and the contract turns on both:
+#
+#   the repo comes back dirty in exactly the way it started dirty -- the
+#   driver's cleanup did not take the operator's file with it, which is the
+#   easy half and the one the shipped drivers already got right; and
+#
+#   the run said so. Nothing can put those contents back, so a driver that
+#   tidied up silently would leave an operator with a file they will find
+#   rewritten one day with no record of when or by what. Saying it is the
+#   whole of what is available here, so saying it is required.
+# <driver-name>
+assert_named_the_work_it_wrote_over() {
+  if session_wrote_over_the_prior_work; then
+    pass "$1: the run reached a session, and the session wrote over work the repo already had uncommitted"
+  else
+    fail "$1: the run reached a session, and the session wrote over work the repo already had uncommitted"
+    cat "$WORK/run.log" >&2
+  fi
+
+  # WIDGET_REPO_PRISTINE plus the operator's own file, which sorts between the
+  # two entries it already names.
+  assert_eq "$(widget_repo_leftovers "$REPO")" ".git $CONFORMANCE_PRIOR_WORK src " \
+    "$1: nothing is left in the repo but what it started with and the operator's own file"
+  assert_eq "$(git -C "$REPO" status --porcelain)" "?? $CONFORMANCE_PRIOR_WORK" \
+    "$1: the repo is dirty in exactly the way it was dirty before, and no other"
+
+  if grep -qF "$CONFORMANCE_PRIOR_WORK" "$WORK/run.log" 2>/dev/null; then
+    pass "$1: the run names the uncommitted file it wrote over rather than tidying up around it in silence"
+  else
+    fail "$1: the run names the uncommitted file it wrote over rather than tidying up around it in silence"
+    cat "$WORK/run.log" >&2
+  fi
 }
 
 echo "which drivers this covers:"
@@ -285,6 +360,12 @@ while IFS= read -r name; do
 
   assert_kept_the_repo_as_it_found_it "$name" \
     "$(manifest_field "$ROOT/drivers/$name/driver.yaml" fixed_path)"
+
+  echo ""
+  echo "$name, run against a session that writes over work the repo already had:"
+  run_with_misbehaving_session "$ROOT/drivers" "$name" seed-prior-work \
+    || fail "$name: names every CLI it runs, so a stub session can be stood up for it"
+  assert_named_the_work_it_wrote_over "$name"
 done <<< "$SHIPPED"
 
 echo ""
@@ -461,6 +542,10 @@ assert_kept_the_repo_as_it_found_it "conformant" "THIRD.md"
 assert_file_exists "$WORK/harvested.md" \
   "a third driver written the documented way passes this check, with no test of its own to prove it"
 
+run_with_misbehaving_session "$SCRATCH" "conformant" seed-prior-work \
+  || fail "conformant: names the CLI it runs, so a session can be stood up for it"
+assert_named_the_work_it_wrote_over "conformant"
+
 run_with_misbehaving_session "$SCRATCH" "leaky" \
   || fail "leaky: names the CLI it runs, so a session can be stood up for it"
 if session_wrote_beyond_the_fixed_path && ! widget_repo_is_pristine "$REPO"; then
@@ -471,6 +556,18 @@ else
 fi
 assert_file_exists "$WORK/harvested.md" \
   "and it is caught having otherwise succeeded: valid manifest, harvested map, zero exit"
+
+# And caught on the second question as well, which is the one a driver can
+# fail while passing the first: nothing here rolls anything back, so nothing
+# here has anything to say about what the session wrote over.
+run_with_misbehaving_session "$SCRATCH" "leaky" seed-prior-work \
+  || fail "leaky: names the CLI it runs, so a session can be stood up for it"
+if session_wrote_over_the_prior_work && ! grep -qF "$CONFORMANCE_PRIOR_WORK" "$WORK/run.log" 2>/dev/null; then
+  pass "a fixed-location driver that writes over an operator's uncommitted work and says nothing is caught -- which is what makes the passes above mean anything"
+else
+  fail "a fixed-location driver that writes over an operator's uncommitted work and says nothing is caught (it named the file, so this check cannot tell)"
+  cat "$WORK/run.log" >&2
+fi
 
 for refused in undeclared partly-declared git-guarded; do
   if run_with_misbehaving_session "$SCRATCH" "$refused"; then

@@ -70,6 +70,28 @@
 # list above would need. A driver that never got to run its trap still
 # leaves a repo nobody holds a record of.
 #
+# WHAT THE ROLLBACK CANNOT PUT BACK, EVEN WHEN IT RUNS TO THE END. The list
+# above is about a rollback that never got to finish. This one is about one
+# that finished and still left an operator worse off, and it needs saying
+# separately because it happens on the ordinary success path.
+#
+# A repo somebody is working in is normally dirty -- that is the state the
+# drivers are pointed at, not an edge case -- and undoing a run must not mean
+# undoing the operator too, so everything the snapshot already lists is left
+# exactly as it is. That is right until the run writes to one of those paths.
+# Nothing here holds a copy of what an uncommitted file said before, and
+# keeping one would mean holding the contents of every untracked path in the
+# repo, so a run that wrote over the operator's own work leaves it written
+# over. That much is unchanged and is not going to change: restoring needs the
+# old contents, which is the expensive thing deliberately not kept.
+#
+# What it no longer does is happen quietly. snapshot_repo_state fingerprints
+# the paths the operator has work in flight in (the B records),
+# changed_since_snapshot reports the ones whose contents the run moved (the O
+# records), and restore_repo_state names them on its way out. Reporting is the
+# whole of it -- these are named, never restored -- and the line the
+# fingerprinting stops at is drawn, with its reasons, at changed_since_snapshot.
+#
 # Requires bash 4+ for associative arrays, same as the drivers that source
 # it. Sourced, not run: `source ../lib/repo-snapshot.sh`.
 
@@ -84,6 +106,22 @@
 #   U  an untracked path, ignored ones included -- a scaffolder that ships
 #      its own .gitignore would otherwise hide its output from us
 #   M  a tracked path that already differs from HEAD
+#   B  a path the operator already had uncommitted work in, recorded as
+#      "<fingerprint><TAB><path>" -- by content, so that a run writing over
+#      one can be told apart from the state that predated it
+#
+# U and B overlap on purpose, and the difference between them is the whole of
+# what each is for. U has to name every untracked path, ignored ones included,
+# because it is what stops the cleanup deleting node_modules. B has to name
+# none of them, because it reads their contents, and reading the contents of
+# every untracked path means reading the whole of node_modules on every run --
+# the cost that kept this unrecorded for as long as it was. What is left once
+# git's own ignore rules have been applied is the work the operator actually
+# has in flight, which is small enough to fingerprint and is the only part
+# worth being told about: an untracked note, an edited source file. What that
+# costs is bounded by how much the operator has going at once rather than by
+# how big the checkout is -- which is the whole reason the line is drawn
+# here, and is worth re-measuring rather than trusting if it ever moves.
 snapshot_repo_state() { # <repo-path>
   local repo="$1" head
   head="$(git -C "$repo" rev-parse --verify -q HEAD || true)"
@@ -100,6 +138,130 @@ snapshot_repo_state() { # <repo-path>
       printf 'M\t%s\0' "$p"
     done
   fi
+
+  uncommitted_work_paths "$repo" "$head" \
+    | fingerprint_paths "$repo" \
+    | while IFS= read -r -d '' record; do
+        printf 'B\t%s\0' "$record"
+      done
+}
+
+# Print, NUL-terminated, the paths in <repo-path> holding work the operator
+# has not committed: untracked files git is not ignoring, plus tracked files
+# that already differ from HEAD. The two sets cannot overlap -- a path is
+# either tracked or it is not -- so nothing is listed twice.
+#
+# `--exclude-standard` is the whole of the difference between this and the U
+# records, and it is deliberate rather than an oversight to fix later. See
+# snapshot_repo_state for what each list is for.
+#
+# <head> is passed in already resolved, empty for a repo with no commits yet,
+# rather than asked for again here: the only caller has just worked it out, and
+# a second answer to "where is HEAD" is a second answer the two could disagree
+# on if anything moved in between.
+uncommitted_work_paths() { # <repo-path> <head>
+  local repo="$1" head="$2"
+  git -C "$repo" ls-files --others --exclude-standard -z
+  # An `if` rather than a trailing `&&`, which would hand back a non-zero
+  # status for a repo with no commits yet -- and this runs in a pipeline
+  # inside a driver with `set -o pipefail`, where that ends the run.
+  if [ -n "$head" ]; then
+    git -C "$repo" diff --name-only -z HEAD
+  fi
+}
+
+# One "<fingerprint><TAB><path>" record, NUL-terminated, for a single path.
+# Both of fingerprint_paths' ways of not using the batch end here rather than
+# each spelling it out: they are the two failure paths of this file's one
+# fingerprinting step, and a second copy of a failure path is the copy that
+# drifts unwatched.
+#
+# The `|| h='-'` and the `${h:--}` are not the same guard twice. The first is
+# what stops `set -e` -- which every driver sourcing this file has on -- from
+# killing the run on a command substitution that exited non-zero; the second
+# is what fills in a git that exited zero having said nothing.
+hash_one_path() { # <repo-path> <relpath>
+  local h
+  h="$(git -C "$1" hash-object --no-filters -- "$2" 2>/dev/null </dev/null)" || h='-'
+  printf '%s\t%s\0' "${h:--}" "$2"
+}
+
+# Read NUL-terminated paths, relative to <repo-path>, on stdin; print one
+# NUL-terminated "<fingerprint><TAB><path>" record for each, in no particular
+# order. Every path read gets a record, so the caller can compare two runs of
+# this by path alone.
+#
+# The fingerprint is git's own blob hash of the file, or `-` for a path that
+# is not there, is not a regular file, or cannot be read. `-` is a value like
+# any other rather than an omission: a path the operator had deleted but not
+# committed, and a path the run deleted, then compare the same way everything
+# else does, and neither needs a special case anywhere upstream.
+#
+# The hash rather than an mtime because mtime lies in both directions -- a
+# write inside the filesystem's timestamp granularity does not show, and a
+# tool that puts the mtime back hides one that did. The hash's own blind spot
+# is a write that leaves the file byte-for-byte identical, which is not a loss
+# to report.
+#
+# `--no-filters` because the question is what the bytes on disk are, not what
+# git would store for them. Without it the answer would move whenever a run
+# wrote a .gitattributes -- which a scaffolder does -- and two identical files
+# would read as one written over; and a filter that normalized line endings
+# would hide one that really was.
+#
+# One `git hash-object` for the lot of them, because the per-path shape is a
+# fork each and the set can be as large as the operator's working tree.
+fingerprint_paths() { # <repo-path>
+  local repo="$1" list hashes p lf=$'\n' cr=$'\r'
+  local -a batch=()
+
+  list="$(mktemp)" || return 1
+  hashes="$(mktemp)" || { rm -f "$list"; return 1; }
+
+  # Gathered into an array and written out in one go afterwards, rather than
+  # streamed to a file descriptor: this is a library, and a spare fd opened
+  # inside it is one the caller may already be using for something else.
+  while IFS= read -r -d '' p; do
+    if [ -f "$repo/$p" ] && [ -r "$repo/$p" ]; then
+      case "$p" in
+        *"$lf"* | *"$cr"* | '"'*)
+          # Three shapes `--stdin-paths` cannot be handed, because it reads
+          # one path per line: a newline ends the path early, a carriage
+          # return is stripped off the end of it, and anything arriving
+          # quoted is unquoted. The last two are the dangerous ones -- git
+          # answers for the wrong file and exits zero, so the count check
+          # below sees a well-formed reply and the wrong hash gets pasted
+          # onto the right path. Hashed one at a time instead, where the
+          # path is an argument and nothing parses it.
+          hash_one_path "$repo" "$p" ;;
+        *)
+          batch+=("$p") ;;
+      esac
+    else
+      printf -- '-\t%s\0' "$p"
+    fi
+  done
+  if [ "${#batch[@]}" -gt 0 ]; then
+    printf '%s\n' "${batch[@]}" > "$list"
+  fi
+
+  if [ -s "$list" ]; then
+    # `git hash-object` stops at the first path it cannot open, so a shorter
+    # answer than the question is not a partial result to be salvaged --
+    # pasted back onto the path list it would attach every hash after the
+    # failure to the wrong file, which is worse than no answer at all. The
+    # count is what catches that, and the slow path re-asks one at a time.
+    if git -C "$repo" hash-object --no-filters --stdin-paths < "$list" > "$hashes" 2>/dev/null \
+      && [ "$(wc -l < "$hashes")" -eq "$(wc -l < "$list")" ]; then
+      paste "$hashes" "$list" | tr '\n' '\0'
+    else
+      while IFS= read -r p; do
+        hash_one_path "$repo" "$p"
+      done < "$list"
+    fi
+  fi
+
+  rm -f "$list" "$hashes"
 }
 
 # What the run did to <repo-path> since <snapshot-file> was taken, as
@@ -109,6 +271,10 @@ snapshot_repo_state() { # <repo-path>
 #   A  a path that has appeared since the snapshot
 #   C  a tracked path that has gone dirty since the snapshot -- changed,
 #      deleted, or staged
+#   O  a path the operator already had uncommitted work in, whose contents
+#      the run then overwrote or removed. Nothing can put these back
+#   S  a path that predated the run untracked, which the run then staged.
+#      The file is the operator's and stays; only the index entry is undone
 #
 # This is the one reading of what a run touched. Both things a driver does
 # about it come through here: undoing it (restore_repo_state) and telling
@@ -119,16 +285,24 @@ snapshot_repo_state() { # <repo-path>
 # Empty directories the run created are not reported: nothing was written in
 # them, so there is nothing to name. restore_repo_state prunes them anyway.
 #
-# What this cannot see, and a driver relying on it must not claim to: a path
-# that was *already* untracked or already dirty when the snapshot was taken,
-# whose contents the run then overwrote. The snapshot records those paths by
-# name, not by content, so the run's write to one is indistinguishable from
-# the state that predated it. Recording content instead would mean hashing
-# every untracked path in the repo -- `git ls-files --others` lists ignored
-# ones too, deliberately, so that is the whole of node_modules on every run.
-# The consequence is worth stating plainly: a session that clobbers an
-# operator's uncommitted work goes unreported, and unrestored. Closing that
-# needs a cheaper way to notice a write than reading the tree.
+# What this can see and what it still cannot, because a driver relying on it
+# must claim neither more nor less. A path the operator had already left
+# untracked or already left dirty is recorded by name *and* by content (the
+# snapshot's B records), so a run that writes over one is reported as O rather
+# than passed over as it once was. Reporting is all that is: putting such a
+# path back would need the old contents, which is the expensive thing
+# deliberately not kept, so O says what happened and stops.
+#
+# The line the fingerprinting stops at is git's own ignore rules. A path under
+# node_modules -- or anything else `git ls-files --others` lists because it
+# lists ignored ones deliberately -- has no B record, and a run's write to one
+# is still invisible here. That is the cost judged not worth paying, and it is
+# said here so a driver can repeat it rather than discover it.
+#
+# The comparison is by content, so it does not turn on mtime: a write that
+# lands inside the filesystem's timestamp granularity, or a tool that puts the
+# mtime back afterwards, is caught anyway. What is not caught is a write that
+# leaves the file byte-for-byte as it was, which is not a loss to report.
 #
 # Returns non-zero, printing why, if HEAD has moved since the snapshot --
 # see snapshot_head_unmoved.
@@ -137,9 +311,26 @@ changed_since_snapshot() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
 
   snapshot_head_unmoved "$repo" "$snapshot" || return 1
 
-  local -A before=() keep=()
+  local -A before=() keep=() fingerprint=()
+  local -a fingerprinted_order=()
   local record value
   while IFS= read -r -d '' record; do
+    # B records carry two fields where every other kind carries one, so they
+    # are read out here rather than folded into the name-keyed set below. The
+    # order they were written in is kept alongside, so what this reports comes
+    # out in the order the snapshot listed it rather than in whatever order a
+    # hash table hands back.
+    if [ "${record%%$'\t'*}" = "B" ]; then
+      value="${record#*$'\t'}"
+      # Added to the order once however many times it was recorded: an
+      # unmerged index has `git diff --name-only HEAD` name a path once per
+      # stage, and the report is a list for a person to read.
+      if [ -z "${fingerprint["${value#*$'\t'}"]+set}" ]; then
+        fingerprinted_order+=("${value#*$'\t'}")
+      fi
+      fingerprint["${value#*$'\t'}"]="${value%%$'\t'*}"
+      continue
+    fi
     before["${record%%$'\t'*}:${record#*$'\t'}"]=1
   done < "$snapshot"
   for value in "$@"; do keep["$value"]=1; done
@@ -158,8 +349,40 @@ changed_since_snapshot() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
     while IFS= read -r -d '' value; do
       [ -n "${before["M:$value"]:-}" ] && continue
       [ -n "${keep["$value"]:-}" ] && continue
+      # git now calls this a change to a tracked file; before the run it was
+      # an untracked file of the operator's. Only one thing does that without
+      # moving HEAD, which is the run having staged it, and it is reported as
+      # its own kind because the obvious reading is destructive: as an
+      # ordinary C, restore unstages it and then deletes it, HEAD having never
+      # heard of it -- these helpers destroying the very uncommitted work they
+      # exist to leave alone.
+      if [ -n "${before["U:$value"]:-}" ]; then
+        printf 'S\t%s\0' "$value"
+        continue
+      fi
       printf 'C\t%s\0' "$value"
     done < <(git -C "$repo" diff --name-only -z HEAD)
+  fi
+
+  # And the one reading nothing above can reach: the paths recorded by
+  # content. Re-fingerprinted by name from the B records rather than by asking
+  # git for the untracked set a second time, because a run that wrote a
+  # .gitignore -- which is exactly what a scaffolder does -- would have git
+  # answer that question differently afterwards, and a path that merely became
+  # ignored would read as a path that was written over.
+  if [ "${#fingerprint[@]}" -gt 0 ]; then
+    local -a work=()
+    for value in "${fingerprinted_order[@]+"${fingerprinted_order[@]}"}"; do
+      [ -n "${keep["$value"]:-}" ] && continue
+      work+=("$value")
+    done
+    if [ "${#work[@]}" -gt 0 ]; then
+      while IFS= read -r -d '' record; do
+        value="${record#*$'\t'}"
+        [ "${record%%$'\t'*}" = "${fingerprint["$value"]}" ] && continue
+        printf 'O\t%s\0' "$value"
+      done < <(printf '%s\0' "${work[@]}" | fingerprint_paths "$repo")
+    fi
   fi
 }
 
@@ -188,9 +411,17 @@ paths_changed_since_snapshot() { # <repo-path> <snapshot-file> [<keep-relpath> .
 # fixed_path, which has to survive for run-driver.sh to harvest).
 #
 # Paths that appeared since the snapshot are deleted; tracked paths that
-# have gone dirty since the snapshot are restored from HEAD; directories
-# that appeared and are now empty are removed. Anything already listed in
-# the snapshot is left exactly as it is.
+# have gone dirty since the snapshot are restored from HEAD; a path the run
+# staged that predated it untracked is unstaged and otherwise left alone;
+# directories that appeared and are now empty are removed. Anything already
+# listed in the snapshot is left exactly as it is.
+#
+# Except for the one thing this cannot do anything about, which it therefore
+# says out loud: uncommitted work the run wrote over. There is no copy of what
+# those paths said, so they are left as the run left them and named on stderr.
+# Named here, rather than left to the caller, because this is what a driver
+# runs from its exit trap -- on that path the caller is a script on its way
+# out and nothing else is going to ask.
 #
 # Returns non-zero, having changed nothing, if HEAD has moved since the
 # snapshot.
@@ -209,13 +440,15 @@ restore_repo_state() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
   records="$(mktemp)" || return 1
   changed_since_snapshot "$@" > "$records" || { rm -f "$records"; return 1; }
 
-  local -a added=() changed=()
+  local -a added=() changed=() staged=() overwritten=()
   local kind value record
   while IFS= read -r -d '' record; do
     kind="${record%%$'\t'*}"; value="${record#*$'\t'}"
     case "$kind" in
       A) added+=("$value") ;;
       C) changed+=("$value") ;;
+      S) staged+=("$value") ;;
+      O) overwritten+=("$value") ;;
     esac
   done < "$records"
   rm -f "$records"
@@ -233,6 +466,13 @@ restore_repo_state() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
       git -C "$repo" rm -q --cached --force -- "$value" >/dev/null 2>&1 || true
       rm -f "$repo/$value"
     fi
+  done
+
+  # Unstaged, and no further than that. The file predates the run and is the
+  # operator's; the index entry is the run's doing and the only part of this
+  # there is to undo.
+  for value in "${staged[@]+"${staged[@]}"}"; do
+    git -C "$repo" rm -q --cached --force -- "$value" >/dev/null 2>&1 || true
   done
 
   # Directories the run created, now that nothing of the run's is left in
@@ -253,6 +493,17 @@ restore_repo_state() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
     [ -n "${dirs_before["$value"]:-}" ] && continue
     rmdir "$repo/$value" 2>/dev/null || true
   done < <(list_repo_dirs "$repo")
+
+  # Silent when there is nothing to say, or it would be noise on every run
+  # against every repo anybody is working in.
+  if [ "${#overwritten[@]}" -gt 0 ]; then
+    {
+      echo "$repo is back as it was found, apart from uncommitted work the run wrote over, which nothing here holds a copy of:"
+      printf '  %s\n' "${overwritten[@]}"
+      echo "those paths are as the run left them. What they said before was never committed, so it cannot be put back from here."
+      echo "this list covers the paths git was not already ignoring. A run that wrote over an ignored one -- a .env, a local settings file -- is not counted here."
+    } >&2
+  fi
 }
 
 # Arm INT and TERM so that an interrupt takes the caller into its EXIT trap,

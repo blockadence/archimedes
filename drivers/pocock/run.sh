@@ -17,6 +17,13 @@
 # than it was asked for fails the run and is told what it wrote, because a
 # context map is not worth the operator finding out later that we let
 # something loose in their repository.
+#
+# "Put back" has one exception, and it is named here rather than left to be
+# discovered: work the operator had in the repo uncommitted, which the session
+# then wrote over. Nothing holds a copy of what those files said, so they stay
+# as the session left them -- the run fails naming them, and the rollback says
+# separately which ones it could not undo. ../lib/repo-snapshot.sh has the
+# reasoning, and the one place it still cannot look (paths git is ignoring).
 set -euo pipefail
 
 [ $# -eq 1 ] || { echo "usage: run.sh <repo-path>" >&2; exit 1; }
@@ -116,7 +123,7 @@ EXTRAS="$(paths_changed_since_snapshot "$REPO_PATH" "$SNAPSHOT" "$CONTEXT_MAP")"
 if [ -n "$EXTRAS" ]; then
   abort "the session wrote more than $CONTEXT_MAP in $REPO_PATH, which it was asked not to:
 $(printf '%s\n' "$EXTRAS" | sed 's/^/  /')
-everything it wrote is put back as this run exits, and no context map is harvested from a run that would not keep to the one file it was asked for"
+everything it wrote that can be put back is put back as this run exits -- if any of it was work this repo already had uncommitted, the rollback names those separately and cannot undo them -- and no context map is harvested from a run that would not keep to the one file it was asked for"
 fi
 
 # The map stays for run-driver.sh to harvest; anything else the run left --

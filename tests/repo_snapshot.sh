@@ -252,4 +252,205 @@ assert_contains "$err" "$REPO4" \
 assert_file_exists "$REPO4/.specify/memory/constitution.md" \
   "the refusal changes nothing -- unwinding a commit is the operator's call, not this helper's"
 
+echo ""
+echo "repo snapshot/restore, work the repo already had uncommitted:"
+
+# The hole the record-by-name snapshot could not see. A repo somebody is
+# working in is normally dirty -- an untracked note, an edited source file --
+# and the drivers are pointed at exactly those repos. Both kinds of path are
+# recorded by name, so a run's write to one used to be indistinguishable from
+# the state that predated it: the session clobbered the operator's work, the
+# cleanup left it alone because leaving it alone is what the name says to do,
+# and nothing anywhere said so.
+#
+# Unrestored it stays -- nothing here keeps a copy of what an uncommitted file
+# said, and that is a deliberate cost not paid. Unreported it does not.
+REPO7="$WORK/repo7"
+mkdir -p "$REPO7/src"
+echo "# readme" > "$REPO7/README.md"
+echo "console.log('hi')" > "$REPO7/src/index.js"
+echo "console.log('bye')" > "$REPO7/src/other.js"
+printf 'node_modules/\n' > "$REPO7/.gitignore"
+make_repo_at "$REPO7"
+
+# What the operator had in flight when the run started: two untracked files,
+# two edits to tracked ones, an older copy of the very file the run is for,
+# and something under an ignored directory.
+echo "notes to self" > "$REPO7/scratch-note.md"
+echo "half a thought" > "$REPO7/half-done.md"
+echo "an old map" > "$REPO7/CONTEXT.md"
+echo "// mine, uncommitted" >> "$REPO7/src/index.js"
+echo "// also mine" >> "$REPO7/src/other.js"
+mkdir -p "$REPO7/node_modules/pkg"
+echo "module.exports = 1" > "$REPO7/node_modules/pkg/index.js"
+
+SNAP7="$WORK/snapshot7"
+snapshot_repo_state "$REPO7" > "$SNAP7"
+
+# The session, having been asked for one file.
+echo "the map" > "$REPO7/CONTEXT.md"
+echo "helpfully rewritten" > "$REPO7/scratch-note.md"
+echo "console.log('reformatted')" > "$REPO7/src/index.js"
+rm "$REPO7/half-done.md"
+echo "module.exports = 2" > "$REPO7/node_modules/pkg/index.js"
+
+changed7="$(paths_changed_since_snapshot "$REPO7" "$SNAP7" CONTEXT.md)"
+
+assert_contains "$changed7" "scratch-note.md" \
+  "an untracked file the operator had not committed, whose contents the run wrote over, is named"
+assert_contains "$changed7" "src/index.js" \
+  "a tracked file the operator had already edited, whose contents the run wrote over, is named"
+assert_contains "$changed7" "half-done.md" \
+  "and one the run removed outright is named too -- removing it is the same loss as writing over it"
+assert_not_contains "$changed7" "src/other.js" \
+  "an uncommitted edit the run left alone is not named: being dirty is not the same as being written to"
+assert_not_contains "$changed7" "CONTEXT.md" \
+  "the kept path is not named even though the operator had uncommitted work in it -- writing that one is what the run was for"
+assert_not_contains "$changed7" "node_modules" \
+  "a path git is ignoring is not named: fingerprinting those would mean reading the whole of node_modules on every run, which is the cost this deliberately does not pay"
+
+# What restore then does about them, on the same repo and the same snapshot.
+# It cannot put any of them back, so the only thing left that is worth doing
+# is saying which ones -- and saying it here rather than leaving it to the
+# caller, because this runs from a driver's exit trap, where the caller is a
+# script on its way out and nothing else is going to ask.
+restore7="$(restore_repo_state "$REPO7" "$SNAP7" CONTEXT.md 2>&1 >/dev/null)"
+
+assert_contains "$restore7" "scratch-note.md" \
+  "restore says which of the operator's uncommitted files it could not put back"
+assert_contains "$restore7" "src/index.js" \
+  "including the tracked one, which HEAD could only restore by throwing the operator's own edit away as well"
+assert_contains "$restore7" "$REPO7" "and names the repo they are in"
+assert_eq "$(cat "$REPO7/scratch-note.md" 2>/dev/null)" "helpfully rewritten" \
+  "and leaves them as the run left them rather than guessing at what they said"
+assert_eq "$(cat "$REPO7/src/index.js" 2>/dev/null)" "console.log('reformatted')" \
+  "the tracked one included -- restoring it from HEAD would undo the operator's edit too"
+assert_file_missing "$REPO7/half-done.md" \
+  "and one the run removed stays removed, for the same reason: there is no copy of it"
+assert_eq "$(cat "$REPO7/src/other.js" 2>/dev/null)" \
+  "$(printf "console.log('bye')\n// also mine")" \
+  "an uncommitted edit the run left alone is still exactly as the operator left it"
+assert_file_exists "$REPO7/node_modules/pkg/index.js" \
+  "and an ignored path is still there -- unreported, but not deleted either"
+
+# The other half of the report: a run that touched none of it says nothing,
+# so the message means something when it does appear.
+REPO9="$WORK/repo9"
+mkdir -p "$REPO9"
+echo "# readme" > "$REPO9/README.md"
+make_repo_at "$REPO9"
+echo "notes to self" > "$REPO9/scratch-note.md"
+echo "# readme, edited by a human" > "$REPO9/README.md"
+SNAP9="$WORK/snapshot9"
+snapshot_repo_state "$REPO9" > "$SNAP9"
+echo "the map" > "$REPO9/CONTEXT.md"
+
+assert_eq "$(paths_changed_since_snapshot "$REPO9" "$SNAP9" CONTEXT.md)" "" \
+  "a run that wrote only what it was asked for names nothing, though the repo was dirty throughout"
+assert_eq "$(restore_repo_state "$REPO9" "$SNAP9" CONTEXT.md 2>&1 >/dev/null)" "" \
+  "and restore says nothing either -- the report has to be silent when there is nothing to report, or it is noise"
+
+echo ""
+echo "repo snapshot/restore, a run that staged what the repo already had:"
+
+# A session running the one git command that does not move HEAD, so nothing
+# above refuses. Before this, the staged path read as a tracked file gone
+# dirty, HEAD had never heard of it, and restore's answer to that is to
+# unstage it and delete it -- these helpers destroying the very uncommitted
+# work they exist to leave alone.
+REPO10="$WORK/repo10"
+mkdir -p "$REPO10"
+echo "# readme" > "$REPO10/README.md"
+make_repo_at "$REPO10"
+echo "notes to self" > "$REPO10/scratch-note.md"
+SNAP10="$WORK/snapshot10"
+snapshot_repo_state "$REPO10" > "$SNAP10"
+echo "the map" > "$REPO10/CONTEXT.md"
+git -C "$REPO10" add scratch-note.md
+
+changed10="$(paths_changed_since_snapshot "$REPO10" "$SNAP10" CONTEXT.md)"
+assert_contains "$changed10" "scratch-note.md" \
+  "a file the run staged is named: the run was told to run no git command that changes the repo"
+
+restore_repo_state "$REPO10" "$SNAP10" CONTEXT.md
+
+assert_file_exists "$REPO10/scratch-note.md" \
+  "restore does not delete a file that predated the run just because the run staged it"
+assert_eq "$(cat "$REPO10/scratch-note.md" 2>/dev/null)" "notes to self" \
+  "and leaves its contents alone -- the file is the operator's, only the index entry was the run's doing"
+assert_eq "$(git -C "$REPO10" status --porcelain)" "$(printf '?? CONTEXT.md\n?? scratch-note.md')" \
+  "the index entry the run added is undone, so the repo is dirty in exactly the way it was, plus the kept path"
+
+echo ""
+echo "repo snapshot/restore, paths git cannot be handed a line at a time:"
+
+# The fingerprinting asks git for every path in one go, which means handing it
+# a list one path per line -- and git reads that list the way it reads any
+# line: a newline ends a path early, a trailing carriage return is stripped off
+# it, and anything arriving quoted is unquoted. The last two are the ones worth
+# a test, because git then answers for a *different* file and exits zero, so
+# nothing downstream has any reason to doubt it. Given a sibling with the name
+# git resolves to, the wrong hash lands on the right path and the report is
+# quietly wrong in both directions at once.
+REPO11="$WORK/repo11"
+mkdir -p "$REPO11"
+echo "# readme" > "$REPO11/README.md"
+make_repo_at "$REPO11"
+
+CR_NAME="$(printf 'note\r')"
+printf 'the one with the carriage return\n' > "$REPO11/$CR_NAME"
+printf 'the sibling git resolves that name to\n' > "$REPO11/note"
+printf 'the one that looks quoted\n' > "$REPO11/\"quoted\".md"
+printf 'the one with a newline in it\n' > "$REPO11/$(printf 'two\nlines.md')"
+
+SNAP11="$WORK/snapshot11"
+snapshot_repo_state "$REPO11" > "$SNAP11"
+
+# Only the carriage-return one is written to. Its plain sibling is left alone,
+# so a fingerprint that had been taken from the sibling reports the reverse of
+# what happened: the file that changed looks untouched and the one that did not
+# looks written over.
+printf 'rewritten by the session\n' > "$REPO11/$CR_NAME"
+
+changed11="$(changed_since_snapshot "$REPO11" "$SNAP11" | tr '\0' '\n')"
+
+assert_contains "$changed11" "$CR_NAME" \
+  "a path whose name ends in a carriage return is fingerprinted as itself, so a write to it is reported"
+# Line-exact, because the record for the carriage-return path *starts* with
+# the sibling's whole name -- which is the entire trouble -- so anything less
+# than a whole-line match would be satisfied by the very record under test.
+if printf '%s\n' "$changed11" | grep -qxF "$(printf 'O\tnote')"; then
+  fail "its plain-named sibling is not reported in its place, which is the name git resolves when it reads the path a line at a time"
+else
+  pass "its plain-named sibling is not reported in its place, which is the name git resolves when it reads the path a line at a time"
+fi
+assert_eq "$(printf '%s\n' "$changed11" | grep -c "^O$(printf '\t')")" "1" \
+  "exactly one path is reported written over, so no second record was invented for a name that only looked like one"
+assert_not_contains "$changed11" '"quoted".md' \
+  "a path that arrives looking quoted is left alone when it is left alone, rather than answered for by the name inside the quotes"
+assert_not_contains "$changed11" "lines.md" \
+  "and one with a newline in its name is not reported either"
+
+echo ""
+echo "repo snapshot, a repo with no commits yet, under a driver's shell options:"
+
+# Every driver that sources this file runs under `set -euo pipefail`, and the
+# fingerprinting happens inside a pipeline. A helper in there that hands back a
+# non-zero status because there is no HEAD to diff against would not be a
+# missing record -- pipefail and errexit would take the whole run down before
+# the session ever started, on nothing worse than a repo whose first commit has
+# not been made.
+REPO12="$WORK/repo12"
+mkdir -p "$REPO12"
+git init -q "$REPO12"
+echo "started, not committed" > "$REPO12/scratch-note.md"
+
+if ( set -euo pipefail; snapshot_repo_state "$REPO12" > "$WORK/snapshot12" ); then
+  pass "snapshotting a repo with no commits yet succeeds under the shell options every driver sets"
+else
+  fail "snapshotting a repo with no commits yet succeeds under the shell options every driver sets"
+fi
+assert_contains "$(tr '\0' '\n' < "$WORK/snapshot12")" "scratch-note.md" \
+  "and it still fingerprints the work already sitting there, HEAD or no HEAD"
+
 report

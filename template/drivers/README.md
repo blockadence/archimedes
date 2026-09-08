@@ -196,6 +196,40 @@ modes are supported:
   route written down, and it generalizes to any driver in this position
   (`drivers adopt spec-kit` puts a copy here to read).
 
+  **One thing that route cannot put back, and no driver should claim it
+  can.** The repos you point these at are repos you are working in, so they
+  are normally dirty, and undoing a run must not mean undoing you: anything
+  already in the working tree when the run starts is left exactly as it is.
+  That is right until the run *writes* to one of those paths. Nothing keeps
+  a copy of what an uncommitted file said — keeping one would mean holding
+  the contents of every untracked path in the repo, `node_modules` included
+  — so a session that rewrote your uncommitted `src/index.js` leaves it
+  rewritten, and `git checkout` would only make it worse by throwing your
+  edit away too.
+
+  What `lib/repo-snapshot.sh` does instead is notice and say so. It records
+  a hash of each path you have work in flight in, compares afterwards, and
+  names on stderr the ones the run wrote over or removed — so the run tells
+  you, once, at the moment it happens, rather than leaving you to find the
+  file rewritten some other day. `pocock` fails the run on top of that;
+  `spec-kit` succeeds and still says it.
+
+  The line it stops at is git's own ignore rules, and it is worth being
+  exact about which half of your repo that leaves out. Reading every ignored
+  path on every run means reading the whole of `node_modules`, which is the
+  cost that made this unrecordable in the first place — but "ignored" is not
+  only build output. A `.env`, a `.claude/settings.local.json`, a local
+  config you keep out of git on purpose: those hold real work, they are
+  ignored, and a run that writes over one is **not** reported. That is the
+  part still open, said here rather than left in a comment.
+
+  One more path is exempt, for a different reason: the driver's own
+  `fixed_path`. Writing that file is what the run is *for*, and Archimedes
+  moves it out of the repo afterwards by contract — so uncommitted work you
+  had sitting at `CONTEXT.md` before a `pocock` run is replaced and harvested
+  away without being reported as written over. Commit it first if you want
+  to keep it.
+
   For the drivers Archimedes ships, that obligation is checked rather than
   taken on trust: `tests/fixed_location_conformance.sh` in the Archimedes
   repository finds every driver declaring this mode by reading the manifests
@@ -203,8 +237,16 @@ modes are supported:
   standing in for the CLI it runs, has that stub write past the declared
   `fixed_path` the way a real scaffolder or a real agent session does, and
   asks the one question the contract turns on: did the repo come back as it
-  was found? It runs on every push and costs nothing, and a driver added
-  there needs no test of its own to be held to it.
+  was found?
+
+  Then it asks the same question of a repo that was already dirty, with the
+  session writing over the part that made it dirty — the case above, the one
+  no driver can undo. What it requires there is the nearest thing that can be
+  had: the repo comes back dirty in exactly the way it started dirty, and the
+  run *names* the file it wrote over. A driver that tidied up silently around
+  it fails, the same as one that left files behind. Both checks run on every
+  push and cost nothing, and a driver added there needs no test of its own to
+  be held to them.
 
   A driver *you* write here is outside that suite's reach — it runs in the
   Archimedes repository, over the drivers that ship from there — so this
@@ -295,6 +337,12 @@ above). The `drivers` listing shows whichever ones your install carries.
   A run that quietly deleted an agent's work in your repository and reported
   success would leave you with no way to know the prompt had stopped
   working.
+
+  Where the session wrote over work *you* had left uncommitted, the run
+  fails naming those files too — but they stay written over, because nothing
+  holds a copy of what they said. That is the one part of "put back" the
+  driver does not deliver, and the failure says so rather than implying
+  otherwise.
 - `spec-kit` — wraps [GitHub's Spec Kit](https://github.com/github/spec-kit)
   (`uv tool install specify-cli --from
   git+https://github.com/github/spec-kit.git`), also via a headless `claude
@@ -313,6 +361,13 @@ above). The `drivers` listing shows whichever ones your install carries.
   trap, not something on its success path, so a failed `specify init`, a
   session that does nothing, and a Ctrl-C halfway through all leave the repo
   as it was found.
+
+  With the same exception, answered differently: where the scaffolding or
+  the session wrote over work you had left uncommitted, the rollback names
+  those files and the run still succeeds. Scaffolding this repo was always
+  the job here, unlike `pocock`'s one-file promise, and failing the run would
+  not un-write anything — so what you get is the constitution and a line
+  telling you which of your own files was written over.
 
   The one thing that defeats it is a session that commits: everything the
   rollback reasons about is relative to the commit `HEAD` pointed at when
