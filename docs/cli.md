@@ -199,9 +199,10 @@ The billed half — the two live driver tests — is a `workflow_dispatch` away
 and worth running by hand first; see [The live driver tests](#the-live-driver-tests).
 
 `cli/gh-extension-precompile` builds the platform matrix, creates the
-release, and attaches the binaries. A tag containing a `-` (`v0.2.0-rc.1`)
-publishes as a prerelease, which `gh extension install` will not hand to
-anyone — the safe way to exercise the workflow end to end.
+release as a draft, and attaches the binaries; the workflow's own last step
+verifies them and promotes the draft. A tag containing a `-`
+(`v0.2.0-rc.1`) publishes as a prerelease, which `gh extension install`
+will not hand to anyone — the safe way to exercise the workflow end to end.
 
 The build itself is ours (`build_script_override`) rather than the action's,
 for two reasons the action cannot accommodate: the main package is
@@ -241,12 +242,82 @@ attestation does not cover, and pointing an operator at it would produce a
 verification failure on a genuine build — the most expensive kind of wrong
 answer this could give.
 
-One limit worth knowing rather than discovering: the action attests *after*
-its release script has already created the release and uploaded the assets,
-so a failing attest step leaves a published release whose assets carry no
-attestation. It fails the workflow, and it is visible as a red release run,
-but nothing withdraws the release. Re-running the job is the fix; that
-ordering is the action's and not ours to change.
+#### The run verifies its own attestations
+
+Asking for attestations is not the same as getting them. Everything above
+is an input in a file and a test that reads the file, and both are
+satisfied by a repository that has never produced a single attestation: the
+action gates its attest step on a string comparison against a
+composite-action input, so anything that stops producing that exact string
+skips the step rather than failing it. The run stays green, and the first
+person to find out is an operator whose `gh attestation verify` reports no
+attestation — which is exactly what they cannot tell apart from the
+tampering that command exists to catch.
+
+The workflow's last step runs `.github/release-verify.sh`, which is that
+same command over the assets in `dist/`. Running the operator's command
+rather than inspecting our own side of it is the point: it fails for the
+reasons theirs would.
+
+**A failed check publishes nothing.** `release.yml` passes the action's
+`draft_release: true`, so the release exists as a draft while it is
+checked, and `gh extension install` will not install from a draft — it
+reads `releases/latest`, which does not return drafts. The script promotes
+the draft on its last line and only there. Why that rather than publishing
+outright and going red on failure is argued on the input itself in
+`release.yml`; the short version is that a red run beside a downloadable
+asset is better than silence and still leaves the operator holding the one
+thing they cannot distinguish from tampering.
+
+To recover from a failed run: fix the cause and re-run. The action's
+`build_and_release.sh` calls `gh release view` before it creates anything,
+and gh's release lookup falls back to finding a *draft* by tag name, so the
+re-run finds the existing draft and re-uploads into it with `--clobber`.
+Nothing needs deleting first, and no second draft appears. Promoting the
+draft by hand stays available and stays a deliberate act.
+
+`dist/` is the whole of what a release publishes, which is what makes the
+check complete rather than merely broad — but only while `gpg_fingerprint`
+stays unset. Passing it makes the action additionally write `checksums.txt`
+and `checksums.txt.sig` *outside* `dist/` and attach those, and those two
+would be published assets nothing attests and nothing here verifies.
+That is not an argument about GPG (see below, and issue 33); it is a
+precondition of this check, and `tests/release_provenance.sh` pins it as
+one.
+
+What the check leans on outside this repository, because a red run nobody
+can act on is worse than no check at all: `gh`, which GitHub-hosted runners
+preinstall; **GitHub's attestations API**, which `gh attestation verify`
+asks for the attestation by artifact digest; and **Sigstore's trust root**,
+which it fetches to check the signing certificate.
+
+The second of those is the one with a real hazard in it. That read happens
+seconds after the same run wrote it, and if it is not immediately
+consistent, an unguarded check would fail a few percent of good releases —
+for which the fix people learn ("re-run it") is also the fix for a real
+failure. **Whether the read is actually racy is not established**, and it
+cannot be from outside a real release run. So the script carries a bounded
+retry budget shared across the assets as a hedge, not as a finding, and
+instruments it: a run that needed any retries prints a line beginning
+`ATTESTATION-LOOKUP-RETRIES=`, which is the measurement. If that shows up
+on most releases the read is racy in a way a bounded wait only hides, and
+the answer is `--bundle` — verify against the bundle the attest step
+produced instead of a lookup, which needs a path out of a step nested
+inside the composite action. If it never shows up, the budget cost nothing
+and the question is answered. Either way a wait cannot turn a real failure
+green: an attestation that does not exist never appears.
+
+Two limits it does not close. It verifies the bytes in `dist/`, which are
+the bytes uploaded in the same step, not a re-download from the release — a
+transfer that corrupted an asset would be caught by the operator and not by
+us. And it is proven against a stub `gh`
+(`tests/release_verifies_attestations.sh`), which drives it through every
+failure it is supposed to have — a missing attestation, a lookup not
+readable yet, a `dist/` a glob expanded to nothing, a draft flag that
+quietly stopped applying, a `gh` that eats the loop's stdin — but a stub is
+not a release. The first real tag is still the first real evidence.
+
+#### Attestations rather than GPG
 
 Attestations rather than GPG, deliberately, and `release.yml` says so on the
 `gpg_fingerprint` input it does not pass. The action supports both. The
