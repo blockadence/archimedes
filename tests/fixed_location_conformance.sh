@@ -18,12 +18,46 @@
 # or a real agent session does, and ask one question afterwards: is the repo
 # as it was found?
 #
+# That question is asked of both ways a run can end, because the promise is
+# made about both. A run that succeeds is the easy half. A run that is
+# *stopped* -- a Ctrl-C, a `kill`, a supervisor, a cancelled CI job -- is the
+# other, and it is the one that has to reach the rollback from a signal
+# rather than from the end of the script. It was tested a driver at a time
+# until this, and what that cost is on the record: the interrupt was being
+# swallowed by both shipped drivers at once, for the same reason, and it
+# took a flaky test under load to surface it. A bug present in every
+# implementation of a promise is the signature of a promise nothing
+# enumerates, which is what this file was written about in the first place.
+#
+# The ordering the contract asks for -- traps armed before anything writes
+# to the target repo -- is checked here rather than trusted, and without
+# racing the driver, which would be a test that passes whenever the machine
+# is busy. The seam gives it: the stub session runs inside the target repo
+# and announces itself only once it has written there, so a signal sent at
+# that moment finds a driver that already has something of the run's sitting
+# in someone else's repository. A driver that armed its traps first acts on
+# it and puts the repo back. One that armed them afterwards never hears
+# about it -- the session shuts down politely, and bash drops the copy it
+# was holding for traps that were not set yet -- so the run walks on,
+# finishes, and keeps the fixed_path back for a harvest that never comes,
+# because archimedes harvests nothing out of a run it was told to stop. The
+# map is left sitting in the repo, and that is what the one question
+# catches.
+#
+# What the seam cannot see is a driver that writes with its own hands and
+# arms only afterwards -- but still before running its session. Neither
+# shipped driver writes anything itself, so for them it covers the whole of
+# the ordering.
+#
 # This is a floor, not a replacement. What each driver does about the
 # leftovers it finds is its own business and the two shipped ones answer
 # differently on purpose (spec-kit restores and succeeds, pocock restores
 # and fails the run naming the files), so nothing here asserts an exit
-# status. tests/pocock_driver_run.sh and tests/spec_kit_driver_run.sh remain
-# where each driver's own behaviour is pinned down in detail.
+# status -- not on the success path, and not on the stopped one either,
+# where 128 + the signal's number is an obligation every driver carries
+# rather than one this mode adds. tests/pocock_driver_run.sh and
+# tests/spec_kit_driver_run.sh remain where each driver's own behaviour is
+# pinned down in detail, in both shapes an interrupt arrives in.
 #
 # No network and no billed call: the stubs are what keep this in the suite
 # that runs on every push, rather than in the weekly
@@ -37,18 +71,10 @@ source "$HERE/helpers.sh"
 # library with no bash 4+ guard in front of it. Nothing in this file needs
 # bash 4 either; it skips only because under an older one every
 # fixed-location driver refuses at its own guard, and there is then nothing
-# to hold to anything.
-#
-# So the version that decides is the one the *drivers* will get -- whatever
-# `#!/usr/bin/env bash` finds for them -- and not this file's own. They are
-# usually the same shell, and when they are not it is this file that would
-# be wrong: run under an old bash by hand, it would skip a floor the drivers
-# could have cleared.
-DRIVER_BASH_MAJOR="$(env bash -c 'echo "${BASH_VERSINFO[0]}"' 2>/dev/null)"
-if [ "${DRIVER_BASH_MAJOR:-0}" -lt 4 ]; then
-  echo "skip: fixed_location_conformance.sh (the fixed-location drivers need bash 4+ and the bash they would run under is $(env bash -c 'echo "$BASH_VERSION"' 2>/dev/null), so every one of them refuses and there is nothing to check here)"
-  exit 77
-fi
+# to hold to anything. Which bash that question is asked of, and why it is
+# not this file's own, is written down once at the helper.
+skip_without_driver_bash_4 "fixed_location_conformance.sh" \
+  "the fixed-location drivers need bash 4+, so every one of them refuses and there is nothing to check here"
 
 ROOT="$(cd "$HERE/.." && pwd)"
 build_archimedes || exit 1
@@ -59,6 +85,47 @@ trap 'rm -rf "$WORK"' EXIT
 REPO="$WORK/repo"
 STUB_BIN="$WORK/bin"
 SESSION_LOG="$WORK/session-wrote"
+# Where a stub session says it has finished writing and is now waiting to be
+# signalled away, for the cases that stop a run halfway. Its `.expired`
+# neighbour is how a session that waited the whole way out and gave up says
+# so -- see the backstop in the stub.
+#
+# Repointed per driver by start_run, and named after it, because the one
+# path a run can be abandoned on leaves a stub behind: a session whose
+# archimedes was killed for never announcing itself goes on waiting out its
+# own backstop, and writes `.expired` a minute later with nobody left to
+# read it. Shared between drivers, that write would land on the next
+# driver's verdict and fail it for the previous driver's mistake.
+SESSION_HANGING="$WORK/hanging"
+
+# The same choice tests/interrupted_run.sh and the two per-driver files
+# make, for the reason spelled out at deliverable_interrupt: a test file that
+# was itself backgrounded cannot deliver SIGINT to anything, and a driver has
+# to treat the two identically anyway.
+#
+# What is worth adding here, because this is the floor, is what the fallback
+# costs, since the two signals do not reach a driver's shell alike. A SIGINT
+# arriving while that shell waits on a session the session then handles
+# cleanly is dropped, unless the shell holds a trap of its own to be run
+# instead -- so a driver missing that trap walks on and finishes the run. A
+# SIGTERM at its default ends the shell, and bash runs the shell's EXIT trap
+# on the way out -- so a driver whose rollback hangs off EXIT puts the repo
+# back under SIGTERM whether it armed the signal or not.
+#
+# The repo really does come back in that second case, so there is nothing
+# here to fail over. But it does mean this is a weaker floor under SIGTERM,
+# and weaker in exactly the place that matters most: a driver that kept its
+# exit trap and stopped arming its interrupt -- which is the shape 51's bug
+# actually took -- is caught by a foreground run of this file and not by a
+# backgrounded one. run-all.sh runs every file in the foreground, and so
+# does CI, which is where "runs on every push" is cashed; a backgrounded run
+# is a person's, and this says which signal it used at the top.
+#
+# What does not vary is whether this file can tell that it is looking: the
+# drivers written below to fail it are written to fail it under either
+# signal, so a run that ends green has checked something either way.
+INTERRUPT="$(deliverable_interrupt)"
+[ "$INTERRUPT" = "INT" ] || echo "  (SIGINT is ignored in this shell and cannot be restored; stopping runs with SIG$INTERRUPT)"
 
 # What the stub session writes besides the driver's fixed_path. Named here
 # rather than inside the stub because the assertions below have to ask
@@ -126,6 +193,11 @@ make_session_stub() { # <bin-dir> <cli-name>
 # sentence for one file. It writes the driver's declared fixed_path, and
 # then writes past it in every shape a cleanup can miss.
 #
+# Unless the run it belongs to is one that will be stopped, which is the
+# other thing this stub stands in for: there it writes the map, says it is
+# ready, and waits to be signalled away without writing anything else. Why
+# the two differ is at the branch that divides them.
+#
 # Everything is written through $CONFORMANCE_REPO rather than into $PWD, so
 # a driver that runs its session from somewhere other than the repo is
 # still given a repo to answer for.
@@ -159,6 +231,51 @@ write_file() { # <relpath> <content>
 mkdir -p "$(dirname "$repo/$fixed")"
 printf '# the one file the driver was run for (write %s)\n' "$calls" > "$repo/$fixed"
 wrote "$fixed"
+
+# For a run that is going to be stopped rather than allowed to finish: say
+# that the map really is in the repo, and then wait. This is where a real
+# session spends its minutes, and it is the moment the driver running it has
+# the most to answer for -- something of the run's is in the repo, and on a
+# stopped run nothing will harvest it out.
+#
+# Only the map, deliberately, and nothing past it. Leftovers here would hand
+# a driver a second reason to end a run badly that has nothing to do with
+# the interrupt -- pocock fails a run for them by design -- and the case
+# would pass on that reason while a driver that shrugged the signal off
+# entirely went unnoticed. tests/pocock_driver_run.sh made the same
+# correction to its own interrupted case, for the same reason.
+if [ -n "${CONFORMANCE_HANG_SENTINEL:-}" ]; then
+  # Caught and shut down cleanly, which is what a well-behaved CLI does with
+  # a Ctrl-C -- and it is the only shape of interrupted session that asks
+  # the driver anything. Bash reads a child that ended any way other than
+  # killed-by-the-signal as having handled the interrupt, and drops the copy
+  # it was holding for its own traps; a driver with none of its own then
+  # walks straight past the operator's signal and finishes the run. Let the
+  # session be killed by the signal instead and it takes the driver's shell
+  # with it, and bash runs that shell's EXIT trap on the way out -- so every
+  # driver would put the repo back whether it had armed anything or not, and
+  # this would be checking nothing.
+  #
+  # This is also the shape the bug came in: both shipped drivers swallowed
+  # the interrupt at once, and what they were being handed was a session
+  # that shut down politely. tests/pocock_driver_run.sh and
+  # tests/spec_kit_driver_run.sh drive both shapes; a floor needs the one
+  # that can tell two drivers apart.
+  trap 'exit 0' INT TERM
+  touch "$CONFORMANCE_HANG_SENTINEL"
+
+  # Nothing releases this but the signal, and the bound is a backstop for
+  # one that never arrives. Reaching it is recorded, because a session that
+  # returns on its own hands the driver an ordinary run to finish: the
+  # conformant ones then put the repo back on their success path and the
+  # broken ones leave it dirty on theirs, both for reasons that have nothing
+  # to do with an interrupt. Every verdict on a stopped run checks this
+  # first, so that neither can be read as an answer about being stopped.
+  waited=0
+  while [ "$waited" -lt 600 ]; do sleep 0.1; waited=$((waited + 1)); done
+  touch "$CONFORMANCE_HANG_SENTINEL.expired"
+  exit 0
+fi
 
 write_file "$CONFORMANCE_LEFTOVER" "an untracked file at the root of the repo"
 write_file "$CONFORMANCE_LEFTOVER_DIR/notes/left-behind.md" "a file under directories the run created"
@@ -194,15 +311,32 @@ STUB
 }
 
 # Point <driver-name>, resolved out of <drivers-dir>, at a fresh throwaway
-# repo with a stub standing in for every CLI it runs. Leaves the repo at
-# $REPO and the session's account of itself at $SESSION_LOG for the caller
-# to judge -- what counts as a pass differs between the drivers this holds
-# to the contract and the deliberately broken one that proves it can tell.
+# repo with a stub standing in for every CLI it runs, and start the run.
+# Asked to hang, the stub session writes the map, says so at
+# $SESSION_HANGING, and waits to be signalled away rather than returning.
+#
+# Started in the background, always. Not because either case wants it that
+# way -- the one that lets a run finish just waits for it on the next line
+# -- but because the one that stops a run needs a pid to aim at, and both
+# have to be started identically or the thing being stopped is not the thing
+# that was checked. `set -m` comes with that: a command bash starts
+# asynchronously without job control has SIGINT set to SIG_IGN, a
+# disposition inherited through every fork and exec beneath it and
+# restorable by none of them, so a run started without it could not be
+# interrupted at all. The process group `set -m` also hands out is
+# incidental here -- archimedes puts the driver in one of its own and
+# forwards to that.
+#
+# Leaves the run at $ARCHIMEDES_PID, the repo at $REPO and the session's
+# account of itself at $SESSION_LOG for the caller to judge -- what counts
+# as a pass differs between the drivers this holds to the contract and the
+# deliberately broken ones that prove it can tell.
 #
 # Returns non-zero, silently, only when the check cannot be carried out at
 # all -- the driver names no CLI to stand in for.
-run_with_misbehaving_session() { # <drivers-dir> <driver-name>
-  local dir="$1" name="$2" manifest driver_command fixed clis cli
+start_run() { # <drivers-dir> <driver-name> [hang]
+  local dir="$1" name="$2" hang="${3:-}" manifest driver_command fixed clis cli
+  SESSION_HANGING="$WORK/hanging-$name"
   manifest="$dir/$name/driver.yaml"
   driver_command="$dir/$name/$(manifest_field "$manifest" command)"
   fixed="$(manifest_field "$manifest" fixed_path)"
@@ -225,27 +359,85 @@ run_with_misbehaving_session() { # <drivers-dir> <driver-name>
 
   rm -rf "$REPO"
   make_widget_repo "$REPO"
-  rm -f "$SESSION_LOG" "$SESSION_LOG.calls" "$WORK/harvested.md"
+  rm -f "$SESSION_LOG" "$SESSION_LOG.calls" "$WORK/harvested.md" \
+    "$SESSION_HANGING" "$SESSION_HANGING.expired"
 
   # ARCHIMEDES_DRIVERS_DIR rather than the copy inside the binary, so the
   # drivers this runs are the same files the discovery above read. Which
   # layer supplies a driver is tests/driver_ownership.sh's question.
+  set -m
   PATH="$STUB_BIN:$PATH" \
   ARCHIMEDES_DRIVERS_DIR="$dir" \
   CONFORMANCE_REPO="$REPO" \
   CONFORMANCE_FIXED_PATH="$fixed" \
   CONFORMANCE_LOG="$SESSION_LOG" \
+  CONFORMANCE_HANG_SENTINEL="${hang:+$SESSION_HANGING}" \
     "$ARCHIMEDES_BIN" run-driver "$name" "$REPO" "$WORK/harvested.md" \
-    >"$WORK/run.log" 2>&1
+    >"$WORK/run.log" 2>&1 &
+  ARCHIMEDES_PID=$!
+  set +m
   return 0
 }
 
-# Whether the run actually reached a session that wrote past the fixed
-# path. Asked before the repo is judged, because a driver that refused at
-# its first dependency check leaves a pristine repo too, and would pass a
-# check that never took place.
+# A run allowed to finish: the shape the success half of the contract is
+# checked in. <drivers-dir> <driver-name>
+run_with_misbehaving_session() {
+  start_run "$1" "$2" || return 1
+  wait "$ARCHIMEDES_PID" 2>/dev/null
+  return 0
+}
+
+# The same run, stopped the way an operator stops one: signalled once the
+# session says it is really writing inside the repo, and then waited out.
+#
+# The signal goes to the archimedes process, by pid and never to a group,
+# because that is how every way of stopping a run other than a terminal's
+# Ctrl-C arrives -- and archimedes forwarding it to the driver's own group
+# is what tests/interrupted_run.sh holds it to. Signalling the group here
+# instead would hand the driver a copy this file arranged, and then this
+# would be checking a path no operator takes.
+#
+# 0 once the run has ended, 1 when the driver names no CLI to stand in for,
+# 2 when the session never got as far as announcing itself -- which no
+# caller can carry on from, since a run that never wrote anything leaves a
+# pristine repo and would pass for the wrong reason.
+# <drivers-dir> <driver-name>
+stop_the_run_halfway() {
+  local waited=0
+  start_run "$1" "$2" hang || return 1
+
+  # The same minute the stub's own backstop allows, and for the same reason
+  # -- reaching either is a broken test rather than a slow machine -- but
+  # they are independent bounds: this one waits for a session to start, and
+  # that one waits, once it has, for a signal.
+  until [ -f "$SESSION_HANGING" ] || [ "$waited" -ge 600 ]; do
+    sleep 0.1; waited=$((waited + 1))
+  done
+  if [ ! -f "$SESSION_HANGING" ]; then
+    kill -KILL "$ARCHIMEDES_PID" 2>/dev/null
+    wait "$ARCHIMEDES_PID" 2>/dev/null
+    return 2
+  fi
+
+  kill -"$INTERRUPT" "$ARCHIMEDES_PID" 2>/dev/null
+  wait "$ARCHIMEDES_PID" 2>/dev/null
+  return 0
+}
+
+# Whether the stub session got far enough to write <relpath> into the repo.
+# Asked before the repo is judged, because a driver that refused at its
+# first dependency check leaves a pristine repo too, and would pass a check
+# that never took place. Read from the log rather than from the repo: if the
+# driver is doing its job, none of it is still there by the time anything
+# looks.
+session_wrote() { # <relpath>
+  grep -qxF "$1" "$SESSION_LOG" 2>/dev/null
+}
+
+# The same question for a run allowed to finish, where what makes the check
+# a check is the session having written past the fixed path.
 session_wrote_beyond_the_fixed_path() {
-  grep -qxF "$CONFORMANCE_LEFTOVER" "$SESSION_LOG" 2>/dev/null
+  session_wrote "$CONFORMANCE_LEFTOVER"
 }
 
 # The verdict on a run that has just happened, for a driver expected to keep
@@ -264,6 +456,72 @@ assert_kept_the_repo_as_it_found_it() {
   assert_widget_repo_pristine "$REPO" "$1"
 }
 
+# What every verdict on a stopped run has to establish before anything else:
+# that the run ended because it was signalled. The alternative is the
+# session's backstop expiring and handing the driver an ordinary run to
+# finish -- and a conformant driver puts the repo back on that path while a
+# broken one leaves it dirty on that path, so both verdicts below would
+# still come out the way they were expected to, having checked nothing.
+# <label>
+assert_the_run_was_stopped() {
+  assert_file_missing "$SESSION_HANGING.expired" \
+    "$1: the run ended because it was signalled, rather than because the session gave up waiting and let it finish"
+}
+
+# The verdict on a run that has just been stopped, for a driver expected to
+# keep the contract. The same question as above, deliberately -- it is the
+# same promise, and what differs is only how the run ended. What makes it a
+# question about the ordering as well is when it is asked: the session had
+# already written into the repo before it announced itself, so a driver that
+# had not set its rollback up by then had nothing standing by for the whole
+# time someone else's repository was being written to.
+# <driver-name> <fixed-path>
+assert_kept_the_repo_when_stopped() {
+  assert_the_run_was_stopped "$1, stopped mid-session"
+  if session_wrote "$2"; then
+    pass "$1, stopped mid-session: the session had written $2 into the repo by the time the signal went, and a stopped run leaves nothing to harvest it"
+  else
+    fail "$1, stopped mid-session: the session had written $2 into the repo by the time the signal went, and a stopped run leaves nothing to harvest it"
+    cat "$WORK/run.log" >&2
+  fi
+  assert_widget_repo_pristine "$REPO" "$1, stopped mid-session"
+}
+
+# The verdict on a stopped run for a driver written to fail it: the repo has
+# to come back dirty, and dirty because the session really wrote there.
+# Written once because two different mistakes -- never putting the repo back
+# at all, and setting the rollback up only once the session has already
+# written -- have to be caught by one check, or this is two floors again.
+# <driver-name> <fixed-path> <what-is-wrong-with-it>
+assert_caught_when_stopped() {
+  assert_the_run_was_stopped "$1, stopped mid-session"
+  if session_wrote "$2" && ! widget_repo_is_pristine "$REPO"; then
+    pass "$1: $3 is caught by stopping the run"
+  else
+    fail "$1: $3 is caught by stopping the run (the repo came back pristine, so this check cannot tell)"
+    cat "$WORK/run.log" >&2
+  fi
+}
+
+# Stop a run and say so if it could not be stopped, leaving the caller to
+# judge only the runs there is something to judge. Every caller is in the
+# same position by the time it gets here -- a refusal cannot arise, since
+# each driver has already had a session stood up out of its own guards --
+# so the only outcome to tell apart is a session that never announced
+# itself, and a second spelling of that bail-out would be the one that
+# stops matching. <drivers-dir> <driver-name>
+stopped_run_or_fail() {
+  local stopped
+  stop_the_run_halfway "$1" "$2"; stopped=$?
+  case "$stopped" in
+    0) return 0 ;;
+    2) fail "$2, stopped mid-session: the run got as far as a session writing in the repo (timed out waiting for one)" ;;
+    *) fail "$2, stopped mid-session: names the CLI it runs, so a session can be stood up for it" ;;
+  esac
+  cat "$WORK/run.log" >&2
+  return 1
+}
+
 echo "which drivers this covers:"
 
 SHIPPED="$(fixed_location_drivers "$ROOT/drivers")"
@@ -275,6 +533,8 @@ fi
 
 while IFS= read -r name; do
   [ -n "$name" ] || continue
+  fixed_path="$(manifest_field "$ROOT/drivers/$name/driver.yaml" fixed_path)"
+
   echo ""
   echo "$name, run against a session that writes beyond its fixed_path:"
 
@@ -283,8 +543,13 @@ while IFS= read -r name; do
     continue
   fi
 
-  assert_kept_the_repo_as_it_found_it "$name" \
-    "$(manifest_field "$ROOT/drivers/$name/driver.yaml" fixed_path)"
+  assert_kept_the_repo_as_it_found_it "$name" "$fixed_path"
+
+  echo ""
+  echo "$name, stopped while that session was still writing:"
+
+  stopped_run_or_fail "$ROOT/drivers" "$name" || continue
+  assert_kept_the_repo_when_stopped "$name" "$fixed_path"
 done <<< "$SHIPPED"
 
 echo ""
@@ -299,10 +564,11 @@ mkdir -p "$SCRATCH"
 cp -R "$ROOT/drivers/lib" "$SCRATCH/lib"
 
 # Keeps the contract, and gets there the documented way: guard for bash 4,
-# source the shared helpers at ../lib/, snapshot before anything runs, put
-# the repo back on every exit path, keep only the declared fixed_path.
-# Nothing here is copied from either shipped driver's specifics -- it is the
-# route drivers/README.md describes, written out by someone reading it.
+# source the shared helpers at ../lib/, snapshot before anything runs, arm
+# the interrupt before anything writes, put the repo back on every exit
+# path, keep only the declared fixed_path. Nothing here is copied from
+# either shipped driver's specifics -- it is the route drivers/README.md
+# describes, written out by someone reading it.
 mkdir -p "$SCRATCH/conformant"
 cat > "$SCRATCH/conformant/driver.yaml" <<'YAML'
 name: conformant
@@ -340,8 +606,83 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Before the session, which is the only thing here that writes to the repo.
+exit_on_interrupt "$REPO_PATH"
+
 ( cd "$REPO_PATH" && conformance-session ) >&2 || {
   echo "the session failed" >&2; exit 1; }
+[ -f "$REPO_PATH/$FIXED" ] || { echo "the session did not write $FIXED" >&2; exit 1; }
+
+restore_repo_state "$REPO_PATH" "$SNAPSHOT" "$FIXED"
+RESTORE_ON_EXIT=0
+DRIVER
+
+# Keeps the contract on the way a run ends normally, and loses it on the way
+# a run is stopped: everything the conformant one does, with the whole
+# rollback -- the exit trap and the interrupt that reaches it -- set up
+# after the session instead of before it. This is the driver 62 left
+# reachable, and it is a shape somebody writes on purpose: the restore reads
+# as an end-of-run step, and the trap as a safety net over the lines that
+# follow it.
+#
+# It passes the success case above, which is the point of having it. A run
+# that finishes reaches the restore either way, so nothing anybody could
+# read off a successful run tells it apart from the conformant one. What
+# tells it apart is a signal arriving while its session is writing, and it
+# is worth being exact about how, because the two signals get there
+# differently and both have to catch it or a floor that fell back to
+# SIGTERM would be a weaker floor:
+#
+#   SIGINT   dropped, because the session ended any way other than killed
+#            by it and this shell holds no trap to be run instead -- so the
+#            run walks on, finishes, and keeps the fixed_path for a harvest
+#            that a stopped run never gets
+#   SIGTERM  taken at its default, which ends the shell -- and there is no
+#            exit trap yet for bash to run on the way out
+mkdir -p "$SCRATCH/arms-late"
+cat > "$SCRATCH/arms-late/driver.yaml" <<'YAML'
+name: arms-late
+description: A fixed-location driver that sets its rollback up only after its session has run.
+output_mode: fixed-location
+fixed_path: LATE.md
+command: run.sh
+YAML
+cat > "$SCRATCH/arms-late/run.sh" <<'DRIVER'
+#!/usr/bin/env bash
+set -euo pipefail
+[ $# -eq 1 ] || { echo "usage: run.sh <repo-path>" >&2; exit 1; }
+REPO_PATH="$1"
+FIXED="LATE.md"
+
+command -v conformance-session >/dev/null 2>&1 || {
+  echo "conformance-session CLI not found on PATH" >&2; exit 1; }
+[ "${BASH_VERSINFO[0]}" -ge 4 ] || {
+  echo "this driver needs bash 4+ (running ${BASH_VERSION})" >&2; exit 1; }
+
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/repo-snapshot.sh"
+
+SNAPSHOT="$(mktemp)"
+snapshot_repo_state "$REPO_PATH" > "$SNAPSHOT"
+
+( cd "$REPO_PATH" && conformance-session ) >&2 || {
+  echo "the session failed" >&2; exit 1; }
+
+# The one thing wrong with this driver, and the whole of it: by here the
+# session has already had the run of the repo, and nothing was standing by
+# to undo what it wrote for the entire time it was writing.
+RESTORE_ON_EXIT=1
+cleanup() {
+  local status=$?
+  if [ "$RESTORE_ON_EXIT" -eq 1 ]; then
+    restore_repo_state "$REPO_PATH" "$SNAPSHOT" \
+      || echo "could not roll $REPO_PATH back to how it was found" >&2
+  fi
+  rm -f "$SNAPSHOT"
+  exit "$status"
+}
+trap cleanup EXIT
+exit_on_interrupt "$REPO_PATH"
+
 [ -f "$REPO_PATH/$FIXED" ] || { echo "the session did not write $FIXED" >&2; exit 1; }
 
 restore_repo_state "$REPO_PATH" "$SNAPSHOT" "$FIXED"
@@ -449,7 +790,7 @@ DRIVER
 
 chmod +x "$SCRATCH"/*/run.sh
 
-assert_eq "$(fixed_location_drivers "$SCRATCH" | tr '\n' ' ')" "conformant git-guarded leaky partly-declared undeclared " \
+assert_eq "$(fixed_location_drivers "$SCRATCH" | tr '\n' ' ')" "arms-late conformant git-guarded leaky partly-declared undeclared " \
   "the drivers declaring fixed-location are the ones picked up -- not the one declaring another mode, and not the lib/ beside them"
 
 # Nothing below reads $REPO or $SESSION_LOG without this having succeeded:
@@ -471,6 +812,33 @@ else
 fi
 assert_file_exists "$WORK/harvested.md" \
   "and it is caught having otherwise succeeded: valid manifest, harvested map, zero exit"
+
+run_with_misbehaving_session "$SCRATCH" "arms-late" \
+  || fail "arms-late: names the CLI it runs, so a session can be stood up for it"
+assert_kept_the_repo_as_it_found_it "arms-late" "LATE.md"
+assert_file_exists "$WORK/harvested.md" \
+  "a driver that sets its rollback up too late passes everything above, which is why the run that is stopped below has to exist"
+
+echo ""
+echo "the same three drivers, against a run stopped while the session is writing:"
+
+# The floor's other half, asked of the same three drivers so that the two
+# questions are answered about one set rather than about two.
+if stopped_run_or_fail "$SCRATCH" "conformant"; then
+  assert_kept_the_repo_when_stopped "conformant" "THIRD.md"
+fi
+
+if stopped_run_or_fail "$SCRATCH" "leaky"; then
+  assert_caught_when_stopped "leaky" "LEAKY.md" "a driver that never puts the repo back"
+fi
+
+if stopped_run_or_fail "$SCRATCH" "arms-late"; then
+  assert_caught_when_stopped "arms-late" "LATE.md" \
+    "a driver that sets its rollback up only after its session has had the run of the repo"
+fi
+
+echo ""
+echo "drivers whose session cannot be stood in for:"
 
 for refused in undeclared partly-declared git-guarded; do
   if run_with_misbehaving_session "$SCRATCH" "$refused"; then
