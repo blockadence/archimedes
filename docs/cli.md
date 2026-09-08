@@ -701,8 +701,13 @@ Both fail the test with git's own output if the command doesn't succeed.
 terminates nearly everything it prints with a newline no caller wants.
 
 Every fixture the package builds carries a fixed commit identity, so no test
-has to spell one out to commit. A test whose subject *builds the repository
-itself* has no fixture checkout to carry it, and calls
+has to spell one out to commit — written into the checkout's config and
+cleared out of the test's environment in the same breath, since git reads
+`GIT_AUTHOR_NAME` and friends ahead of every config file and a fixture that
+only wrote the config would commit as whatever the suite was launched
+carrying. Clearing it is `t.Setenv`'s, so a test that builds a fixture is a
+test that may not call `t.Parallel`. A test whose subject *builds the
+repository itself* has no fixture checkout to carry it, and calls
 `testrepo.IsolateGit(t)` instead: git gets a global config of that test's
 own holding an identity and nothing else, so the test doesn't pass or fail
 on whether the machine running the suite happens to have a global

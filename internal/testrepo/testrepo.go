@@ -175,12 +175,51 @@ func seed(t testing.TB, dir, name string, files map[string]string) {
 // configureIdentity gives the checkout at dir a fixed commit identity and
 // no signing, so committing there — in the fixture's own steps and in
 // whatever the test commits on top — doesn't depend on the machine's git
-// config.
+// config. The bash twin is gitfixture.sh's configure_git_identity, spelled
+// the same way; keep the two in step.
+//
+// Clearing the inherited identity is part of the same job rather than
+// tidiness: the config written above loses to the environment, so a fixture
+// that only wrote it would commit as whatever the test binary inherited.
+// The same guard, for the same reason, as the one inside IsolateGit.
+//
+// Two things follow from that half being the process's and not the repo's.
+// It is the deliberate opposite of StripGitIdentity and
+// UnconfigureGitIdentity, which say a test's machine has no identity: a
+// fixture built after either of them turns that machine back into an
+// ordinary one for as long as the test runs. No test does that today, and
+// none should start. And since the clearing is t.Setenv's, every test that
+// builds a fixture — which is nearly every test in the module — is a test
+// that may not call t.Parallel, because t.Setenv panics in one. That was
+// IsolateGit's constraint alone before; it is the fixtures' now.
 func configureIdentity(t testing.TB, dir string) {
 	t.Helper()
 	Git(t, dir, "config", "user.email", "t@t")
 	Git(t, dir, "config", "user.name", "t")
 	Git(t, dir, "config", "commit.gpgsign", "false")
+	clearInheritedIdentity(t)
+}
+
+// clearInheritedIdentity removes the four identity variables git reads ahead
+// of every config file, plus any extra the caller names, for the length of
+// the test. It is the half of an identity fixture no config file can do: an
+// identity the test binary inherited — a shell's, a runner's — outranks
+// every config file there is, so a fixture that only wrote one would be a
+// no-op on a machine carrying one.
+//
+// Setenv first and Unsetenv second: Setenv is what registers the restore at
+// the end of the test, and Unsetenv is what Setenv cannot do. Removed rather
+// than emptied, because an empty GIT_AUTHOR_NAME is a machine in its own
+// right — StripGitIdentity's, which is why that fixture does not call this.
+func clearInheritedIdentity(t testing.TB, extra ...string) {
+	t.Helper()
+	names := append([]string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"}, extra...)
+	for _, name := range names {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 // IsolateGit is the same guarantee for the tests configureIdentity can't
@@ -202,14 +241,8 @@ func IsolateGit(t testing.TB) {
 	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
 	// The environment outranks every config file, so an identity the test
 	// binary inherited would beat the one just written and make this a
-	// no-op. Setenv first and Unsetenv second: Setenv is what registers the
-	// restore at the end of the test, and Unsetenv is what Setenv cannot do.
-	for _, name := range []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"} {
-		t.Setenv(name, "")
-		if err := os.Unsetenv(name); err != nil {
-			t.Fatal(err)
-		}
-	}
+	// no-op.
+	clearInheritedIdentity(t)
 }
 
 // StripGitIdentity is IsolateGit's opposite, for the tests whose subject is
@@ -295,14 +328,5 @@ func UnconfigureGitIdentity(t testing.TB) {
 	t.Helper()
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
-	// Setenv first and Unsetenv second, as in IsolateGit: Setenv is what
-	// registers the restore at the end of the test, and Unsetenv is what
-	// Setenv cannot do. Unset is what these have to be, since an empty
-	// GIT_AUTHOR_NAME is the other machine.
-	for _, name := range []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"} {
-		t.Setenv(name, "")
-		if err := os.Unsetenv(name); err != nil {
-			t.Fatal(err)
-		}
-	}
+	clearInheritedIdentity(t, "EMAIL")
 }

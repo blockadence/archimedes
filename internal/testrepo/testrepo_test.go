@@ -1,6 +1,7 @@
 package testrepo_test
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -193,6 +194,95 @@ func TestInitLeavesTheRepoCommittableWithoutTheMachinesGitConfig(t *testing.T) {
 	if got := testrepo.GitOut(t, path, "log", "-1", "--format=%ae"); got != "t@t" {
 		t.Errorf("commit author = %q, want the identity the fixture configured", got)
 	}
+}
+
+// The guard the three tests above cannot make on their own. Each of them
+// asserts the fixture's identity on a machine whose environment carries none
+// — which is every machine anyone has run this suite on, and so a passing
+// test that would go on passing if the fixture wrote no config at all. Git
+// reads GIT_AUTHOR_NAME and friends ahead of every config file, so a shell
+// or a CI job that exports one is a machine where the fixtures would commit
+// as somebody real, in every repository the module's tests build, and
+// nothing would say so.
+//
+// Every shape the package builds is here because the clearing lives in
+// configureIdentity and all three call it: what this pins is that all three
+// keep calling it.
+func TestTheFixturesCommitAsThemselvesOnAMachineCarryingAnIdentityInItsEnvironment(t *testing.T) {
+	tests := []struct {
+		name  string
+		build func(t *testing.T) string
+	}{
+		{"New", func(t *testing.T) string {
+			return testrepo.New(t, testrepo.Spec{Dir: t.TempDir(), Name: "app"}).Clone
+		}},
+		{"Init", func(t *testing.T) string {
+			return testrepo.Init(t, filepath.Join(t.TempDir(), "repo"))
+		}},
+		{"Reclone", func(t *testing.T) string {
+			return testrepo.New(t, testrepo.Spec{Dir: t.TempDir(), Name: "app"}).Reclone(t, "other").Clone
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inheritAnIdentity(t)
+
+			dir := tt.build(t)
+
+			// The commit the fixture made on its way out. Reclone has no
+			// seed of its own, so the one it checks out is New's — which is
+			// the same claim about the same guard.
+			if got := headIdentity(t, dir); got != fixtureIdentity {
+				t.Errorf("seed commit identity = %q, want the fixture's own %q", got, fixtureIdentity)
+			}
+			// And whatever the test commits on top, which is the half a
+			// `-c user.email=` inside the fixture would not have covered.
+			testrepo.Git(t, dir, "commit", "-q", "--allow-empty", "-m", "more")
+			if got := headIdentity(t, dir); got != fixtureIdentity {
+				t.Errorf("follow-up commit identity = %q, want the fixture's own %q", got, fixtureIdentity)
+			}
+			// Cleared out of the environment, rather than overridden on the
+			// fixture's own git commands: what a -c user.email= could not
+			// have reached is the subprocesses a test spawns, which is where
+			// a driver under test does its committing. The same assertion
+			// tests/gitfixture_repos.sh makes of the bash twin.
+			for _, name := range []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"} {
+				if value, ok := os.LookupEnv(name); ok {
+					t.Errorf("%s is still set, to %q: the fixture overrode the environment rather than clearing it", name, value)
+				}
+			}
+		})
+	}
+}
+
+// inheritAnIdentity is the machine the guard above exists for: an ordinary
+// developer's shell, or a CI job, that exported an identity the test binary
+// then inherited. All four variables, because git takes the author from two
+// of them and the committer from the other two, and a fixture that cleared
+// half would leave half a stranger's name in the log. Named after
+// tests/gitfixture_repos.sh's inherit_an_identity, which stages the same
+// machine for the bash twin.
+func inheritAnIdentity(t testing.TB) {
+	t.Helper()
+	for _, name := range []string{"GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"} {
+		t.Setenv(name, "inherited")
+	}
+	for _, name := range []string{"GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"} {
+		t.Setenv(name, "inherited@example.com")
+	}
+}
+
+// fixtureIdentity is what headIdentity reads back from a repo committing
+// under the identity configureIdentity sets.
+const fixtureIdentity = "t <t@t> / t <t@t>"
+
+// headIdentity is who git recorded HEAD as, author and committer both — the
+// four fields the environment overrides, in one string so a failure names
+// which of them the machine won.
+func headIdentity(t testing.TB, dir string) string {
+	t.Helper()
+	return testrepo.GitOut(t, dir, "log", "-1", "--format=%an <%ae> / %cn <%ce>")
 }
 
 // The fixture is test-only scaffolding: no production package may end up
