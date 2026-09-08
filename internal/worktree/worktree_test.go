@@ -1,6 +1,7 @@
 package worktree_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -64,5 +65,32 @@ func TestRecordFallsBackToWhatItWasGiven(t *testing.T) {
 	wt := worktree.Path("/Users/someone/Code/service-a", "widget-fix")
 	if got := worktree.Record("relative-root", wt); worktree.Resolve("relative-root", got) != wt {
 		t.Errorf("recorded %q, which does not resolve back to %q", got, wt)
+	}
+}
+
+// The operator names their instance as `--root .` or `--root instance`,
+// and what the answer is handed to runs somewhere else entirely, so a
+// relative root must still resolve to a path that means the same thing
+// from any working directory.
+func TestResolveAnswersFromAnywhere(t *testing.T) {
+	got := worktree.Resolve("instance", "../service-a-worktrees/widget-fix")
+	if !filepath.IsAbs(got) {
+		t.Errorf("got %q, want a path usable from any working directory", got)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(cwd, "service-a-worktrees", "widget-fix"); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// A hand-edited row can carry a blank worktree cell. Resolving it against
+// the root would answer with the instance directory itself, which prune
+// hands straight to `git worktree remove`.
+func TestResolveKeepsAnEmptyColumnEmpty(t *testing.T) {
+	if got := worktree.Resolve("/Users/someone/Code/widgets", ""); got != "" {
+		t.Errorf("got %q, want nothing at all", got)
 	}
 }

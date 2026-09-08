@@ -53,13 +53,34 @@ func Record(root, wt string) string {
 // Resolve turns a recorded worktree column into a usable path, against
 // root (the instance directory the status file sits under).
 //
+// Usable from anywhere, which is why the result is absolutized even when
+// root is not. `--root .` is the ordinary way to name an instance, and
+// what consumes the answer is git, run with its working directory set to
+// the target repo: a path relative to the operator's shell would be read
+// against that repo instead, naming something else or nothing at all.
+// This is the same reason spawn absolutizes its root before deriving
+// anything from it. Where the working directory cannot be read at all,
+// the joined path is returned as-is rather than nothing.
+//
 // An absolute recorded value is returned as it stands. That is a row from
 // before this column was relative, and the machine it was written on is
 // the one it is true on; joining it to root would turn a path that still
 // works there into one that works nowhere.
+//
+// An empty column resolves to nothing, deliberately. A hand-edited row
+// with a blank worktree cell says where no worktree is, and joining that
+// to root would answer with the instance directory itself — which prune
+// would then hand to `git worktree remove`. Empty in, empty out: git
+// refuses it, and the operator hears about the row rather than losing
+// their instance.
 func Resolve(root, recorded string) string {
 	if recorded == "" || filepath.IsAbs(recorded) {
 		return recorded
 	}
-	return filepath.Join(root, filepath.FromSlash(recorded))
+	joined := filepath.Join(root, filepath.FromSlash(recorded))
+	abs, err := filepath.Abs(joined)
+	if err != nil {
+		return joined
+	}
+	return abs
 }

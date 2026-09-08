@@ -573,6 +573,13 @@ directory for that reason. The parse layers underneath (`status.ParseFile`,
 they are given a file, not an instance, and inventing a root to resolve
 against is the mistake this is fixing.
 
+`Resolve` answers with a path usable from any working directory, even when
+the root it is given is not — `--root .` is the ordinary way to name an
+instance, and the answer is consumed by git running inside the target
+repo, which would read a shell-relative path against that repo instead.
+An empty column stays empty rather than resolving to the instance root,
+which is what `prune` would otherwise hand to `git worktree remove`.
+
 Rows written under the old shape still read. `Resolve` returns an absolute
 value untouched, so an instance that already carries them keeps working on
 the machine that wrote them — the only machine they were ever usable from.

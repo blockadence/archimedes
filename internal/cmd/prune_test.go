@@ -9,7 +9,6 @@ import (
 
 	"github.com/blockadence/gh-archimedes/internal/prune"
 	"github.com/blockadence/gh-archimedes/internal/testrepo"
-	"github.com/blockadence/gh-archimedes/internal/worktree"
 )
 
 // setupInstance builds an instance root with one target repo (with a
@@ -41,8 +40,10 @@ func setupInstance(t *testing.T, root, repoName, slug, note string) (repoPath, w
 	}
 	// Recorded the way spawn records it: relative to the instance root,
 	// so the rows these tests prune are the rows an instance carries.
+	// Spelled out rather than run through worktree.Record, so the fixture
+	// states the shape instead of agreeing with whatever produces it.
 	status := "# " + slug + "\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
-		"| " + repoName + " | " + slug + " | " + worktree.Record(root, wt) + " | " + note + " | - |\n"
+		"| " + repoName + " | " + slug + " | " + repoName + "-worktrees/" + slug + " | " + note + " | - |\n"
 	if err := os.WriteFile(filepath.Join(statusDir, "status.md"), []byte(status), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +115,7 @@ func TestRunPruneStillReadsAnAbsoluteRow(t *testing.T) {
 	_, wt := setupInstance(t, root, "service-a", "widget-fix", "based on main")
 
 	statusPath := filepath.Join(root, "work", "widget-fix", "status.md")
-	old := strings.Replace(string(readFile(t, statusPath)), worktree.Record(root, wt), wt, 1)
+	old := strings.Replace(string(readFile(t, statusPath)), "service-a-worktrees/widget-fix", wt, 1)
 	if err := os.WriteFile(statusPath, []byte(old), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -127,6 +128,36 @@ func TestRunPruneStillReadsAnAbsoluteRow(t *testing.T) {
 
 	if _, err := os.Stat(wt); !os.IsNotExist(err) {
 		t.Errorf("expected the worktree named by the absolute row to be removed, stat err = %v", err)
+	}
+}
+
+// A relative --root is the normal way to run this: an operator stands in
+// the directory holding their instance and names it. The row is relative
+// to the instance, and git runs with its working directory set to the
+// target repo, so resolving the two against each other has to end in a
+// path that means the same thing from anywhere -- the same reason
+// `spawn` absolutizes its root before deriving anything from it.
+func TestRunPruneResolvesARelativeRootToAUsablePath(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "instance")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, wt := setupInstance(t, root, "service-a", "widget-fix", "based on main")
+
+	t.Chdir(parent)
+
+	var buf bytes.Buffer
+	merged := func(_, _ string) (string, error) { return "MERGED", nil }
+	if err := runPrune(&buf, "instance", "", true, merged); err != nil {
+		t.Fatalf("runPrune: %v", err)
+	}
+
+	if out := buf.String(); !strings.Contains(out, "at "+wt+"\n") {
+		t.Errorf("candidate named a path that is only true from this shell, want %q in:\n%s", wt, out)
+	}
+	if _, err := os.Stat(wt); !os.IsNotExist(err) {
+		t.Errorf("expected the worktree to be removed, stat err = %v", err)
 	}
 }
 
