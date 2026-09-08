@@ -252,3 +252,29 @@ deliverable_interrupt() {
     *) echo INT ;;
   esac
 }
+
+# Skip <file-name>, printing why, when the bash a *driver* would run under
+# is older than 4.
+#
+# Two things need it and both belong to the drivers rather than to any test:
+# every fixed-location driver guards for bash 4+ itself and refuses under an
+# older one, and drivers/lib/repo-snapshot.sh needs it for the associative
+# arrays its rollback is built on. Under an old bash there is therefore
+# nothing left for a test that drives one to hold to anything.
+#
+# The version that decides is the one the drivers will get -- whatever
+# `#!/usr/bin/env bash` finds for them -- and not the caller's own. They are
+# usually the same shell, and when they are not it is the test that would be
+# wrong: run under an old bash by hand, a file consulting its own shell
+# would skip a floor the drivers could have cleared.
+#
+# Exits 77, the status run-all.sh reads as a skip, rather than returning:
+# every caller has the same nothing left to do, and a second spelling of
+# that would be the one that drifts. <file-name> <what-needs-bash-4>
+skip_without_driver_bash_4() {
+  local major
+  major="$(env bash -c 'echo "${BASH_VERSINFO[0]}"' 2>/dev/null)"
+  [ "${major:-0}" -ge 4 ] && return 0
+  echo "skip: $1 ($2, and the bash a driver would run under here is $(env bash -c 'echo "$BASH_VERSION"' 2>/dev/null))"
+  exit 77
+}
