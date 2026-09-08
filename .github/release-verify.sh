@@ -33,20 +33,46 @@
 #   - Sigstore's trust root, which `gh attestation verify` fetches to check
 #     the signing certificate.
 #
-# THE RACE, AND WHY THIS IS NOT YET AN ANSWER TO IT. If that read is not
+# THE RACE, AND WHAT FOUR RELEASES SAID ABOUT IT. If that read is not
 # immediately consistent, a check with no wait would fail a few percent of
 # good releases -- and the fix people learn ("re-run it") is also the fix
-# for a real failure, which is worse than not checking at all. Whether the
-# read *is* racy has not been established: it cannot be, from outside a real
-# release run. So the retry budget below is a hedge, not a finding, and it
-# is instrumented rather than silent -- every retry prints, and a run that
-# needed any says so in a line written to be grepped for. That is the
-# measurement. If real releases routinely need retries, the read is racy in
-# a way a bounded wait only hides, and the fix is `--bundle`: verify against
-# the bundle the attest step produced instead of a lookup. That needs the
-# bundle path out of a step nested inside the composite action, which is why
-# it is not what this does today. If releases never need one, the budget
-# costs nothing and the question is answered.
+# for a real failure, which is worse than not checking at all. So the retry
+# budget below went in as a hedge rather than a finding, instrumented
+# rather than silent: every retry prints, and a run that needed any says so
+# in a line written to be grepped for. That was the measurement.
+#
+# It has now been taken, and no run has needed a retry. v0.1.0-rc.1 through
+# -rc.4 verified twelve assets each and printed no marker line. Be exact
+# about what that does and does not measure:
+#
+#   - Each run's loop *started* 0.36-0.57s after the attest step logged
+#     "Attestation created for 12 subjects" (measured to this script's own
+#     banner, printed immediately before the first iteration). So the first
+#     lookup of each run is the tightest timing a release produces, and it
+#     succeeded first try, four for four.
+#   - The loops then ran about 40s each, so the twelfth lookup is roughly
+#     40s after the write, not under a second. Only the first read is a
+#     test of immediate consistency; the other eleven are progressively
+#     weaker ones.
+#   - For -rc.1 to -rc.3 "no retries" was inferred from the per-run count
+#     check rather than read off per-lookup timestamps, because `gh` prints
+#     nothing on success -- which is the other thing those runs
+#     established, and what the per-asset line below now fixes. -rc.4 is
+#     the first run whose twelve lookups are individually timestamped: the
+#     first completed 4.7s after the attestation was uploaded, they ran
+#     3.1-4.3s apart, and none retried.
+#
+# What that supports: the read was immediately consistent on the four
+# occasions it was tested hardest, so `--bundle` is not needed now. What it
+# does not support: a general claim about GitHub's consistency. Four runs,
+# two commits, inside two hours, on one runner pool, is a small sample
+# against a failure mode whose whole danger is that it is intermittent.
+#
+# So the budget stays, and it is no longer only a hedge -- it is the thing
+# that keeps a rare slow read from becoming a red release whose documented
+# fix ("re-run it") is indistinguishable from the fix for a real failure.
+# It costs nothing on a healthy run; four spent none of it. `--bundle`
+# stays the answer if the marker line starts showing up.
 #
 # A bounded wait cannot turn a real failure green either way: an attestation
 # that does not exist never appears, however long you wait.
@@ -110,6 +136,7 @@ echo "verifying $expected asset(s) in $dist/ against $repo:"
 verified=0
 while IFS= read -r asset; do
   [ -n "$asset" ] || continue
+  name="$(basename "$asset")"
   # `until`, so a failing verify is a loop condition rather than something
   # errexit acts on. stdin is closed to it because this loop is fed by a
   # here-string on the same descriptor: a subprocess that read from stdin
@@ -119,7 +146,7 @@ while IFS= read -r asset; do
   until gh attestation verify "$asset" --repo "$repo" </dev/null; do
     if [ "$retries" -le 0 ]; then
       echo "" >&2
-      echo "error: $(basename "$asset") has no attestation this repository" >&2
+      echo "error: $name has no attestation this repository" >&2
       echo "       can verify, and the run's retry budget is spent." >&2
       echo "       Nothing has been promoted: the release is still a draft" >&2
       echo "       and is not installable." >&2
@@ -127,9 +154,22 @@ while IFS= read -r asset; do
     fi
     retries=$((retries - 1))
     retries_used=$((retries_used + 1))
-    echo "  $(basename "$asset"): not readable yet, $retries retry/retries left"
+    echo "  $name: not readable yet, $retries retry/retries left"
     sleep "$delay"
   done
+  # One line per asset, printed here rather than left to `gh`, and shaped
+  # like the retry line above it so that both of an asset's possible
+  # outcomes grep by the same leading name.
+  #
+  # The first real releases established why this has to be ours:
+  # `gh attestation verify` prints nothing whatsoever on success when
+  # stdout is not a terminal -- its report is gated on an interactive one
+  # -- so twelve verifies left the job log holding only the count lines
+  # around this loop. The count check below is what actually catches a loop
+  # that ended early, but a reader could not see it working: "verified one
+  # and reported twelve" and the truth looked identical in the log. Now
+  # they do not.
+  echo "  $name: verified"
   verified=$((verified + 1))
 done <<< "$assets"
 

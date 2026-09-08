@@ -162,17 +162,36 @@ EOF
   make_repo_at "$repo"
 }
 
+# What a repo make_widget_repo built holds when nothing has been done to
+# it. It lives beside the fixture because it is that fixture's other half:
+# what the repo starts as is what "pristine" has to mean, and every file
+# asking it separately would be that many answers free to drift.
+WIDGET_REPO_PRISTINE=".git src "
+
+# Everything <repo> holds at its top level, one line's worth, in the shape
+# WIDGET_REPO_PRISTINE is written in. `ls` rather than `git status`, because
+# git tracks no directories: an empty one a run left behind is a trace only
+# this can see.
+widget_repo_leftovers() { # <repo>
+  (cd "$1" && ls -A | sort | tr '\n' ' ')
+}
+
 # The question every driver test asks of the repo it was pointed at: is it
-# back exactly as make_widget_repo left it? Nothing but .git and src/ ever
-# belonged there, so anything else is a trace of the run -- including the
-# empty directories `git status` cannot see, since git tracks none.
-#
-# It lives beside make_widget_repo because it is that fixture's other half:
-# what the repo starts as is what "pristine" has to mean, and three files
-# asking it separately would be three answers free to drift. <repo> <label>
+# back exactly as make_widget_repo left it? Silent, and answered by exit
+# status, for a caller that has to act on the answer rather than report it
+# -- fixed_location_conformance.sh drives a deliberately broken driver and
+# needs a dirty repo to be its passing case.
+widget_repo_is_pristine() { # <repo>
+  [ "$(widget_repo_leftovers "$1")" = "$WIDGET_REPO_PRISTINE" ] \
+    && [ -z "$(git -C "$1" status --porcelain)" ]
+}
+
+# The same question asked as two assertions, which is what a test that
+# merely expects a pristine repo wants: a failure that says which half went
+# wrong, rather than one bit. <repo> <label>
 assert_widget_repo_pristine() {
-  local repo="$1" label="$2" leftovers
-  leftovers="$(cd "$repo" && ls -A | sort | tr '\n' ' ')"
-  assert_eq "$leftovers" ".git src " "$label: nothing is left in the repo but what it started with"
+  local repo="$1" label="$2"
+  assert_eq "$(widget_repo_leftovers "$repo")" "$WIDGET_REPO_PRISTINE" \
+    "$label: nothing is left in the repo but what it started with"
   assert_eq "$(git -C "$repo" status --porcelain)" "" "$label: the repo's git status is clean"
 }
