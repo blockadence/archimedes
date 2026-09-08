@@ -1049,6 +1049,38 @@ likely to be written or debugged locally, and stepping through a whole
 mapping pass to exercise one is a poor way to do that. It keeps the driver's
 own output on stderr so stdout carries only where the map landed.
 
+Whichever of the two starts it, a driver runs in a process group of its own
+and is handed every `SIGINT` or `SIGTERM` that reaches `archimedes`. Go
+forwards nothing to a child process, so before this a `kill` on the
+`archimedes` pid stopped `archimedes` and left the driver running
+unsupervised — the operator's prompt back, a third-party toolchain still
+unpacked in their repository, and nothing watching the process that was
+going to take it out again. Ctrl-C at a terminal appeared to work, but only
+because a terminal signals its whole foreground group; nothing arranged
+that, and it stopped being true the moment a signal was aimed at the process
+instead — a supervisor, a `timeout(1)`, a parent harness shutting its
+children down.
+
+Forwarding is half of it. The drivers' rollback runs in an exit trap, after
+their session returns, so `archimedes` passes the signal on and then goes
+back to waiting: exiting as soon as it had forwarded would be the old
+behaviour with extra steps. Waiting is also what lets it relay what the
+driver said about the repo, and exit with the status the driver chose — 130
+for a `SIGINT`, 143 for a `SIGTERM`, the convention
+`drivers/lib/repo-snapshot.sh` follows — rather than a status of its own. A
+caller asking whether the target repo was left clean has nothing else to
+read. Only the first signal is forwarded: a second would land in a rollback
+already running, which is the one state that file cannot get a repo back out
+of, so the operator is told what is being waited for instead.
+
+What this does not do is close the windows `repo-snapshot.sh` names. A
+driver that was `SIGKILL`'d, or that died with the machine, never runs its
+trap at all, and nothing outside it holds the snapshot; that is the other,
+more expensive half of what that file asks for.
+`internal/driver/interrupt.go` is the whole of the forwarding, and
+`tests/interrupted_run.sh` drives it through the installed binary with the
+signal aimed at the `archimedes` pid alone rather than at a process group.
+
 `run-driver`, a mapping pass, and `drivers` all build their `driver.Set`
 through the one `driver.SetFor` — `--root` or `ARCHIMEDES_DRIVERS_DIR` for
 the instance layer, `archimedes.Drivers()` underneath — so none of them can

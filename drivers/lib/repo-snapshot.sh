@@ -26,9 +26,12 @@
 # WHAT THE ROLLBACK CANNOT COVER. A driver calls restore_repo_state from an
 # exit trap, and reaches that trap on an interrupt by trapping INT and TERM
 # and exiting. That covers a Ctrl-C, a killed process tree, a `timeout` and
-# a cancelled CI job. It leaves a window, and the window is worth naming
-# here rather than in either driver, because it is a property of undoing a
-# run from the outside rather than of what any one run unpacks:
+# a cancelled CI job -- and it covers them however the run was stopped,
+# because archimedes now hands the driver every signal aimed at itself
+# (internal/driver/interrupt.go) rather than a terminal happening to signal
+# a whole foreground group. It leaves a window, and the window is worth
+# naming here rather than in either driver, because it is a property of
+# undoing a run from the outside rather than of what any one run unpacks:
 #
 #   * SIGKILL, and a machine that loses power, cannot be trapped at all.
 #     The repo is left exactly as the session left it -- scaffolding,
@@ -51,11 +54,21 @@
 #   * A second signal arriving while restore_repo_state is partway through
 #     stops it partway through. What has been undone stays undone; the
 #     rest does not, and the repo is left between the two states.
+#     Archimedes will not be the one to send it -- it forwards the first
+#     signal only, and answers the rest with a line -- but anything else
+#     signalling this process still can.
 #
 # Each of those ends with an operator's repo dirty and no message saying
 # so. Closing them needs something outside the driver process -- a runner
 # that keeps the snapshot and re-runs the restore, rather than a shell
 # trying to clean up after its own death.
+#
+# Archimedes is that outside process for the delivering and the waiting: it
+# passes the signal on, stays until this rollback has finished, relays what
+# the driver said about the repo, and exits with the status the driver
+# chose. It is not that outside process for the snapshot, which is what the
+# list above would need. A driver that never got to run its trap still
+# leaves a repo nobody holds a record of.
 #
 # Requires bash 4+ for associative arrays, same as the drivers that source
 # it. Sourced, not run: `source ../lib/repo-snapshot.sh`.
@@ -265,6 +278,13 @@ restore_repo_state() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
 # is still deferred until the foreground session returns, which is the
 # order the rollback has to happen in anyway. What changes is that whether
 # an interrupt stops the run is no longer the session's to decide.
+#
+# Which signals arrive at all is likewise no longer a terminal's to decide.
+# Archimedes runs a driver in a process group of its own and signals that
+# group itself, so these traps fire for a `kill` by pid, a supervisor or a
+# `timeout` exactly as they do for a Ctrl-C -- and the driver is handed one
+# copy of the interrupt rather than one per way it could have reached the
+# group.
 #
 # Here rather than in each driver for the reason this whole file is here:
 # it is failure-path code, and a second copy of it would be the one that
