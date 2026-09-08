@@ -52,7 +52,10 @@ func newDriversAdoptCmd() *cobra.Command {
 		Use:   "adopt <driver>",
 		Short: "Copy a driver archimedes ships into this instance, to own and edit",
 		Long: `Copies one of the drivers archimedes ships into this instance's drivers/,
-where it takes precedence over the shipped one from then on.
+where it takes precedence over the shipped one from then on. The shared
+helpers a driver sources come too, into drivers/lib/ — unless the instance
+already has that directory, which is the operator's by the same rule the
+drivers are and is left untouched.
 
 This is how a shipped driver gets edited: adopt it, then change the copy.
 It is a one-way, one-time act rather than a sync — the point of owning a

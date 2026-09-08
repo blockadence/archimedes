@@ -100,19 +100,11 @@ chmod +x "$STUB_BIN/specify" "$STUB_BIN/claude"
 export PATH="$STUB_BIN:$PATH"
 
 # Every case below starts from the same untouched repo and ends with the
-# same question: is it back exactly as it was found? Nothing but .git and
-# src/ ever belonged here, so anything else is a trace of the run --
-# including empty directories, which `git status` cannot see.
+# same question, asked by helpers.sh's assert_widget_repo_pristine: is it
+# back exactly as it was found?
 fresh_repo() { # <path>
   rm -rf "$1"
   make_widget_repo "$1"
-}
-
-assert_repo_pristine() { # <repo> <label>
-  local repo="$1" label="$2" leftovers
-  leftovers="$(cd "$repo" && ls -A | sort | tr '\n' ' ')"
-  assert_eq "$leftovers" ".git src " "$label: nothing is left in the repo but what it started with"
-  assert_eq "$(git -C "$repo" status --porcelain)" "" "$label: the repo's git status is clean"
 }
 
 REPO="$WORK/repo"
@@ -130,7 +122,7 @@ fi
 assert_file_exists "$OUT" "the constitution is harvested to the exact requested path"
 assert_contains "$(cat "$OUT" 2>/dev/null)" "Zero-Dependency" \
   "the harvested file is what the session wrote, not the template specify unpacked"
-assert_repo_pristine "$REPO" "successful run"
+assert_widget_repo_pristine "$REPO" "successful run"
 assert_dir_missing "$REPO/.specify" "successful run: the scaffolding directory tree is gone, empty ones included"
 assert_dir_missing "$REPO/.claude" "successful run: the installed agent skills are gone"
 
@@ -147,7 +139,7 @@ fi
 assert_contains "$err" "unfilled template" \
   "the failure says the session did nothing, rather than reporting a constitution that is really just placeholders"
 assert_file_missing "$OUT" "a session that did nothing produces no output file"
-assert_repo_pristine "$REPO" "session did nothing"
+assert_widget_repo_pristine "$REPO" "session did nothing"
 
 echo ""
 echo "spec-kit driver, the session fails:"
@@ -160,7 +152,7 @@ else
   pass "a run whose session exits non-zero fails the driver too"
 fi
 assert_file_missing "$OUT" "a failed session produces no output file"
-assert_repo_pristine "$REPO" "session failed"
+assert_widget_repo_pristine "$REPO" "session failed"
 
 echo ""
 echo "spec-kit driver, specify itself fails:"
@@ -174,7 +166,7 @@ else
 fi
 assert_contains "$err" "specify init failed" "the failure names the step that failed"
 assert_file_missing "$OUT" "a failed specify init produces no output file"
-assert_repo_pristine "$REPO" "specify init failed"
+assert_widget_repo_pristine "$REPO" "specify init failed"
 
 echo ""
 echo "spec-kit driver, specify scaffolds no constitution:"
@@ -188,7 +180,7 @@ else
 fi
 assert_contains "$err" "did not scaffold" "the failure names what specify was expected to produce"
 assert_file_missing "$OUT" "no output file is produced"
-assert_repo_pristine "$REPO" "specify scaffolded no constitution"
+assert_widget_repo_pristine "$REPO" "specify scaffolded no constitution"
 
 echo ""
 echo "spec-kit driver, killed mid-run:"
@@ -224,7 +216,7 @@ if [ -f "$SENTINEL" ]; then
   # driver that shrugged the interrupt off would have left it sitting there
   # for the driver runner to harvest -- a context map for a repo nobody
   # finished cleaning up.
-  assert_repo_pristine "$REPO" "killed mid-run"
+  assert_widget_repo_pristine "$REPO" "killed mid-run"
   assert_file_missing "$REPO/.specify/memory/constitution.md" \
     "an interrupted run leaves nothing behind to harvest, session's work included"
 else

@@ -46,6 +46,17 @@ const manifestName = "driver.yaml"
 // dirName is where an instance keeps its drivers, relative to its root.
 const dirName = "drivers"
 
+// libDirName is the directory beside the drivers — not inside any of them —
+// holding the bash helpers a driver's command sources. It exists because
+// more than one driver has to leave someone else's repository exactly as it
+// found it, and a second copy of the code that does that is the one that
+// drifts, on the failure path, where nobody is watching. A driver reaches
+// it at ../lib/ relative to its own directory, which resolves the same way
+// whether the driver is the instance's or was unpacked out of the binary.
+//
+// It declares no manifest, so it is not a driver and never reads as one.
+const libDirName = "lib"
+
 // errNoManifest is what loadManifest reports for a directory that declares
 // no driver. Listing a Set walks drivers/ rather than being handed one
 // name, and has to tell "not a driver" apart from "a driver that won't

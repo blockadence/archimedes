@@ -423,10 +423,22 @@ need invalidating on upgrade, and delivering upgrades is the point.
 One thing an embedded filesystem cannot carry is file modes, and a driver
 depends on exactly one: its command has to be runnable. `internal/driver`
 restores it from what each `driver.yaml` declares its `command` to be,
-rather than from what a filename looks like — a driver's *sourced* helper
-(`spec-kit/repo-snapshot.sh`) is not a program and must stay inert. It is
+rather than from what a filename looks like — a *sourced* helper
+(`lib/repo-snapshot.sh`) is not a program and must stay inert. It is
 the only mode anything restores; `internal/instance` needs none, because
 nothing in the template is a program.
+
+`drivers/lib/` is the one thing under `drivers/` that is not a driver: it
+holds the bash helpers more than one of them sources, reached at `../lib/`
+relative to a driver's own directory. Resolving a driver brings it along —
+unpacked beside a built-in, copied into the instance by `drivers adopt` —
+so that relative path means the same thing from either layer. It declares
+no manifest, which is what keeps it out of the listing and out of `Run`:
+`Set.List` passes over a built-in directory with no `driver.yaml` exactly
+as it already passed over an instance one. It exists because both
+fixed-location drivers have to leave someone else's repository as they
+found it, and a second copy of the code that does that would be the one
+that drifts — on the failure path, where nobody is watching.
 
 ## Adding a subcommand
 

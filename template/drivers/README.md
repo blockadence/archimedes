@@ -34,10 +34,18 @@ longer reach you, which is the deal you took when you took it over.
 
 Take it over first:
 
-`drivers adopt spec-kit` copies the whole driver — command, manifest, and
-any helper the command sources — into `drivers/spec-kit/`, runnable, for you
-to edit. From then on it is yours by the rule above. To hand the name back
-to the version Archimedes maintains, delete `drivers/spec-kit/`.
+`drivers adopt spec-kit` copies the whole driver — command and manifest —
+into `drivers/spec-kit/`, runnable, for you to edit, along with the shared
+helpers it sources into `drivers/lib/` (see below). From then on it is yours
+by the rule above. To hand the name back to the version Archimedes
+maintains, delete `drivers/spec-kit/`.
+
+A `drivers/lib/` you already have is left exactly as it is — it is yours by
+the same rule, and adopting a second driver that sources it must not
+overwrite an edit you made there. The corollary is that handing a driver
+back leaves `drivers/lib/` behind: delete that too, unless another driver of
+yours sources it. A stale one left there is a copy no adopt will refresh and
+no upgrade will reach.
 
 It is a one-time act, not a subscription: nothing re-syncs an adopted
 driver, in either direction, and adopting over one you already have is
@@ -96,15 +104,23 @@ A driver lives in its own directory here, named after itself:
 
 ```
 drivers/
+  lib/            # helpers more than one driver sources — not a driver itself
   <name>/
     driver.yaml   # manifest
     <command>     # the executable named in the manifest, run.sh by convention
 ```
 
 The command has to be executable (`chmod +x`) — Archimedes runs it, it does
-not source it. Anything beside it that the command *sources* rather than
-runs should stay non-executable; `spec-kit`'s `repo-snapshot.sh` is the
-worked example.
+not source it. Anything the command *sources* rather than runs should stay
+non-executable; `lib/repo-snapshot.sh` is the worked example.
+
+`lib/` is where a helper goes once more than one driver needs it. A driver
+reaches it at `../lib/` relative to its own directory, which resolves the
+same way whether the driver is yours or was read out of the binary. It
+declares no manifest, so it is not a driver: it never appears in the
+`drivers` listing, and naming it is an unknown driver like any other name
+nothing supplies. A helper only one driver uses can just sit beside that
+driver's command instead.
 
 A driver is handed its own directory in the sense that files beside its
 command are there to be sourced or read — but not as durable storage. A
@@ -170,13 +186,23 @@ modes are supported:
 
   "No trace" is a joint obligation, and the half Archimedes can't
   discharge belongs to the driver: it must leave the target repo exactly as
-  it found it apart from `<fixed_path>`. A driver that only ever writes one
-  file (`pocock`) gets this for free. One that has to scaffold a whole
-  toolchain into the repo before it can produce anything (`spec-kit`) has to
-  undo that scaffolding itself before exiting — see
-  the `spec-kit` driver's `repo-snapshot.sh` for the snapshot-then-restore
-  approach that generalizes to any such tool (`drivers adopt spec-kit`
-  puts a copy here to read).
+  it found it apart from `<fixed_path>`. Neither shipped driver in this mode
+  gets that for free. `spec-kit` has to scaffold a whole toolchain into the
+  repo before it can produce anything; `pocock` writes only one file itself,
+  but what it *runs* is an agent session with write access to the repo, and
+  a sentence in a prompt is not a guarantee. Both take the same route:
+  snapshot the repo, then put back whatever the run added or changed, on
+  every exit path including the interrupt. `lib/repo-snapshot.sh` is that
+  route written down, and it generalizes to any driver in this position
+  (`drivers adopt spec-kit` puts a copy here to read).
+
+  What a driver does about the leftovers it finds is its own call, and the
+  two shipped ones answer differently on purpose. `spec-kit`'s scaffolding
+  was always going to be there, so putting it back is routine and the run
+  succeeds. `pocock`'s session was asked for one file, so anything else is
+  the prompt having lost an argument with a non-deterministic agent: it puts
+  the files back, names them, and fails the run rather than harvesting a map
+  from a session that would not keep to what it was told.
 
 ## Trying one directly
 
@@ -197,7 +223,19 @@ above). The `drivers` listing shows whichever ones your install carries.
   session. The skill always writes `CONTEXT.md` at the root of whatever repo
   it's run in, so this is a `fixed-location` driver (`fixed_path:
   CONTEXT.md`) — requires the `claude` CLI and the `domain-modeling` skill
-  installed.
+  installed, plus bash 4+ and a target that is a git repo (both checked
+  before the session starts, so a machine that cannot support the rollback
+  fails the run rather than paying for one it cannot clean up after).
+
+  Its prompt asks the session to write that one file and nothing else, at
+  length, because the skill's own criteria call for ADRs — so the prompt is
+  arguing with the thing it invokes, on every run, and will sometimes lose.
+  The driver assumes it will: it snapshots the repo first, puts back
+  everything the session wrote beyond `CONTEXT.md`, and fails the run naming
+  those files. That throws away a billed session's usable map, deliberately.
+  A run that quietly deleted an agent's work in your repository and reported
+  success would leave you with no way to know the prompt had stopped
+  working.
 - `spec-kit` — wraps [GitHub's Spec Kit](https://github.com/github/spec-kit)
   (`uv tool install specify-cli --from
   git+https://github.com/github/spec-kit.git`), also via a headless `claude

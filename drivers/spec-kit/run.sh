@@ -16,7 +16,6 @@
 # harvests that one file (see driver.yaml's fixed_path) and prunes the
 # directories it empties, leaving the target repo exactly as it was found.
 set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/repo-snapshot.sh"
 
 [ $# -eq 1 ] || { echo "usage: run.sh <repo-path>" >&2; exit 1; }
 REPO_PATH="$1"
@@ -41,6 +40,12 @@ git -C "$REPO_PATH" rev-parse --git-dir >/dev/null 2>&1 || {
   echo "the spec-kit driver needs bash 4+ (running ${BASH_VERSION}); on macOS, /bin/bash is 3.2 -- install a newer bash and make sure it comes first on PATH" >&2
   exit 1
 }
+
+# Sourced once everything it needs has been checked for, rather than at the
+# top: an operator who has installed none of this should be told which CLI
+# is missing, not handed a command-not-found from inside a helper that was
+# loaded before anyone asked whether the run could happen at all.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/repo-snapshot.sh"
 
 CONSTITUTION=".specify/memory/constitution.md"   # must match driver.yaml's fixed_path
 

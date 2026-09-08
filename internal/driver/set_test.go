@@ -19,12 +19,16 @@ import (
 // this repo happens to ship today.
 
 // builtins is a stand-in for the drivers the binary carries: each one
-// records which layer it came from into the map it writes.
+// records which layer it came from into the map it writes. It carries both
+// kinds of helper a driver's command can source — one of its own, beside
+// the command, and one out of the shared lib/ that sits alongside every
+// driver rather than inside any of them.
 func builtins() fstest.MapFS {
 	return fstest.MapFS{
 		"shipped/driver.yaml": &fstest.MapFile{Data: []byte("name: shipped\ndescription: one the tool ships\noutput_mode: path-parameterized\ncommand: run.sh\n")},
-		"shipped/run.sh":      &fstest.MapFile{Data: []byte("#!/usr/bin/env bash\nset -euo pipefail\n. \"$(dirname \"${BASH_SOURCE[0]}\")/lib.sh\"\necho \"built-in shipped, $(helper)\" > \"$2\"\n")},
+		"shipped/run.sh":      &fstest.MapFile{Data: []byte("#!/usr/bin/env bash\nset -euo pipefail\nhere=\"$(dirname \"${BASH_SOURCE[0]}\")\"\n. \"$here/lib.sh\"\n. \"$here/../lib/shared.sh\"\necho \"built-in shipped, $(helper), $(shared_helper)\" > \"$2\"\n")},
 		"shipped/lib.sh":      &fstest.MapFile{Data: []byte("helper() { echo 'sourced helper ran'; }\n")},
+		"lib/shared.sh":       &fstest.MapFile{Data: []byte("shared_helper() { echo 'shared helper ran'; }\n")},
 	}
 }
 
@@ -45,6 +49,51 @@ func TestABuiltinDriverRunsWhenTheInstanceHasNoneOfItsOwn(t *testing.T) {
 	// drivers simple enough to be one script.
 	if !strings.Contains(got, "sourced helper ran") {
 		t.Errorf("output = %q, want the built-in's sourced helper to have been carried with it", got)
+	}
+}
+
+// Two drivers that both have to leave someone else's repository exactly as
+// they found it should not each carry their own copy of the code that does
+// it — the second copy is the one that drifts, and it drifts on the
+// failure path where nobody is watching. So the shared helpers live beside
+// the drivers rather than inside one of them, and resolving any driver has
+// to bring them along: `../lib/` has to be there whichever layer answered.
+func TestABuiltinDriverGetsTheSharedHelpersBesideIt(t *testing.T) {
+	set := driver.Set{Dir: t.TempDir(), Builtin: builtins()}
+	out := filepath.Join(t.TempDir(), "CONTEXT.md")
+
+	if err := set.Run("shipped", repoDir(t), out, io.Discard); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if got := readFile(t, out); !strings.Contains(got, "shared helper ran") {
+		t.Errorf("output = %q, want the shared lib/ to have been unpacked alongside the driver", got)
+	}
+}
+
+// lib/ is not a driver and must never read as one: it declares no manifest,
+// so the listing passes over it exactly as it passes over any other
+// directory under drivers/ that declares nothing, and naming it is an
+// unknown driver rather than a confusing failure inside it.
+func TestTheSharedHelperDirectoryIsNotADriver(t *testing.T) {
+	set := driver.Set{Dir: t.TempDir(), Builtin: builtins()}
+
+	got, err := set.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, e := range got {
+		if e.Name == "lib" {
+			t.Errorf("List() = %+v, want the shared helper directory left out of the listing", got)
+		}
+	}
+
+	err = set.Run("lib", repoDir(t), filepath.Join(t.TempDir(), "CONTEXT.md"), io.Discard)
+	if err == nil {
+		t.Fatal("expected naming the shared helper directory to be an unknown driver, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown driver") {
+		t.Errorf("error %q, want it to read as an unknown driver", err)
 	}
 }
 
@@ -275,6 +324,53 @@ func TestAdoptCopiesAShippedDriverIntoTheInstanceWhereItThenWins(t *testing.T) {
 	}
 	if got := readFile(t, out); !strings.Contains(got, "edited after adopting") {
 		t.Errorf("output = %q, want the adopted copy to have run", got)
+	}
+}
+
+// Adopting hands over the whole of what the driver needs to run, and the
+// shared helpers are part of that: an adopted driver whose `../lib/` was
+// left behind in the binary would fail only once it was already running
+// inside somebody's repository.
+func TestAdoptBringsTheSharedHelpersTheAdoptedDriverSources(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "drivers")
+	set := driver.Set{Dir: dir, Builtin: builtins()}
+
+	if _, err := set.Adopt("shipped"); err != nil {
+		t.Fatalf("Adopt: %v", err)
+	}
+
+	// Sourced, not run — the same rule the driver's own helper follows.
+	assertMode(t, filepath.Join(dir, "lib", "shared.sh"), false)
+
+	out := filepath.Join(t.TempDir(), "CONTEXT.md")
+	if err := set.Run("shipped", repoDir(t), out, io.Discard); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := readFile(t, out); !strings.Contains(got, "shared helper ran") {
+		t.Errorf("output = %q, want the adopted driver to find the shared helpers it sources", got)
+	}
+}
+
+// The shared helpers an instance already has are the instance's, by the
+// same rule its drivers are: adopting a second driver that sources them
+// must not quietly replace the copy the operator may have edited.
+func TestAdoptLeavesSharedHelpersTheInstanceAlreadyHasAlone(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "drivers")
+	if err := os.MkdirAll(filepath.Join(dir, "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mine := filepath.Join(dir, "lib", "shared.sh")
+	if err := os.WriteFile(mine, []byte("shared_helper() { echo 'mine, edited'; }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	set := driver.Set{Dir: dir, Builtin: builtins()}
+
+	if _, err := set.Adopt("shipped"); err != nil {
+		t.Fatalf("Adopt: %v", err)
+	}
+
+	if got := readFile(t, mine); !strings.Contains(got, "mine, edited") {
+		t.Errorf("the instance's own shared helper was overwritten: %q", got)
 	}
 }
 

@@ -125,18 +125,28 @@ done
 adopted="$(cd "$INSTANCE" && "$INSTALLED" drivers adopt spec-kit)"
 assert_contains "$adopted" "drivers/spec-kit" "adopting says where the driver landed"
 assert_file_exists "$INSTANCE/drivers/spec-kit/run.sh" "adopting leaves the real driver to edit"
-assert_file_exists "$INSTANCE/drivers/spec-kit/repo-snapshot.sh" \
-  "adopting brings the helper the command sources, not just the command"
+# The snapshot/restore helper is shared by the drivers that have to leave
+# someone else's repo as they found it, so it sits beside them rather than
+# inside one of them -- and an adopted driver that arrived without it would
+# fail only once it was already running in a repository.
+assert_file_exists "$INSTANCE/drivers/lib/repo-snapshot.sh" \
+  "adopting brings the helpers the command sources, not just the command"
 [ -x "$INSTANCE/drivers/spec-kit/run.sh" ] \
   && pass "the adopted driver's command arrives runnable" \
   || fail "the adopted driver's command arrives runnable"
-[ -x "$INSTANCE/drivers/spec-kit/repo-snapshot.sh" ] \
+[ -x "$INSTANCE/drivers/lib/repo-snapshot.sh" ] \
   && fail "a sourced helper is not a program and must not be made one" \
   || pass "a sourced helper is not a program and must not be made one"
 
 listing="$(cd "$INSTANCE" && "$INSTALLED" drivers)"
 assert_contains "$listing" "shadows built-in" \
   "the listing flags the adopted copy as one no fix to the shipped driver will reach"
+
+# And the helpers the adoption brought are not themselves a driver: they
+# declare no manifest, so lib/ must not appear as a name this instance can
+# run -- nor as a broken one it cannot.
+names="$(printf '%s\n' "$listing" | awk 'NR > 1 { print $1 }')"
+assert_not_contains "$names" "lib" "the shared helper directory is not listed as a driver"
 
 if err="$(cd "$INSTANCE" && "$INSTALLED" drivers adopt spec-kit 2>&1 >/dev/null)"; then
   fail "adopting over a driver the instance already has is refused"

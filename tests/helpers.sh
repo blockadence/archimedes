@@ -166,3 +166,18 @@ EOF
     git -c user.email=test@example.com -c user.name=test commit -qm init
   )
 }
+
+# The question every driver test asks of the repo it was pointed at: is it
+# back exactly as make_widget_repo left it? Nothing but .git and src/ ever
+# belonged there, so anything else is a trace of the run -- including the
+# empty directories `git status` cannot see, since git tracks none.
+#
+# It lives beside make_widget_repo because it is that fixture's other half:
+# what the repo starts as is what "pristine" has to mean, and three files
+# asking it separately would be three answers free to drift. <repo> <label>
+assert_widget_repo_pristine() {
+  local repo="$1" label="$2" leftovers
+  leftovers="$(cd "$repo" && ls -A | sort | tr '\n' ' ')"
+  assert_eq "$leftovers" ".git src " "$label: nothing is left in the repo but what it started with"
+  assert_eq "$(git -C "$repo" status --porcelain)" "" "$label: the repo's git status is clean"
+}

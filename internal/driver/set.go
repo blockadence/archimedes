@@ -104,6 +104,10 @@ func (s Set) ships(name string) bool {
 // built-in layer is that upgrading the tool is what delivers a fix. Driver
 // runs cost minutes and network; unpacking a few files costs neither.
 //
+// The shared helpers come too, into a lib/ beside the driver rather than
+// inside it: a driver sources them at ../lib/, and that path has to resolve
+// the same way whichever layer answered the name.
+//
 // It goes wherever os.MkdirTemp puts it, which a driver has to be able to
 // execute from. On a machine whose temp directory is mounted noexec, point
 // TMPDIR somewhere it isn't — the instance's own drivers still run either
@@ -119,6 +123,12 @@ func (s Set) unpack(name string) (dir string, release func(), err error) {
 		release()
 		return "", nil, err
 	}
+	if s.shipsLib() {
+		if err := unpackInto(s.Builtin, libDirName, filepath.Join(dir, libDirName)); err != nil {
+			release()
+			return "", nil, err
+		}
+	}
 	if err := makeCommandExecutable(dir, name); err != nil {
 		release()
 		return "", nil, err
@@ -126,7 +136,23 @@ func (s Set) unpack(name string) (dir string, release func(), err error) {
 	return dir, release, nil
 }
 
-// unpackInto writes the built-in driver named name out to dest.
+// shipsLib reports whether the built-in layer carries shared helpers at all.
+// A Set's built-in layer is whatever filesystem the caller hands over, and a
+// driver that sources nothing needs no lib/ beside it — so its absence is an
+// ordinary shape rather than a broken one, and resolving a driver out of
+// such a layer must not fail on a directory nobody needed. That the copy
+// this binary ships does carry one is template_test.go's question, not this
+// function's.
+func (s Set) shipsLib() bool {
+	if s.Builtin == nil {
+		return false
+	}
+	info, err := fs.Stat(s.Builtin, libDirName)
+	return err == nil && info.IsDir()
+}
+
+// unpackInto writes the built-in subtree rooted at name out to dest — a
+// driver's own directory, or the lib/ of helpers beside them.
 func unpackInto(builtin fs.FS, name, dest string) error {
 	return fs.WalkDir(builtin, name, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -138,7 +164,7 @@ func unpackInto(builtin fs.FS, name, dest string) error {
 		}
 		data, err := fs.ReadFile(builtin, path)
 		if err != nil {
-			return fmt.Errorf("reading built-in driver %s: %w", path, err)
+			return fmt.Errorf("reading built-in %s: %w", path, err)
 		}
 		return os.WriteFile(target, data, 0o644)
 	})
@@ -208,7 +234,11 @@ func (s Set) List() ([]Entry, error) {
 			return nil, fmt.Errorf("reading the drivers archimedes ships: %w", err)
 		}
 		for _, name := range names {
-			byName[name] = s.describe(s.Builtin, "", name, FromBuiltin, false)
+			e := s.describe(s.Builtin, "", name, FromBuiltin, false)
+			if notADriver(e) {
+				continue
+			}
+			byName[name] = e
 		}
 	}
 
@@ -219,10 +249,8 @@ func (s Set) List() ([]Entry, error) {
 	for _, name := range own {
 		_, alsoShipped := byName[name]
 		e := s.describe(os.DirFS(s.Dir), s.Dir, name, FromInstance, alsoShipped)
-		// A directory under drivers/ that declares nothing is not a
-		// driver, and this is not the place to complain about it. If the
-		// tool ships one by that name, its entry stands.
-		if errors.Is(e.Err, errNoManifest) {
+		// If the tool ships one by that name, its entry stands.
+		if notADriver(e) {
 			continue
 		}
 		byName[name] = e
@@ -234,6 +262,16 @@ func (s Set) List() ([]Entry, error) {
 	}
 	slices.SortFunc(entries, func(a, b Entry) int { return strings.Compare(a.Name, b.Name) })
 	return entries, nil
+}
+
+// notADriver reports a directory that declares no driver — lib/, holding
+// the helpers drivers source, or anything else somebody left under
+// drivers/. Listing is no place to complain about one, and both layers pass
+// over theirs the same way, because a directory that is a driver in one
+// layer's reading and not in the other's would be a disagreement about what
+// a driver is.
+func notADriver(e Entry) bool {
+	return errors.Is(e.Err, errNoManifest)
 }
 
 // describe reads one driver's manifest for the listing, keeping a failure
@@ -301,5 +339,32 @@ func (s Set) Adopt(name string) (string, error) {
 		_ = os.RemoveAll(dest)
 		return "", err
 	}
+	if err := s.adoptLib(); err != nil {
+		_ = os.RemoveAll(dest)
+		return "", err
+	}
 	return dest, nil
+}
+
+// adoptLib puts the shared helpers where an adopted driver sources them
+// from, unless the instance already has a lib/ of its own — which is the
+// operator's by the same rule their drivers are, and may be the very edit
+// they adopted something to make. Unlike a driver, having one already is
+// not a reason to refuse: adopting a second driver that sources the same
+// helpers is an ordinary thing to do.
+func (s Set) adoptLib() error {
+	if !s.shipsLib() {
+		return nil
+	}
+	dest := filepath.Join(s.Dir, libDirName)
+	if _, err := os.Stat(dest); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("checking %s: %w", dest, err)
+	}
+	if err := unpackInto(s.Builtin, libDirName, dest); err != nil {
+		_ = os.RemoveAll(dest)
+		return err
+	}
+	return nil
 }
