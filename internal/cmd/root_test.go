@@ -2,14 +2,13 @@ package cmd
 
 import (
 	"io/fs"
-	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
 	"github.com/blockadence/gh-archimedes"
-	"github.com/blockadence/gh-archimedes/internal/dossier"
 )
 
 // Installed as a gh extension the binary is exactly the same program, run
@@ -164,14 +163,14 @@ func assertNamesSubcommandsAlone(t *testing.T, what, content string, subcommands
 	}
 }
 
-// The instance template is on the far side of the line the test above
+// An instance's own files are on the far side of the line the test above
 // draws. What that one guards is what the tool *prints*, which can be built
 // from invocation.Name() because it is composed fresh on the machine
-// reading it. The template's files are *written*: init copies them into an
-// instance that then commits them, edits them, and shares them with
-// teammates and agents who may have either install or none. So they cannot
-// name the invoking form -- and they cannot name one fixed form either,
-// since half the readers have not got it.
+// reading it. An instance's files are *written*: the commands that scaffold
+// one copy and generate them into a repository that then commits them,
+// edits them, and shares them with teammates and agents who may have either
+// install or none. So they cannot name the invoking form -- and they cannot
+// name one fixed form either, since half the readers have not got it.
 //
 // The answer is to name the subcommand alone (`spawn`, the `drivers`
 // listing) everywhere, and to state the two forms it is prefixed with once,
@@ -183,27 +182,63 @@ func assertNamesSubcommandsAlone(t *testing.T, what, content string, subcommands
 // They live here rather than beside the template because this is the same
 // check as the one above, against the same list of real subcommands.
 
-func TestTheInstanceTemplateNamesNoCommandHalfItsReadersHaventGot(t *testing.T) {
+// The check is a walk of an instance rather than a list of the code paths
+// that write into one. Naming those was the earlier shape and it failed
+// once already: the walk enumerated the embedded template, the dossier stub
+// `bootstrap` writes was not a template file, and it told its readers to run
+// `archimedes sync-house-rules` for months. A second hand-named walk fixed
+// that one file and left the same gap in front of the third.
+//
+// So this reads the artifact -- everything scaffoldInstance produces --
+// rather than the writers of it. What a subcommand nobody has thought about
+// yet writes into an instance is covered by being in the instance, without
+// anything here naming it.
+func TestAScaffoldedInstanceNamesNoCommandHalfItsReadersHaventGot(t *testing.T) {
 	subcommands := subcommandNames(newRootCmd())
+	root, parent := scaffoldInstance(t)
 
-	tmpl := archimedes.Template()
-	// Every file, `scaffolding/` included. Those are pushed into other
-	// people's repositories and so stay fixed under either install, which is
-	// a stricter rule than this one rather than a different one -- there is
-	// nothing here for them to fail, and no reason to carve them out.
-	err := fs.WalkDir(tmpl, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
+	// What this tool writes into *other people's* repositories is exempt,
+	// and holds one fixed form on purpose: keying a committed file to how
+	// the operator who generated it happened to install would put a
+	// spurious diff in every such repo the first time somebody with the
+	// other install ran the sync. Those repositories are cloned as siblings
+	// of the instance, so the whole of that exemption here is where the
+	// read is rooted -- one directory higher and it would be reading them.
+	// Stand one in, so that moving the root fails saying so rather than
+	// quietly starting to police somebody else's repo.
+	elsewhere := filepath.Join(parent, orgRepoName, "HOUSE_RULES.md")
+	writeFile(t, elsewhere, "Refresh this file with `archimedes sync-house-rules`.\n")
+
+	files := instanceFiles(t, root)
+
+	for rel, content := range files {
+		// Every file, `scaffolding/` included. Those are pushed into other
+		// people's repositories and so stay fixed under either install,
+		// which is a stricter rule than this one rather than a different
+		// one -- there is nothing here for them to fail, and no reason to
+		// carve them out.
+		assertNamesSubcommandsAlone(t, "the instance's "+rel, content, subcommands)
+	}
+
+	sibling := filepath.Join(parent, orgRepoName) + string(filepath.Separator)
+	for rel := range files {
+		if strings.HasPrefix(filepath.Join(root, rel), sibling) {
+			t.Errorf("%s was read as part of the instance, but it is beside one: "+
+				"rooted there this polices repositories the tool only writes into", rel)
 		}
-		content, err := fs.ReadFile(tmpl, path)
-		if err != nil {
-			return err
+	}
+
+	// And the files the hand-named walks used to name were reached, plus
+	// the one neither of them would have: a walk covering nothing must not
+	// pass by finding nothing.
+	for _, want := range []string{
+		"README.md",
+		filepath.Join("repos", orgRepoName+".md"),
+		filepath.Join("work", workSlug, "status.md"),
+	} {
+		if _, ok := files[want]; !ok {
+			t.Errorf("the instance's %s was never read: this covers less of one than it looks like it does", want)
 		}
-		assertNamesSubcommandsAlone(t, "the template's "+path, string(content), subcommands)
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -239,6 +274,10 @@ func TestTheInstanceTemplateSendsAnAgentToThatSectionRatherThanRestatingIt(t *te
 // the two forms, named here because two files agree on it.
 const invocationSection = "Running a command"
 
+// templateFile reads one file out of the embedded template. The two tests
+// above are about the template rather than an instance: they are what makes
+// the convention followable, and it has to be in the seed data every
+// instance is created from rather than in any one instance.
 func templateFile(t *testing.T, path string) string {
 	t.Helper()
 	content, err := fs.ReadFile(archimedes.Template(), path)
@@ -246,26 +285,4 @@ func templateFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(content)
-}
-
-// The dossier stub `bootstrap` scaffolds sits on the same side of that line
-// as the template, for the same reasons and with the same fix: it is
-// written into `repos/<repo>.md`, committed to the instance's history,
-// edited by its operator and read by teammates and agents who may have
-// either install. It is not a template file -- nothing copies it out of the
-// embedded tree -- so the walk above cannot see it, and it needs its own
-// against the same real subcommand list.
-func TestTheScaffoldedDossierNamesNoCommandHalfItsReadersHaventGot(t *testing.T) {
-	subcommands := subcommandNames(newRootCmd())
-
-	dir := t.TempDir()
-	if _, err := dossier.WriteStub(dir, dossier.Stub{Name: "widget-service", Path: "../widget-service", BaseBranch: "main"}); err != nil {
-		t.Fatalf("WriteStub: %v", err)
-	}
-	content, err := os.ReadFile(dossier.Path(dir, "widget-service"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assertNamesSubcommandsAlone(t, "the scaffolded dossier", string(content), subcommands)
 }
