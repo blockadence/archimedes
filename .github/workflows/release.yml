@@ -52,7 +52,16 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      # The one action here we do not control, and the one the Node 20
+      # deprecation did not touch: it is a composite action -- a list of
+      # steps, no JavaScript entry point -- so there is no runtime under it
+      # to deprecate, which is why the annotation on this job named only
+      # actions/checkout. Its own nested actions are SHA-pinned by upstream
+      # and already on node24 at v2.2.0. Left alone deliberately: bumping it
+      # would mean re-reading its changelog for what it does with
+      # `generate_attestations` and `draft_release` below, and the
+      # deprecation gives no reason to.
       - uses: cli/gh-extension-precompile@v2
         with:
           go_version_file: go.mod
