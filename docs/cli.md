@@ -601,6 +601,59 @@ workflow installs so that it runs there too — pinned to a version there,
 since that install is the one part of a release gate that reaches the
 network, and an upstream reword should not be able to hold up a tag.
 
+### The Node the actions run on
+
+Every `uses:` across the three workflows is on a release that does not
+target Node 20, and `tests/ci_action_runtimes.sh` is what keeps it that way.
+
+This is not housekeeping. GitHub's runners were forcing the node20 actions
+onto Node 24 and annotating every run to say so, and when that override goes
+it goes on `test.yml` first — which is `release.yml`'s gate, so the first
+thing to break would be the ability to cut a release, for a reason with
+nothing to do with the tag being pushed. `live-drivers.yml` is the worse
+case rather than the milder one: it is `workflow_dispatch` and a weekly
+cron, so it is the file that gets discovered broken by a report nobody is
+reading.
+
+The versions:
+
+| file | actions |
+|---|---|
+| `test.yml` | `actions/checkout@v7`, `actions/setup-go@v7` |
+| `release.yml` | `actions/checkout@v7`, `cli/gh-extension-precompile@v2` |
+| `live-drivers.yml` | `actions/checkout@v7`, `actions/setup-go@v7`, `actions/setup-node@v7`, `astral-sh/setup-uv@v10.0.1` |
+
+The test records a floor per action — the lowest major whose `action.yml`
+says `runs: using: node24` — rather than the exact version in the tree, so a
+routine bump is not also a test edit, and an action nobody has recorded a
+floor for fails rather than passing quietly. Its header has the `gh api`
+one-liner for working a new floor out. What it cannot do is check that table
+against upstream, because a test in a release gate must not need the
+network; that half was checked by reading each upstream `action.yml`, and
+then by a real run of each of the three files reporting no annotation. Read
+the run rather than trusting the bump: a green square is not the evidence,
+the absence of the warning on the job is.
+
+`cli/gh-extension-precompile@v2` is the one action here we do not control,
+and the answer for it is that it was never affected: it is a composite
+action, so there is no Node runtime under it to deprecate — which is why the
+annotation on `release.yml` named only `actions/checkout` — and its own
+nested actions are SHA-pinned upstream and already on node24. It is
+deliberately not bumped. A bump would mean re-reading its changelog for what
+it does with `generate_attestations` and `draft_release`, which is the one
+failure mode in this repository that publishes the wrong thing rather than
+nothing, and the deprecation gives no reason to take that on.
+
+`astral-sh/setup-uv` is the one step named by full version (`@v10.0.1`)
+rather than by floating major, and that is upstream's doing rather than a
+pinning policy of ours: that action stopped publishing major tags with its
+v8 release, so `@v7` is the newest floating major that exists and its line
+has had no release since March 2026 — staying on it would mean sitting on a
+branch that will not get the next deprecation's fix. Deliberately not done
+anywhere here: pinning actions to commit SHAs. That is a supply-chain
+decision with its own argument and its own maintenance cost, and it is not
+what the deprecation was asking for.
+
 ## The live driver tests
 
 Those two files are the only place the drivers meet the real tools they

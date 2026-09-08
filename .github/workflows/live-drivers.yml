@@ -70,7 +70,7 @@ jobs:
       ARCHIMEDES_TEST_LIVE_DRIVERS: "1"
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Without this the first failure is a `claude` auth error buried in a
       # test log, which reads like the driver broke. The setup it is
@@ -82,18 +82,27 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
       - name: Install the claude CLI both drivers run headlessly
         run: npm install -g @anthropic-ai/claude-code
 
-      - uses: astral-sh/setup-uv@v5
+      # A full version rather than a floating major, unlike the three
+      # actions/* steps above, and not a pinning policy creeping in: this
+      # action stopped publishing major tags with its v8, so `@v7` is the
+      # newest one that exists and its line has had no release since March
+      # 2026. docs/cli.md, "The Node the actions run on", has the rest. The
+      # breaking changes between v5 and here are a manifest format we never
+      # used, a cache default we do not set, and caching turned off for
+      # `pull_request_target`, `workflow_run` and `release` -- none of which
+      # is a trigger on this file.
+      - uses: astral-sh/setup-uv@v10.0.1
 
       - name: Install the specify CLI the spec-kit driver unpacks
         run: |

@@ -52,7 +52,12 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      # The one action here we do not control, and the one the Node 20
+      # deprecation did not touch: it is composite, so there is no Node
+      # runtime under it to deprecate. Left on v2 deliberately -- a bump
+      # would mean re-reading its changelog for what it does with the two
+      # inputs below. docs/cli.md, "The Node the actions run on", has why.
       - uses: cli/gh-extension-precompile@v2
         with:
           go_version_file: go.mod
