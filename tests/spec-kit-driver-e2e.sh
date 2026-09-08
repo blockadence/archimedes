@@ -11,22 +11,27 @@
 # This makes a real, billed `claude -p` call and downloads Spec Kit's
 # templates, so it's opt-in: set ARCHIMEDES_TEST_LIVE_DRIVERS=1 to run it.
 # Skips with a clear message otherwise, same as pocock-driver-e2e.sh.
+#
+# The driver's own orchestration -- snapshot, scaffold, restore, and every
+# failure path -- is exercised on every push by tests/spec_kit_driver_run.sh
+# against stub CLIs. This file adds the half that needs the real tools, and
+# runs weekly in .github/workflows/live-drivers.yml.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
 if [ "${ARCHIMEDES_TEST_LIVE_DRIVERS:-0}" != "1" ]; then
-  echo "skip: spec-kit-driver-e2e.sh (makes a real claude -p call -- set ARCHIMEDES_TEST_LIVE_DRIVERS=1 to run it)"
+  echo "skip: spec-kit-driver-e2e.sh (makes a real claude -p call -- set ARCHIMEDES_TEST_LIVE_DRIVERS=1 to run it; runs weekly in .github/workflows/live-drivers.yml, and tests/spec_kit_driver_run.sh covers this driver's orchestration for free)"
   exit 77
 fi
 
 if ! command -v specify >/dev/null 2>&1; then
-  echo "skip: spec-kit-driver-e2e.sh (specify CLI not on PATH -- uv tool install specify-cli --from git+https://github.com/github/spec-kit.git)"
+  echo "skip: spec-kit-driver-e2e.sh (specify CLI not on PATH -- uv tool install specify-cli --from git+https://github.com/github/spec-kit.git; runs weekly in .github/workflows/live-drivers.yml)"
   exit 77
 fi
 
 if ! command -v claude >/dev/null 2>&1; then
-  echo "skip: spec-kit-driver-e2e.sh (claude CLI not on PATH)"
+  echo "skip: spec-kit-driver-e2e.sh (claude CLI not on PATH -- npm install -g @anthropic-ai/claude-code; runs weekly in .github/workflows/live-drivers.yml)"
   exit 77
 fi
 

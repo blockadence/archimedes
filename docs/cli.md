@@ -167,6 +167,11 @@ The workflow runs the test suites first (`needs: test`, calling the same
 job a push runs) and publishes only if they pass, so a tag on a red tree
 produces no release, no assets, and no half-uploaded matrix.
 
+That gate is the free suite, deliberately: it needs no credential and
+reaches no billed API, so a release never waits on somebody else's service.
+The billed half — the two live driver tests — is a `workflow_dispatch` away
+and worth running by hand first; see [The live driver tests](#the-live-driver-tests).
+
 `cli/gh-extension-precompile` builds the platform matrix, creates the
 release, and attaches the binaries. A tag containing a `-` (`v0.2.0-rc.1`)
 publishes as a prerelease, which `gh extension install` will not hand to
@@ -387,8 +392,7 @@ as skipped and names it in the summary rather than folding it into "0
 failed" — the distinction between a suite that passed and a suite that
 mostly didn't run. Two files are opt-in that way, because they make a real,
 billed `claude -p` call: `tests/pocock-driver-e2e.sh` and
-`tests/spec-kit-driver-e2e.sh`, both behind `ARCHIMEDES_TEST_LIVE_DRIVERS=1`
-and both run by hand rather than by CI.
+`tests/spec-kit-driver-e2e.sh`, both behind `ARCHIMEDES_TEST_LIVE_DRIVERS=1`.
 
 ```
 ARCHIMEDES_TEST_LIVE_DRIVERS=1 ./tests/run-all.sh   # includes the live e2e files
@@ -399,6 +403,52 @@ only the `openspec` CLI (`npm install -g @fission-ai/openspec`), which the
 workflow installs so that it runs there too — pinned to a version there,
 since that install is the one part of a release gate that reaches the
 network, and an upstream reword should not be able to hold up a tag.
+
+## The live driver tests
+
+Those two files are the only place the drivers meet the real tools they
+wrap, so they cannot simply stay skipped — but they also cannot run on a
+push, since a gate that spends money and needs a credential is a gate that
+fails when somebody else's API is down. They run instead in
+`.github/workflows/live-drivers.yml`: weekly on a Monday-morning cron, and
+on demand via `workflow_dispatch`, which is the pre-tag ritual — dispatch
+it, watch it go green, then push the tag. A red run files an issue labelled
+`live-drivers` (and comments on that same issue while it stays red) rather
+than relying on anyone noticing a square.
+
+What that costs, so the schedule isn't a surprise on a bill: two headless
+sessions per run against a throwaway repo holding one small source file, on
+the order of $0.10–$0.50 a session — so $0.20–$1.00 a run, and $10–$52 a
+year across the 52 weekly runs. Treat those as estimates until the first
+month's usage lands, then correct the numbers here and in the workflow's
+header comment. Changing the cadence is one line.
+
+The credential is an `ANTHROPIC_API_KEY` secret on a `live-drivers`
+[deployment environment][envs], not a repository secret, so only a job that
+names that environment can read it. One-time setup: create the environment
+under Settings → Environments and add the secret there. Resist adding a
+required reviewer to that environment, tempting as it is on a workflow that
+spends money: the protection rule gates *every* job naming the environment,
+so the weekly run would sit waiting for an approval nobody knows to give,
+and the schedule this issue exists to create would quietly stop. Add the
+secret *only* to the environment: `secrets.ANTHROPIC_API_KEY`
+resolves a repository-level secret of the same name just as happily, so a
+repo-wide one would quietly undo the scoping without changing a line of
+YAML. Until the environment exists the workflow fails on its first step
+with a message saying so, rather than deep in a test log. Nothing triggers this workflow from a pull
+request, which is deliberate and pinned by `tests/ci_runs_live_drivers.sh`:
+a fork's PR runs the base repo's workflow files, so a `pull_request`
+trigger on a job holding that key would hand it to anyone.
+
+[envs]: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment
+
+What the live files add over the free suite is the upstream half only —
+that the real `claude` and `specify` CLIs still behave the way the drivers
+assume. Each driver's own orchestration is covered on every push against
+stub CLIs: `tests/pocock_driver_run.sh` and `tests/spec_kit_driver_run.sh`.
+That split is why a weekly cadence is enough. A change of ours that breaks
+a driver fails on the push that made it; only a change of theirs waits for
+Monday.
 
 ## Test fixtures
 

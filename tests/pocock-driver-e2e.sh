@@ -10,17 +10,29 @@
 # ARCHIMEDES_TEST_LIVE_DRIVERS=1 to run it. Skips with a clear message
 # otherwise, same spirit as openspec-driver-e2e.sh skipping when the
 # openspec CLI isn't on PATH.
+#
+# Skipping here is not the same as being uncovered, and the two halves are
+# worth keeping straight. The driver's own orchestration -- run the session
+# in the target repo, honour the fixed-location contract, refuse to report
+# success when the session wrote nothing -- is exercised on every push by
+# tests/pocock_driver_run.sh, against a stub `claude`. What only this file
+# can tell you is the upstream half: that the real CLI still takes these
+# flags, and that the domain-modeling skill still reads the repo and writes
+# a context map with the repo's domain in it -- which is why the assertions
+# below go past "a file exists" to what is in it. That is the part worth
+# paying for, and it runs weekly in .github/workflows/live-drivers.yml
+# rather than never.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
 if [ "${ARCHIMEDES_TEST_LIVE_DRIVERS:-0}" != "1" ]; then
-  echo "skip: pocock-driver-e2e.sh (makes a real claude -p call -- set ARCHIMEDES_TEST_LIVE_DRIVERS=1 to run it)"
+  echo "skip: pocock-driver-e2e.sh (makes a real claude -p call -- set ARCHIMEDES_TEST_LIVE_DRIVERS=1 to run it; runs weekly in .github/workflows/live-drivers.yml, and tests/pocock_driver_run.sh covers this driver's orchestration for free)"
   exit 77
 fi
 
 if ! command -v claude >/dev/null 2>&1; then
-  echo "skip: pocock-driver-e2e.sh (claude CLI not on PATH)"
+  echo "skip: pocock-driver-e2e.sh (claude CLI not on PATH -- npm install -g @anthropic-ai/claude-code; runs weekly in .github/workflows/live-drivers.yml)"
   exit 77
 fi
 
@@ -42,6 +54,28 @@ else
 fi
 
 assert_file_exists "$OUT" "context map lands at the exact requested path in the control repo"
+
+# What the billed call is actually for. An empty file, or one that never
+# mentions the single domain term in the repo it was pointed at, satisfies
+# "the driver produced a file" while telling us nothing about whether the
+# skill still works -- and "the driver produced a file" is already proved
+# for free by tests/pocock_driver_run.sh against a stub. This is the
+# assertion that needs a real session, and the counterpart of the
+# placeholder check the spec-kit live test makes on its constitution.
+content="$(cat "$OUT" 2>/dev/null)"
+if [ -s "$OUT" ]; then
+  pass "the harvested context map has something in it"
+else
+  fail "the harvested context map has something in it (empty file)"
+fi
+# make_widget_repo's whole domain is one class called Widget. A context map
+# of that repo that never says the word did not read it.
+if printf '%s' "$content" | grep -qi 'widget'; then
+  pass "the map names the domain it was asked to map, so a real session read the repo"
+else
+  fail "the map names the domain it was asked to map, so a real session read the repo"
+  printf '%s\n' "$content" >&2
+fi
 
 status="$(git -C "$REPO" status --porcelain)"
 assert_eq "$status" "" "target repo has no trace of the artifact after harvesting (clean git status)"
