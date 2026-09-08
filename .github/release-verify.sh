@@ -33,7 +33,7 @@
 #   - Sigstore's trust root, which `gh attestation verify` fetches to check
 #     the signing certificate.
 #
-# THE RACE, AND WHAT THREE RELEASES SAID ABOUT IT. If that read is not
+# THE RACE, AND WHAT FOUR RELEASES SAID ABOUT IT. If that read is not
 # immediately consistent, a check with no wait would fail a few percent of
 # good releases -- and the fix people learn ("re-run it") is also the fix
 # for a real failure, which is worse than not checking at all. So the retry
@@ -41,33 +41,37 @@
 # rather than silent: every retry prints, and a run that needed any says so
 # in a line written to be grepped for. That was the measurement.
 #
-# It has now been taken, and no run has needed a retry. v0.1.0-rc.1, -rc.2
-# and -rc.3 verified twelve assets each and printed no marker line. Be
-# exact about what that does and does not measure:
+# It has now been taken, and no run has needed a retry. v0.1.0-rc.1 through
+# -rc.4 verified twelve assets each and printed no marker line. Be exact
+# about what that does and does not measure:
 #
 #   - Each run's loop *started* 0.36-0.57s after the attest step logged
-#     "Attestation created for 12 subjects" (0.484s, 0.568s, 0.355s to
-#     this script's own banner, which is printed immediately before the
-#     first iteration). So the first lookup of each run is the tightest
-#     timing a release produces, and it succeeded first try.
+#     "Attestation created for 12 subjects" (measured to this script's own
+#     banner, printed immediately before the first iteration). So the first
+#     lookup of each run is the tightest timing a release produces, and it
+#     succeeded first try, four for four.
 #   - The loops then ran about 40s each, so the twelfth lookup is roughly
 #     40s after the write, not under a second. Only the first read is a
 #     test of immediate consistency; the other eleven are progressively
 #     weaker ones.
-#   - "Thirty-six lookups, no retries" is inferred from the per-run count
-#     check, not from thirty-six timestamps -- `gh` prints nothing on
-#     success, which is the other thing these runs established.
+#   - For -rc.1 to -rc.3 "no retries" was inferred from the per-run count
+#     check rather than read off per-lookup timestamps, because `gh` prints
+#     nothing on success -- which is the other thing those runs
+#     established, and what the per-asset line below now fixes. -rc.4 is
+#     the first run whose twelve lookups are individually timestamped: the
+#     first completed 4.7s after the attestation was uploaded, they ran
+#     3.1-4.3s apart, and none retried.
 #
-# What that supports: the read was immediately consistent on the three
+# What that supports: the read was immediately consistent on the four
 # occasions it was tested hardest, so `--bundle` is not needed now. What it
-# does not support: a general claim about GitHub's consistency. Three runs,
-# one commit, inside one hour, on one runner pool, is a small sample against
-# a failure mode whose whole danger is that it is intermittent.
+# does not support: a general claim about GitHub's consistency. Four runs,
+# two commits, inside two hours, on one runner pool, is a small sample
+# against a failure mode whose whole danger is that it is intermittent.
 #
 # So the budget stays, and it is no longer only a hedge -- it is the thing
 # that keeps a rare slow read from becoming a red release whose documented
 # fix ("re-run it") is indistinguishable from the fix for a real failure.
-# It costs nothing on a healthy run; three spent none of it. `--bundle`
+# It costs nothing on a healthy run; four spent none of it. `--bundle`
 # stays the answer if the marker line starts showing up.
 #
 # A bounded wait cannot turn a real failure green either way: an attestation
@@ -157,8 +161,8 @@ while IFS= read -r asset; do
   # like the retry line above it so that both of an asset's possible
   # outcomes grep by the same leading name.
   #
-  # The first real release (v0.1.0-rc.1) established why this has to be
-  # ours: `gh attestation verify` prints nothing whatsoever on success when
+  # The first real releases established why this has to be ours:
+  # `gh attestation verify` prints nothing whatsoever on success when
   # stdout is not a terminal -- its report is gated on an interactive one
   # -- so twelve verifies left the job log holding only the count lines
   # around this loop. The count check below is what actually catches a loop

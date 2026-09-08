@@ -217,10 +217,19 @@ set it back:
 
 ```
 gh release edit <tag> --prerelease=false
+rm -rf "$(gh config get cache_dir 2>/dev/null || echo ~/.cache/gh)"
 gh extension install blockadence/gh-archimedes
 gh release edit <tag> --prerelease
 gh extension remove archimedes
 ```
+
+The cache line is not superstition, and leaving it out is how this looks
+broken. A `gh extension install` attempted while the release was still a
+prerelease caches the `releases/latest` 404, and gh serves that cached 404
+back for minutes afterwards — so the install keeps reporting `not
+installable` with the flag already cleared and the API already returning
+the release. Diagnosing that from the error message alone is not possible;
+it is the same sentence as the real refusal.
 
 The release is installable by anyone for the length of that window, which
 is the cost of finding out. This is written down because it was learned the
@@ -330,17 +339,20 @@ generously:
 
 - Each run's verify loop *started* 0.36–0.57s after the attest step logged
   `Attestation created for 12 subjects`, so each run's **first** lookup is
-  the tightest timing a release produces — and it succeeded first try, three
-  times out of three.
+  the tightest timing a release produces — and it succeeded first try, four
+  times out of four.
 - The loops then ran ~40s each, so the twelfth lookup is ~40s after the
   write. Only the first read of each run really tests immediate
-  consistency.
-- "Thirty-six lookups, no retries" is inferred from the per-run count check
-  rather than from thirty-six timestamps, because `gh` prints nothing on
-  success — see below.
+  consistency; the rest are progressively weaker tests of it.
+- For the first three runs "thirty-six lookups, no retries" was *inferred*
+  from the per-run count check rather than read off thirty-six timestamps,
+  because `gh` prints nothing on success. `v0.1.0-rc.4` is the first run
+  whose twelve lookups are individually timestamped, by the per-asset line
+  below: the first completed 4.7s after the attestation was uploaded and
+  they ran 3.1–4.3s apart, none retried.
 
 So `--bundle` is not needed now, and the budget stays rather than being
-declared unnecessary: three runs on one commit inside one hour on one
+declared unnecessary: four runs on two commits inside two hours on one
 runner pool is a small sample against a failure mode whose danger is that
 it is intermittent, and the cost of keeping the budget is nothing on a
 healthy run. `--bundle` remains the answer if the marker line starts
@@ -358,7 +370,9 @@ quietly stopped applying, a `gh` that eats the loop's stdin — but a stub is
 not a release.
 
 The real tags have since been cut, and one thing the stub had been hiding
-came out with them: the stub `gh` prints on a successful verify and the
+came out with them (the fix is itself proven by `v0.1.0-rc.4`, whose log
+carries twelve `<asset>: verified` lines rather than the stub's word for
+it): the stub `gh` prints on a successful verify and the
 real one does not. `gh attestation verify` gates its report on an
 interactive terminal, so on a runner twelve successful verifies wrote
 nothing at all to the log, and the whole of the evidence was the two count
