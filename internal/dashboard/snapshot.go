@@ -82,7 +82,7 @@ func Collect(opts Options) (Snapshot, error) {
 	src := opts.Sources
 	src.Repos = status.ManifestRepos(m, opts.Root)
 
-	entries, err := status.Discover(filepath.Join(opts.Root, "work"), "")
+	entries, err := status.Discover(opts.Root, "")
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("discovering status files: %w", err)
 	}

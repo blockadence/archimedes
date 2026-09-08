@@ -7,13 +7,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/blockadence/gh-archimedes/internal/worktree"
 )
 
 // Entry is one repo row parsed out of a status.md table.
 type Entry struct {
-	Slug     string
-	Repo     string
-	Branch   string
+	Slug   string
+	Repo   string
+	Branch string
+	// Worktree is the row's worktree column. ParseFile leaves it exactly
+	// as the file records it — relative to the instance root, which is how
+	// it is written (see internal/worktree) — and Discover resolves it
+	// against the root it was given, since that is the layer that knows
+	// which instance the file belongs to.
 	Worktree string
 	Note     string
 }
@@ -24,7 +31,10 @@ type Entry struct {
 const headerLines = 4
 
 // ParseFile parses one status.md's data rows into Entries, tagging each
-// with slug (the work/<slug> directory name spawn keyed it under).
+// with slug (the work/<slug> directory name spawn keyed it under). It
+// reports what the file says and nothing more: the worktree column comes
+// back as recorded, since resolving it takes an instance root this layer
+// is not given.
 func ParseFile(path, slug string) ([]Entry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -60,10 +70,12 @@ func ParseFile(path, slug string) ([]Entry, error) {
 	return entries, nil
 }
 
-// Discover finds every work/<slug>/status.md under workDir and parses their
-// rows, optionally restricted to a single slug.
-func Discover(workDir, slugFilter string) ([]Entry, error) {
-	matches, err := filepath.Glob(filepath.Join(workDir, "*", "status.md"))
+// Discover finds every work/<slug>/status.md in the instance at root and
+// parses their rows, optionally restricted to a single slug. Each row's
+// worktree comes back resolved against root, so a caller gets a path it
+// can use rather than the relative one the file carries.
+func Discover(root, slugFilter string) ([]Entry, error) {
+	matches, err := filepath.Glob(filepath.Join(root, "work", "*", "status.md"))
 	if err != nil {
 		return nil, err
 	}
@@ -78,6 +90,9 @@ func Discover(workDir, slugFilter string) ([]Entry, error) {
 		entries, err := ParseFile(m, slug)
 		if err != nil {
 			return nil, fmt.Errorf("parsing %s: %w", m, err)
+		}
+		for i := range entries {
+			entries[i].Worktree = worktree.Resolve(root, entries[i].Worktree)
 		}
 		all = append(all, entries...)
 	}

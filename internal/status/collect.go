@@ -24,7 +24,7 @@ func Collect(root, slugFilter string, src Sources, guardrailMax int) (Report, er
 	}
 	src.Repos = ManifestRepos(m, root)
 
-	entries, err := Discover(filepath.Join(root, "work"), slugFilter)
+	entries, err := Discover(root, slugFilter)
 	if err != nil {
 		return Report{}, fmt.Errorf("discovering status files: %w", err)
 	}

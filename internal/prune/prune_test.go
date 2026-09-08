@@ -8,9 +8,11 @@ import (
 	"github.com/blockadence/gh-archimedes/internal/prune"
 )
 
-func writeStatus(t *testing.T, dir, slug, body string) string {
+// writeStatus puts one unit of work's status.md where an instance keeps
+// it, under root/work/<slug>/, and returns its path.
+func writeStatus(t *testing.T, root, slug, body string) string {
 	t.Helper()
-	slugDir := filepath.Join(dir, slug)
+	slugDir := filepath.Join(root, "work", slug)
 	if err := os.MkdirAll(slugDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +62,7 @@ func alwaysMerged(_, _ string) (string, error) { return "MERGED", nil }
 func TestScanFindsMergedCandidate(t *testing.T) {
 	dir := t.TempDir()
 	writeStatus(t, dir, "widget-fix", statusBody("widget-fix",
-		"| service-a | widget-fix | /wt/service-a | based on main | - |",
+		"| service-a | widget-fix | ../service-a-worktrees/widget-fix | based on main | - |",
 	))
 
 	items, err := prune.Scan(dir, "", alwaysMerged)
@@ -71,11 +73,32 @@ func TestScanFindsMergedCandidate(t *testing.T) {
 		t.Fatalf("got %d items, want 1", len(items))
 	}
 	it := items[0]
-	if it.Slug != "widget-fix" || it.Repo != "service-a" || it.Worktree != "/wt/service-a" {
-		t.Errorf("item = %+v", it)
+	// The worktree git is about to be handed comes back resolved against
+	// the instance root, not as the "../" the row carries.
+	want := filepath.Join(filepath.Dir(dir), "service-a-worktrees", "widget-fix")
+	if it.Slug != "widget-fix" || it.Repo != "service-a" || it.Worktree != want {
+		t.Errorf("item = %+v, want its worktree at %q", it, want)
 	}
 	if !it.Prunable() {
 		t.Errorf("expected item to be prunable, got blockers: %v", it.Blockers)
+	}
+}
+
+// An instance spawned into before the column was relative still prunes on
+// the machine that spawned it: its rows name a path that is true there,
+// and joining them onto the root would break exactly that case.
+func TestScanReadsAnAbsoluteRowAsItStands(t *testing.T) {
+	dir := t.TempDir()
+	writeStatus(t, dir, "widget-fix", statusBody("widget-fix",
+		"| service-a | widget-fix | /Users/someone/Code/service-a-worktrees/widget-fix | based on main | - |",
+	))
+
+	items, err := prune.Scan(dir, "", alwaysMerged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Worktree != "/Users/someone/Code/service-a-worktrees/widget-fix" {
+		t.Fatalf("got %+v, want the row's own absolute path", items)
 	}
 }
 
@@ -165,7 +188,7 @@ func TestScanRefusesToPruneAStackedBase(t *testing.T) {
 	if base.Prunable() {
 		t.Errorf("expected widget-fix:service-a to be blocked, got prunable")
 	}
-	if len(base.Blockers) != 1 || base.Blockers[0] != filepath.Join(dir, "shim-fix", "status.md") {
+	if len(base.Blockers) != 1 || base.Blockers[0] != filepath.Join(dir, "work", "shim-fix", "status.md") {
 		t.Errorf("unexpected blockers: %v", base.Blockers)
 	}
 

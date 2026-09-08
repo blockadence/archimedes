@@ -15,6 +15,7 @@ import (
 	"github.com/blockadence/gh-archimedes/internal/manifest"
 	"github.com/blockadence/gh-archimedes/internal/stackref"
 	"github.com/blockadence/gh-archimedes/internal/workspace"
+	"github.com/blockadence/gh-archimedes/internal/worktree"
 )
 
 // DefaultAgentCmd is the next-step hint's fallback when no agent CLI is
@@ -55,7 +56,10 @@ type Result struct {
 	Repo string `json:"repo"`
 	// Branch is the branch created; spawn names it after the slug.
 	Branch string `json:"branch"`
-	// Worktree is the checkout the branch was added at.
+	// Worktree is the checkout the branch was added at, as a path on this
+	// machine — what a caller is about to cd into or hand to a tool. The
+	// status row records the same worktree relative to the instance root
+	// instead; see internal/worktree for why the two differ.
 	Worktree string `json:"worktree"`
 	// StartRef is the git ref the branch was cut from, and Note the
 	// human-readable explanation of that choice recorded in the status file.
@@ -83,13 +87,6 @@ func ResolveStartPoint(baseBranch, baseOverride string, stack stackref.Ref) Star
 	default:
 		return StartPoint{Ref: "origin/" + baseBranch, Note: fmt.Sprintf("based on %s", baseBranch)}
 	}
-}
-
-// WorktreePath is where a repo's <slug> worktree lives: a sibling of the
-// repo checkout itself, so it stays easy to find next to it without ever
-// nesting inside it.
-func WorktreePath(repoPath, slug string) string {
-	return repoPath + "-worktrees/" + slug
 }
 
 // NextStepHint is the "what to do now" line printed after a successful
@@ -143,7 +140,7 @@ func Run(opts Options, out, progress io.Writer) (Result, error) {
 
 	start := ResolveStartPoint(repo.BaseBranch, opts.Base, opts.Stack)
 
-	wt := WorktreePath(repoPath, opts.Slug)
+	wt := worktree.Path(repoPath, opts.Slug)
 	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
 		return Result{}, err
 	}
@@ -165,7 +162,11 @@ func Run(opts Options, out, progress io.Writer) (Result, error) {
 		return Result{}, fmt.Errorf("materializing worktree context: %w", err)
 	}
 
-	if err := appendStatusRow(workDir, opts.Slug, opts.Repo, wt, start.Note); err != nil {
+	// Recorded relative to the instance, not as the path it is on this
+	// machine: the row is committed to the instance and read by everyone
+	// who has it (see internal/worktree). Result and the printed lines
+	// below keep the usable path — they answer for this machine.
+	if err := appendStatusRow(workDir, opts.Slug, opts.Repo, worktree.Record(root, wt), start.Note); err != nil {
 		return Result{}, fmt.Errorf("recording status: %w", err)
 	}
 

@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -57,8 +56,7 @@ func runPrune(out io.Writer, root, slugFilter string, force bool, ghState prune.
 		return err
 	}
 
-	workDir := filepath.Join(root, "work")
-	items, err := prune.Scan(workDir, slugFilter, repoPRState(root, m, ghState))
+	items, err := prune.Scan(root, slugFilter, repoPRState(root, m, ghState))
 	if err != nil {
 		return err
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/blockadence/gh-archimedes/internal/prune"
 	"github.com/blockadence/gh-archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/worktree"
 )
 
 // setupInstance builds an instance root with one target repo (with a
@@ -38,8 +39,10 @@ func setupInstance(t *testing.T, root, repoName, slug, note string) (repoPath, w
 	if err := os.MkdirAll(statusDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Recorded the way spawn records it: relative to the instance root,
+	// so the rows these tests prune are the rows an instance carries.
 	status := "# " + slug + "\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
-		"| " + repoName + " | " + slug + " | " + wt + " | " + note + " | - |\n"
+		"| " + repoName + " | " + slug + " | " + worktree.Record(root, wt) + " | " + note + " | - |\n"
 	if err := os.WriteFile(filepath.Join(statusDir, "status.md"), []byte(status), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +105,31 @@ func TestRunPruneForceRemovesWorktreeBranchAndStatusRow(t *testing.T) {
 	}
 }
 
+// An instance spawned into before the worktree column went relative
+// carries absolute rows, and prune has to keep working on the machine
+// those rows are true on -- which is the machine that wrote them, the only
+// one they were ever usable from.
+func TestRunPruneStillReadsAnAbsoluteRow(t *testing.T) {
+	root := t.TempDir()
+	_, wt := setupInstance(t, root, "service-a", "widget-fix", "based on main")
+
+	statusPath := filepath.Join(root, "work", "widget-fix", "status.md")
+	old := strings.Replace(string(readFile(t, statusPath)), worktree.Record(root, wt), wt, 1)
+	if err := os.WriteFile(statusPath, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	merged := func(_, _ string) (string, error) { return "MERGED", nil }
+	if err := runPrune(&buf, root, "", true, merged); err != nil {
+		t.Fatalf("runPrune: %v", err)
+	}
+
+	if _, err := os.Stat(wt); !os.IsNotExist(err) {
+		t.Errorf("expected the worktree named by the absolute row to be removed, stat err = %v", err)
+	}
+}
+
 func TestRunPruneRefusesToRemoveAStackedBase(t *testing.T) {
 	root := t.TempDir()
 	repoPath, wt := setupInstance(t, root, "service-a", "widget-fix", "based on main")
@@ -112,7 +140,7 @@ func TestRunPruneRefusesToRemoveAStackedBase(t *testing.T) {
 		t.Fatal(err)
 	}
 	stackStatus := "# shim-fix\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
-		"| service-a | shim-fix | " + filepath.Join(root, "service-a-worktrees", "shim-fix") + " | stacked on service-a:widget-fix | - |\n"
+		"| service-a | shim-fix | service-a-worktrees/shim-fix | stacked on service-a:widget-fix | - |\n"
 	if err := os.WriteFile(filepath.Join(stackDir, "status.md"), []byte(stackStatus), 0o644); err != nil {
 		t.Fatal(err)
 	}
