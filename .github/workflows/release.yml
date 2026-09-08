@@ -7,7 +7,10 @@
 #
 # A tag with a `-` in it (v0.2.0-rc.1) publishes as a prerelease, which
 # `gh extension install` will not hand to anyone -- the safe way to check
-# this workflow end to end.
+# this workflow end to end. It checks everything except the install: a
+# prerelease is not installable by any route, `--pin` included, because gh
+# decides "is this a binary extension" from `releases/latest`. docs/cli.md,
+# "Cutting a release", has the way round it and what that costs.
 #
 # The run also attests to what it built, so that "is this the binary the
 # repository produced?" is answerable by whoever downloaded it. README's
