@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
 )
 
 func stubRepos(known map[string]string) RepoLookup {
@@ -26,7 +28,7 @@ func stubLookup(prs map[string]PR) PRLookup {
 }
 
 func TestBuildReportLooksUpEachRow(t *testing.T) {
-	entries := []Entry{
+	rows := []statusfile.Row{
 		{Slug: "my-slug", Repo: "service-a", Note: "based on main"},
 		{Slug: "my-slug", Repo: "service-b", Note: "stacked on service-a:my-slug"},
 	}
@@ -40,7 +42,7 @@ func TestBuildReportLooksUpEachRow(t *testing.T) {
 		"/repos/service-b@my-slug": {Number: "-", State: "no PR"},
 	})
 
-	got := BuildReport(entries, Sources{Repos: repos, PR: lookup, Refs: stubRefs{}, Merged: notMerged}, 3)
+	got := BuildReport(rows, Sources{Repos: repos, PR: lookup, Refs: stubRefs{}, Merged: notMerged}, 3)
 
 	want := []Row{
 		{Slug: "my-slug", Repo: "service-a", PRNumber: "42", PRState: "OPEN", Note: "based on main"},
@@ -63,13 +65,13 @@ func TestBuildReportLooksUpEachRow(t *testing.T) {
 }
 
 func TestBuildReportDegradesFailedLookupsToNoPR(t *testing.T) {
-	entries := []Entry{
+	rows := []statusfile.Row{
 		{Slug: "my-slug", Repo: "unknown-repo", Note: "note"},
 	}
 	repos := stubRepos(map[string]string{})
 	lookup := stubLookup(map[string]PR{})
 
-	got := BuildReport(entries, Sources{Repos: repos, PR: lookup, Refs: stubRefs{}, Merged: notMerged}, 3)
+	got := BuildReport(rows, Sources{Repos: repos, PR: lookup, Refs: stubRefs{}, Merged: notMerged}, 3)
 
 	want := Row{Slug: "my-slug", Repo: "unknown-repo", PRNumber: "-", PRState: "no PR", Note: "note"}
 	if got.Rows[0] != want {
@@ -78,14 +80,14 @@ func TestBuildReportDegradesFailedLookupsToNoPR(t *testing.T) {
 }
 
 func TestBuildReportGuardrail(t *testing.T) {
-	entries := make([]Entry, 4)
-	for i := range entries {
-		entries[i] = Entry{Slug: "slug", Repo: "repo"}
+	rows := make([]statusfile.Row, 4)
+	for i := range rows {
+		rows[i] = statusfile.Row{Slug: "slug", Repo: "repo"}
 	}
 	repos := stubRepos(map[string]string{"repo": "/repos/repo"})
 	lookup := stubLookup(map[string]PR{"/repos/repo@slug": {Number: "-", State: "no PR"}})
 
-	got := BuildReport(entries, Sources{Repos: repos, PR: lookup, Refs: stubRefs{}, Merged: notMerged}, 3)
+	got := BuildReport(rows, Sources{Repos: repos, PR: lookup, Refs: stubRefs{}, Merged: notMerged}, 3)
 
 	if got.Count != 4 {
 		t.Errorf("expected count 4, got %d", got.Count)
@@ -150,7 +152,7 @@ func TestFormatHumanIncludesGuardrailWarning(t *testing.T) {
 }
 
 func TestBuildReportFlagsStackedRowWhoseBaseHasMerged(t *testing.T) {
-	entries := []Entry{
+	rows := []statusfile.Row{
 		{Slug: "auth-ui", Repo: "service-a", Branch: "auth-ui", Note: "stacked on service-a:auth-api"},
 		{Slug: "auth-ui", Repo: "service-b", Branch: "auth-ui", Note: "based on main"},
 	}
@@ -175,7 +177,7 @@ func TestBuildReportFlagsStackedRowWhoseBaseHasMerged(t *testing.T) {
 		ancestors: map[string]bool{"/repos/service-a@auth-api..auth-ui": true},
 	}
 
-	got := BuildReport(entries, Sources{Repos: repos, PR: lookup, Refs: refs, Merged: merged}, 3)
+	got := BuildReport(rows, Sources{Repos: repos, PR: lookup, Refs: refs, Merged: merged}, 3)
 
 	if !got.Rows[0].NeedsRebase {
 		t.Errorf("expected the stacked row to be flagged, got: %#v", got.Rows[0])
@@ -189,7 +191,7 @@ func TestBuildReportFlagsStackedRowWhoseBaseHasMerged(t *testing.T) {
 }
 
 func TestBuildReportClearsFlagOnceRebased(t *testing.T) {
-	entries := []Entry{
+	rows := []statusfile.Row{
 		{Slug: "auth-ui", Repo: "service-a", Branch: "auth-ui", Note: "stacked on service-a:auth-api"},
 	}
 	repos := stubRepos(map[string]string{"service-a": "/repos/service-a"})
@@ -202,7 +204,7 @@ func TestBuildReportClearsFlagOnceRebased(t *testing.T) {
 		"/repos/service-a@origin/main": true,
 	}}
 
-	got := BuildReport(entries, Sources{Repos: repos, PR: lookup, Refs: refs, Merged: merged}, 3)
+	got := BuildReport(rows, Sources{Repos: repos, PR: lookup, Refs: refs, Merged: merged}, 3)
 
 	if got.Rows[0].NeedsRebase {
 		t.Errorf("expected no flag after the branch was rebased, got: %#v", got.Rows[0])
@@ -213,7 +215,7 @@ func TestBuildReportClearsFlagOnceRebased(t *testing.T) {
 }
 
 func TestBuildReportFallsBackToSlugWhenBranchColumnIsEmpty(t *testing.T) {
-	entries := []Entry{
+	rows := []statusfile.Row{
 		{Slug: "auth-ui", Repo: "service-a", Note: "stacked on service-a:auth-api"},
 	}
 	repos := stubRepos(map[string]string{"service-a": "/repos/service-a"})
@@ -227,7 +229,7 @@ func TestBuildReportFallsBackToSlugWhenBranchColumnIsEmpty(t *testing.T) {
 		ancestors: map[string]bool{"/repos/service-a@auth-api..auth-ui": true},
 	}
 
-	got := BuildReport(entries, Sources{Repos: repos, PR: lookup, Refs: refs, Merged: merged}, 3)
+	got := BuildReport(rows, Sources{Repos: repos, PR: lookup, Refs: refs, Merged: merged}, 3)
 
 	if !got.Rows[0].NeedsRebase {
 		t.Errorf("expected the slug to stand in for a missing branch column, got: %#v", got.Rows[0])

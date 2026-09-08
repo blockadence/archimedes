@@ -566,12 +566,16 @@ they have cloned anything.
 lives, beside its checkout), `Record` (how it is written down), `Resolve`
 (how a reader turns the row back into a usable path) — so a writer and a
 reader cannot come to different conclusions about the shape. `spawn`
-records through `Record`; `status.Discover` and `prune.Scan` resolve
-through `Resolve`, and both take the instance root rather than its `work/`
-directory for that reason. The parse layers underneath (`status.ParseFile`,
-`prune.ParseStatusFile`) report the column exactly as the file states it:
-they are given a file, not an instance, and inventing a root to resolve
-against is the mistake this is fixing.
+records through `Record`; `prune.Scan` resolves through `Resolve`, and
+takes the instance root rather than its `work/` directory for that reason.
+The parse layer underneath (`internal/statusfile`) reports the column
+exactly as the file states it: it is given a file, not an instance, and
+inventing a root to resolve against is the mistake this is fixing.
+
+`status` does not resolve it at all. It used to, and nothing read the
+answer: a report prints a slug, a repo, a PR and a note, and never a path.
+Resolving is done by the layer that hands the column to `git worktree
+remove`, which is `prune` and only `prune` (issue 58).
 
 `Resolve` answers with a path usable from any working directory, even when
 the root it is given is not — `--root .` is the ordinary way to name an
@@ -597,6 +601,62 @@ What holds the rule is
 scaffolded instances byte for byte with nothing normalized away. Two runs
 land in two different temp directories, so a path that is true in one of
 them fails the comparison and names the file it came from.
+
+## What reads `work/<slug>/status.md`
+
+`internal/statusfile` owns the file: its name, the `work/<slug>/` place an
+instance keeps it, the header a slug's first spawn writes, how a row is
+rendered, how a row is read back, and the walk over an instance's units of
+work. `spawn` writes through it, `status` reports what it says, `prune`
+acts on it, and none of the three decides for itself what a row is.
+
+They used to, and they disagreed. `status` skipped four header lines, split
+on `|`, required five fields and put every cell through
+`strings.Fields`-joined-by-a-space; `prune` skipped a literal `4`, split on
+`|`, required six fields and trimmed every cell. One row, two readings.
+Given a note an operator (or their editor's table formatter) had aligned by
+hand, `status` read `based on main` where `prune` read `based   on    main`.
+
+That is not cosmetic, because of what each does next. `status` hands the
+note to `stackref.ParseNote`, which reads the collapsed form and finds the
+base. `prune` decided whether a merged branch was still somebody's stacked
+base by looking for `stacked on <repo>:<slug>` in the *raw file text* — so a
+re-spaced table still showed the stack in the report and no longer blocked
+the removal. The branch came out from under the unit of work stacked on it,
+which is the exact removal `Item.Blockers` exists to refuse, and it was
+silent on the side that destroys work. The same raw-text scan matched on a
+prefix, so `service-a:widget-fix` was also "blocked" by anything stacked on
+`service-a:widget-fix-2`.
+
+So a cell is trimmed *and* whitespace-collapsed, once, for both readers: a
+hand-aligned table means exactly what the terse one `spawn` wrote means.
+The cost is a recorded path that itself contains a run of spaces, which
+comes back with the run collapsed — a worktree lives beside its checkout
+and is named after the slug, so that is a path nothing here produces. And
+`prune`'s blocker check now asks each row's parsed note, through the
+`stackref.Ref` the note names, rather than asking the file as a string.
+
+The alternative worth taking seriously was that the two want different
+things and one parse would serve neither: `prune` needs the PR column and
+`status` does not, `status` needs the note interpreted and `prune` did not.
+It loses because that is a difference about what to *do* with a row, not
+about what a row *says*. `statusfile.Row` reports all five cells and
+interprets none of them — whether a note names a stacked base stays
+`internal/stackref`'s, whether a worktree column resolves stays
+`internal/worktree`'s, whether a row is prunable stays `prune`'s — so each
+reader still takes what it needs and they cannot disagree about the taking.
+
+Two smaller things fall out of one owner. The "skip four header lines" rule
+now sits beside the header it skips, held by a test rather than by two
+packages counting the same four lines; and `prune`'s row removal goes
+through the same rule, so a repo that happened to be called `repo` can no
+longer have the table's own header deleted out from under it. The walk over
+`work/*/status.md` is likewise one glob, and it takes no slug filter,
+because `prune` has to read every file whatever it was asked about:
+whether a branch is somebody's base is a question about the *other* files.
+`status` has no such tie, so narrowed to one slug it reads that slug's file
+and no other — one unit of work's unreadable file must not cost an operator
+the report on the unit of work they asked about.
 
 ## Adding a subcommand
 
@@ -1027,7 +1087,8 @@ nobody has fetched — reports no flag rather than guessing.
 `prune` removes worktrees, branches, and status rows for units of work whose
 PR has merged or closed. It's a dry run unless `--force` is passed, and it
 refuses to remove a branch still acting as another unit of work's stacked
-base.
+base — decided from every `status.md`'s parsed notes, not from their text
+(see "What reads `work/<slug>/status.md`").
 
 `context-map` sequences a mapping pass across every repo, dependency/base
 repos first, skipping any repo already current for its base branch's latest

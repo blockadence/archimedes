@@ -82,7 +82,7 @@ func Collect(opts Options) (Snapshot, error) {
 	src := opts.Sources
 	src.Repos = status.ManifestRepos(m, opts.Root)
 
-	entries, err := status.Discover(opts.Root, "")
+	rows, err := status.Discover(opts.Root, "")
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("discovering status files: %w", err)
 	}
@@ -99,7 +99,7 @@ func Collect(opts Options) (Snapshot, error) {
 
 	return Snapshot{
 		Root:         opts.Root,
-		Report:       status.BuildReport(entries, src, opts.GuardrailMax),
+		Report:       status.BuildReport(rows, src, opts.GuardrailMax),
 		Repos:        repos,
 		OrderWarning: warning,
 	}, nil

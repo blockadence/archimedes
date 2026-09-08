@@ -14,6 +14,7 @@ import (
 	"github.com/blockadence/gh-archimedes/internal/gitutil"
 	"github.com/blockadence/gh-archimedes/internal/manifest"
 	"github.com/blockadence/gh-archimedes/internal/stackref"
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
 	"github.com/blockadence/gh-archimedes/internal/workspace"
 	"github.com/blockadence/gh-archimedes/internal/worktree"
 )
@@ -166,7 +167,13 @@ func Run(opts Options, out, progress io.Writer) (Result, error) {
 	// machine: the row is committed to the instance and read by everyone
 	// who has it (see internal/worktree). Result and the printed lines
 	// below keep the usable path — they answer for this machine.
-	if err := appendStatusRow(workDir, opts.Slug, opts.Repo, worktree.Record(root, wt), start.Note); err != nil {
+	if err := statusfile.Append(root, statusfile.Row{
+		Slug:     opts.Slug,
+		Repo:     opts.Repo,
+		Branch:   opts.Slug,
+		Worktree: worktree.Record(root, wt),
+		Note:     start.Note,
+	}); err != nil {
 		return Result{}, fmt.Errorf("recording status: %w", err)
 	}
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/blockadence/gh-archimedes/internal/prune"
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
 )
 
 // writeStatus puts one unit of work's status.md where an instance keeps
@@ -23,38 +24,15 @@ func writeStatus(t *testing.T, root, slug, body string) string {
 	return path
 }
 
+// statusBody spells the file's preamble out rather than building it with
+// internal/statusfile: a fixture that agrees with whatever produces it
+// cannot catch that producer changing.
 func statusBody(slug string, rows ...string) string {
 	body := "# " + slug + "\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n"
 	for _, r := range rows {
 		body += r + "\n"
 	}
 	return body
-}
-
-func TestParseStatusFile(t *testing.T) {
-	body := statusBody("widget-fix",
-		"| service-a | widget-fix | /wt/service-a | based on main | - |",
-		"| service-b | widget-fix | /wt/service-b | stacked on service-a:widget-fix | 42 |",
-	)
-
-	rows := prune.ParseStatusFile([]byte(body))
-	if len(rows) != 2 {
-		t.Fatalf("got %d rows, want 2", len(rows))
-	}
-	if rows[0].Repo != "service-a" || rows[0].Worktree != "/wt/service-a" || rows[0].Note != "based on main" {
-		t.Errorf("row 0 = %+v", rows[0])
-	}
-	if rows[1].Repo != "service-b" || rows[1].Note != "stacked on service-a:widget-fix" || rows[1].PR != "42" {
-		t.Errorf("row 1 = %+v", rows[1])
-	}
-}
-
-func TestParseStatusFileSkipsHeaderAndBlankRows(t *testing.T) {
-	body := statusBody("solo") // no data rows at all
-	rows := prune.ParseStatusFile([]byte(body))
-	if len(rows) != 0 {
-		t.Fatalf("got %d rows, want 0", len(rows))
-	}
 }
 
 func alwaysMerged(_, _ string) (string, error) { return "MERGED", nil }
@@ -209,7 +187,7 @@ func TestRemoveStatusRowDropsOnlyMatchingRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows := prune.ParseStatusFile(readFile(t, path))
+	rows := statusfile.Parse(readFile(t, path), "widget-fix")
 	if len(rows) != 1 || rows[0].Repo != "service-b" {
 		t.Fatalf("got rows %+v, want only service-b left", rows)
 	}
@@ -229,3 +207,28 @@ type boomErr struct{}
 func (boomErr) Error() string { return "boom" }
 
 var errBoom = boomErr{}
+
+// A note the operator has re-spaced — an editor's table formatter, a hand
+// alignment — still names the base it names. prune decides whether a
+// merged branch is somebody's stacked base, and it is the side that
+// destroys work, so it must not read the spacing.
+func TestScanRefusesToPruneAStackedBaseWhoseNoteWasRespaced(t *testing.T) {
+	dir := t.TempDir()
+	writeStatus(t, dir, "widget-fix", statusBody("widget-fix",
+		"| service-a | widget-fix | /wt/widget-fix | based on main | - |",
+	))
+	writeStatus(t, dir, "shim-fix", statusBody("shim-fix",
+		"| service-a | shim-fix | /wt/shim-fix | stacked  on   service-a:widget-fix | - |",
+	))
+
+	items, err := prune.Scan(dir, "", alwaysMerged)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, it := range items {
+		if it.Slug == "widget-fix" && it.Prunable() {
+			t.Errorf("widget-fix is still shim-fix's base; got prunable")
+		}
+	}
+}

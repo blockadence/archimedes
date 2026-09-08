@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
 	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
@@ -45,8 +46,8 @@ func commit(t *testing.T, repo, name, body, message string) {
 // stackedRow runs a one-row report over repo against real git, with note
 // as the row's status.md note and mergedState standing in for gh.
 func stackedRow(repo, note string, mergedState MergedLookup) Row {
-	entries := []Entry{{Slug: "auth-ui", Repo: "service-a", Branch: "auth-ui", Note: note}}
-	return BuildReport(entries, Sources{
+	rows := []statusfile.Row{{Slug: "auth-ui", Repo: "service-a", Branch: "auth-ui", Note: note}}
+	return BuildReport(rows, Sources{
 		Repos:  func(string) (RepoRef, error) { return RepoRef{Path: repo, BaseBranch: "main"}, nil },
 		PR:     func(string, string) (PR, error) { return noPR, nil },
 		Refs:   LocalRefs{},
