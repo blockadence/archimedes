@@ -240,6 +240,14 @@ Two things follow for a driver you write:
   rather than inventing a status of its own, so it is the only thing a
   supervisor, a `timeout(1)` or a parent harness has to read to find out how
   a run ended and whether the repo was left clean.
+- **Arm the traps before anything writes to the target repo.** A run can be
+  stopped in its first milliseconds, and a signal that arrives before your
+  traps are set is one your shell takes the default action on — no exit
+  trap, no rollback. Archimedes cannot close that window for you: there is
+  nothing to forward to before there is a process. What makes it harmless is
+  ordering. Snapshot and arm first, scaffold second, and a signal that beats
+  your traps also beats anything there would have been to undo. Both shipped
+  drivers are written that way.
 
 Only the *first* signal is forwarded. An operator who hits Ctrl-C again
 because the first appeared to do nothing is told what is being waited for

@@ -23,7 +23,7 @@ func ExitStatus(err error) int {
 	if err == nil {
 		return 0
 	}
-	if status, ok := driver.ExitStatus(err); ok {
+	if status, ok := driver.StoppedStatus(err); ok {
 		return status
 	}
 	return 1

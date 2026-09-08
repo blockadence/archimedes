@@ -265,7 +265,7 @@ func run(bin string, progress io.Writer, args ...string) error {
 	relay := watchForInterrupts(out)
 	if err := cmd.Start(); err != nil {
 		if sig, ok := relay.release(); ok {
-			return &Stopped{Signal: sig, Status: statusFor(sig, nil)}
+			return stoppedBy(sig, nil)
 		}
 		return fmt.Errorf("%s: %w", bin, err)
 	}
@@ -277,7 +277,7 @@ func run(bin string, progress io.Writer, args ...string) error {
 	// would lose both the reason the run ended and the status a caller
 	// reads to find out whether the repo was left clean.
 	if sig, ok := relay.release(); ok {
-		return &Stopped{Signal: sig, Status: statusFor(sig, cmd.ProcessState)}
+		return stoppedBy(sig, cmd.ProcessState)
 	}
 	if waitErr != nil {
 		return fmt.Errorf("%s: %w", bin, waitErr)

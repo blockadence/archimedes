@@ -200,7 +200,7 @@ func TestASignalToArchimedesReachesTheDriverAndIsWaitedFor(t *testing.T) {
 			if err == nil {
 				t.Fatal("an interrupted run reported no error")
 			}
-			status, stopped := driver.ExitStatus(err)
+			status, stopped := driver.StoppedStatus(err)
 			if !stopped {
 				t.Fatalf("error %q does not read as a run a signal stopped", err)
 			}
@@ -227,7 +227,7 @@ func TestASecondSignalIsNotPassedOnToARollbackInProgress(t *testing.T) {
 
 	run.interrupt(t, syscall.SIGTERM)
 	waitFor(t, "archimedes to answer the second signal", func() bool {
-		return strings.Contains(run.progress.String(), "again")
+		return strings.Contains(run.progress.String(), "SIGTERM again")
 	})
 
 	err := run.finished(t)
@@ -238,7 +238,7 @@ func TestASecondSignalIsNotPassedOnToARollbackInProgress(t *testing.T) {
 	if exists(filepath.Join(repo, "SCAFFOLD")) {
 		t.Error("the rollback did not finish, so the repo was left between the two states")
 	}
-	if status, stopped := driver.ExitStatus(err); !stopped || status != 143 {
+	if status, stopped := driver.StoppedStatus(err); !stopped || status != 143 {
 		t.Errorf("exit status = %d (stopped=%v), want 143 — a second signal changes nothing about how the run ended", status, stopped)
 	}
 }

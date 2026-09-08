@@ -1071,7 +1071,11 @@ for a `SIGINT`, 143 for a `SIGTERM`, the convention
 caller asking whether the target repo was left clean has nothing else to
 read. Only the first signal is forwarded: a second would land in a rollback
 already running, which is the one state that file cannot get a repo back out
-of, so the operator is told what is being waited for instead.
+of, so the operator is told what is being waited for — and what forcing it
+would cost them — instead. The trade is deliberate and worth stating: while
+a driver is running, `archimedes` can no longer be stopped by an interrupt
+at all, only by a `SIGKILL` that strands whatever the run left in the target
+repo, which is the outcome the waiting exists to avoid.
 
 What this does not do is close the windows `repo-snapshot.sh` names. A
 driver that was `SIGKILL`'d, or that died with the machine, never runs its

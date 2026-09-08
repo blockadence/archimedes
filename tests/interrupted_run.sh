@@ -145,16 +145,26 @@ start_a_run() {
   [ -f "$STARTED" ]
 }
 
-echo "a signal to the archimedes process alone:"
-
-LOG="$WORK/interrupted.log"
-if ! start_a_run "$LOG"; then
-  fail "the driver gets as far as scaffolding the repo (timed out waiting)"
+# The same run, with the one outcome no case below can carry on from: a
+# driver that never got as far as scaffolding leaves a pristine repo, and a
+# pristine repo passes most of what follows for the wrong reason. Written
+# once because both cases bail identically, and a second spelling of a
+# bail-out is the one that stops matching. <log-file> <label>
+start_a_run_or_bail() {
+  if start_a_run "$1"; then
+    return 0
+  fi
+  fail "$2: the driver gets as far as scaffolding the repo (timed out waiting)"
   kill -KILL "$ARCHIMEDES_PID" 2>/dev/null
   wait "$ARCHIMEDES_PID" 2>/dev/null
   report
   exit
-fi
+}
+
+echo "a signal to the archimedes process alone:"
+
+LOG="$WORK/interrupted.log"
+start_a_run_or_bail "$LOG" "a signal to the archimedes process alone"
 pass "the driver gets as far as scaffolding the repo"
 assert_dir_exists "$REPO/.hung" \
   "the scaffolding really is in the repo at the moment of the kill"
@@ -178,18 +188,28 @@ assert_contains "$(cat "$LOG" 2>/dev/null)" "rolling $REPO back to how it was fo
 
 assert_eq "$STATUS" "$EXPECTED_STATUS" \
   "archimedes exits $EXPECTED_STATUS, the status the driver chose, rather than a status of its own"
+
+# The next two are where the waiting is actually pinned down, and it is
+# worth being exact about which assertion carries which guarantee, because
+# the relayed message above does not carry this one: the driver prints it
+# at the *start* of its rollback, so it would reach the log either way.
+#
+# `wait` has returned by here, so these describe the repo at the moment
+# archimedes exited. The driver's rollback is deliberately paced (see the
+# `sleep` in its cleanup), so an archimedes that forwarded the signal and
+# left immediately -- today's behaviour with extra steps, which is the thing
+# being ruled out -- would still find .hung/ sitting there.
 assert_widget_repo_pristine "$REPO" "interrupted through archimedes"
 assert_dir_missing "$REPO/.hung" \
-  "interrupted through archimedes: the scaffolded tree is gone, empty directories included"
+  "archimedes did not return until the driver had finished rolling back: the scaffolded tree is gone, empty directories included"
+
+# Not evidence for any of the above on its own -- an archimedes that walked
+# away harvests nothing either. It is here for the contract: a stopped run
+# must not produce a map, and the code that could break that is the harvest
+# step, which runs after the driver returns and now has a stopped run to
+# tell apart from a successful one.
 assert_file_missing "$WORK/harvested.md" \
   "nothing is harvested out of a run that was stopped"
-
-# The wait is the half forwarding alone does not buy: a rollback runs after
-# the driver's session returns, so an archimedes that passed the signal on
-# and exited would be today's behaviour with extra steps. What rules that
-# out is above rather than in an assertion of its own -- the driver's own
-# message reached this log through archimedes, which could not have relayed
-# it after leaving.
 
 echo ""
 echo "a second signal, from an operator who thought the first did nothing:"
@@ -198,13 +218,7 @@ echo "a second signal, from an operator who thought the first did nothing:"
 # signal landing partway through a restore leaves what has been undone
 # undone and the rest not. Archimedes will not be the one that delivers it.
 LOG="$WORK/interrupted-twice.log"
-if ! start_a_run "$LOG"; then
-  fail "the driver gets as far as scaffolding the repo, for the second-signal case (timed out waiting)"
-  kill -KILL "$ARCHIMEDES_PID" 2>/dev/null
-  wait "$ARCHIMEDES_PID" 2>/dev/null
-  report
-  exit
-fi
+start_a_run_or_bail "$LOG" "a second signal"
 
 kill -"$INTERRUPT" "$ARCHIMEDES_PID" 2>/dev/null
 # Sent on seeing the driver say it has begun, which is what puts it inside
@@ -216,7 +230,7 @@ done
 kill -"$INTERRUPT" "$ARCHIMEDES_PID" 2>/dev/null
 wait "$ARCHIMEDES_PID"; STATUS=$?
 
-assert_contains "$(cat "$LOG" 2>/dev/null)" "again" \
+assert_contains "$(cat "$LOG" 2>/dev/null)" "SIG$INTERRUPT again" \
   "archimedes tells the operator what it is still waiting for rather than passing the second signal on"
 assert_eq "$STATUS" "$EXPECTED_STATUS" \
   "a second signal changes nothing about how the run ended"

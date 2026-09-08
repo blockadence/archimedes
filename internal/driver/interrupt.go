@@ -49,19 +49,29 @@ var forwarded = []os.Signal{os.Interrupt, syscall.SIGTERM}
 type Stopped struct {
 	// Signal is what archimedes received and forwarded.
 	Signal syscall.Signal
-	// Status is what archimedes should exit with — see statusFor.
+	// Status is what archimedes should exit with — see stoppedBy.
 	Status int
 }
 
 func (e *Stopped) Error() string {
-	return fmt.Sprintf("stopped by %s: the driver was told to stop and exited %d — what it did with the repo is in its own output above",
+	// "the run was interrupted" rather than "the driver was told": a
+	// signal landing as the driver was already on its way out is still
+	// what stopped this run and is still recorded (see relay.release),
+	// but it was never passed on to anything.
+	return fmt.Sprintf("stopped by %s: the run was interrupted and the driver exited %d — what it did with the repo is in its own output above",
 		signalName(e.Signal), e.Status)
 }
 
-// ExitStatus reports what archimedes should exit with after err, and
+// StoppedStatus reports what archimedes should exit with after err, and
 // whether err is a run a signal stopped at all. Anything else is an
 // ordinary failure and exits 1 like every other one.
-func ExitStatus(err error) (int, bool) {
+//
+// Named for the case it answers rather than for what the caller does with
+// it, because cmd.ExitStatus is the one that answers "what does archimedes
+// exit with" — over every error, not only these — and two functions called
+// ExitStatus with different contracts would be one confusion too many at
+// the seam between them.
+func StoppedStatus(err error) (int, bool) {
 	var stopped *Stopped
 	if errors.As(err, &stopped) {
 		return stopped.Status, true
@@ -69,7 +79,8 @@ func ExitStatus(err error) (int, bool) {
 	return 0, false
 }
 
-// statusFor is the status a stopped run leaves behind.
+// stoppedBy is the error a run sig ended reports, given how the driver
+// finished — or a nil state for one that never got started.
 //
 // The drivers' convention is 128 + the signal's number — 130 for SIGINT,
 // 143 for SIGTERM — and passing the driver's own status straight through is
@@ -77,13 +88,14 @@ func ExitStatus(err error) (int, bool) {
 // rather than trapping it reports no status of its own, and one that exited
 // zero after being told to stop did not thereby succeed; both get the
 // convention's answer instead.
-func statusFor(sig syscall.Signal, state *os.ProcessState) int {
+func stoppedBy(sig syscall.Signal, state *os.ProcessState) *Stopped {
+	status := 128 + int(sig)
 	if state != nil {
 		if code := state.ExitCode(); code > 0 {
-			return code
+			status = code
 		}
 	}
-	return 128 + int(sig)
+	return &Stopped{Signal: sig, Status: status}
 }
 
 // signalName is what an operator calls the signal. syscall.Signal's own
@@ -126,6 +138,17 @@ type relay struct {
 // Nothing outside a driver run is covered. An archimedes that is not
 // waiting on a driver has nothing to forward to and nothing to wait for, so
 // Ctrl-C there should stop it immediately, the way it always did.
+//
+// What buffering cannot do is make the driver ready to hear it. A signal
+// forwarded before the driver has armed its own traps is one the driver
+// takes the default action on, and the run ends with no rollback — the
+// same shape as the ignored-at-start-up case repo-snapshot.sh names, and
+// as unreachable from here, since there is nothing to forward to before
+// there is a process. What bounds it is a driver-side ordering rather than
+// anything arranged here: a driver that arms its traps before it lets
+// anything write to the target repo has nothing in there to roll back
+// during that window. Both shipped drivers do, and drivers/README.md asks
+// it of the next one.
 func watchForInterrupts(progress io.Writer) *relay {
 	r := &relay{progress: progress}
 	if !canForwardInterrupts {
@@ -172,14 +195,26 @@ func (r *relay) forward(sig os.Signal, pid int) {
 		return
 	}
 	if r.first != nil {
-		fmt.Fprintf(r.progress, "%s again — the driver has already been told to stop, and interrupting its rollback would leave the repo half put back; still waiting for it\n", signalName(s))
+		fmt.Fprintf(r.progress, "%s again — the driver has already been told to stop; still waiting for it to put the repo back. Passing this on would interrupt that halfway and leave the repo between two states, so it is not passed on: only SIGKILL ends this now, and it would strand whatever the run has left in there.\n", signalName(s))
+		return
+	}
+	fmt.Fprintf(r.progress, "%s — telling the driver to stop, and waiting for it to put the repo back\n", signalName(s))
+	if err := signalProcessGroup(pid, s); err != nil {
+		// Not recorded as forwarded, and the relay stands down. An
+		// archimedes holding an interrupt it could not pass on would
+		// go on swallowing every one after it too — the operator
+		// unable to stop the run at all, which is the outcome
+		// interrupt_other.go declines to build on a platform that
+		// cannot forward, and no better arrived at by accident here.
+		// Standing down puts the next signal back where it was before
+		// any of this: it stops archimedes, and the driver is on its
+		// own, which is worse than a rollback and better than nothing
+		// the operator can do.
+		fmt.Fprintf(r.progress, "could not reach the driver with %s: %v — another interrupt will stop archimedes itself, leaving the driver to finish unwatched\n", signalName(s), err)
+		signal.Stop(r.ch)
 		return
 	}
 	r.first = sig
-	fmt.Fprintf(r.progress, "%s — telling the driver to stop, and waiting for it to put the repo back\n", signalName(s))
-	if err := signalProcessGroup(pid, s); err != nil {
-		fmt.Fprintf(r.progress, "could not pass %s on to the driver: %v\n", signalName(s), err)
-	}
 }
 
 // release stands the relay down, once the driver has been waited for, and
