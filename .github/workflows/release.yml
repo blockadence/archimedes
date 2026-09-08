@@ -61,6 +61,29 @@ jobs:
           # repository name can check that binding with
           # `gh attestation verify`.
           generate_attestations: true
+          # Published as a draft, and promoted by the step below only after
+          # the attestations it just asked for have been verified. That is
+          # a decision, and it is the one worth naming here.
+          #
+          # The alternative was to publish outright and let a failed check
+          # turn the run red. It is cheaper -- one step, nothing to promote
+          # -- and it reports on a release that already exists: the assets
+          # stay downloadable, `gh extension install` keeps handing them
+          # out, and the red run is a note beside a thing people are
+          # already installing. The whole point of the attestation is that
+          # an operator can tell a tampered asset from a genuine one, and
+          # an asset with no attestation at all is exactly what they cannot
+          # tell apart from a tampered one. Shipping that and going red is
+          # better than silence and still not good.
+          #
+          # A draft is not installable -- `gh extension install` reads
+          # `releases/latest`, and that endpoint does not return drafts --
+          # so nothing unverified is ever reachable. What it costs is this:
+          # a second step that has to do the promoting, one more place the
+          # publish can half-finish, and a failed run that leaves a draft
+          # somebody has to clean up before re-tagging.
+          # `.github/release-verify.sh` carries that recovery procedure.
+          draft_release: true
           # No `gpg_fingerprint:`, and that is a decision rather than an
           # omission. The action accepts one and passes it to its release
           # script, but a GPG signature needs a long-lived private key, and
@@ -77,3 +100,20 @@ jobs:
           # transparency log rather than in a file beside the asset, and it
           # would not survive this repository moving off GitHub. If that
           # last one ever happens, this is the input to revisit.
+
+      # The step that turns "we asked for attestations" into "this release
+      # has them". It runs the same `gh attestation verify` README tells an
+      # operator to run, against the assets still on disk, and promotes the
+      # draft only if every one of them passes -- so it fails for the same
+      # reasons an operator's would rather than by inspecting our own side
+      # of it. The reasoning, the recovery procedure for a failed run, and
+      # what this leans on outside this repository are all in the script.
+      #
+      # No `continue-on-error`, and nothing here may grow one: a check that
+      # cannot fail leaves the silence it was added to end, wearing the
+      # check's name. tests/release_verifies_attestations.sh drives the
+      # script through every failure it is supposed to have.
+      - name: Verify the attestations, then publish the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/release-verify.sh dist "${{ github.repository }}" "${{ github.ref_name }}"
