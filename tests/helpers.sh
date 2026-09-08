@@ -159,12 +159,7 @@ class Widget {
 }
 module.exports = { Widget };
 EOF
-  (
-    cd "$repo"
-    git init -q
-    git add -A
-    git -c user.email=test@example.com -c user.name=test commit -qm init
-  )
+  make_repo_at "$repo"
 }
 
 # The question every driver test asks of the repo it was pointed at: is it

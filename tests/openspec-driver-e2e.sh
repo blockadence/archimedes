@@ -20,13 +20,8 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 REPO="$WORK/throwaway-repo"
 mkdir -p "$REPO/src"
-(
-  cd "$REPO"
-  git init -q
-  echo "console.log('hi')" > src/index.js
-  git add -A
-  git -c user.email=test@example.com -c user.name=test commit -qm init
-)
+echo "console.log('hi')" > "$REPO/src/index.js"
+make_repo_at "$REPO"
 
 echo "openspec driver end-to-end:"
 
