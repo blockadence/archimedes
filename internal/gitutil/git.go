@@ -8,6 +8,7 @@ package gitutil
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -16,8 +17,61 @@ import (
 	"strings"
 )
 
+// Error is a git command that failed: what was run, how it ended, and what
+// git said on the way out. Every failure from this package is one, so a
+// caller that has to quote git's own reason to somebody -- rather than
+// report that a command failed -- can reach it through Reason, while a
+// caller that only passes the error up the stack still prints the whole of
+// it.
+type Error struct {
+	// Args is the git command that failed, without the leading "git".
+	Args []string
+
+	// Err is what running it came back with: an exit status, or a git that
+	// would not start at all.
+	Err error
+
+	// Stderr is git's own output, trimmed. Empty where the caller asked for
+	// git's output to be streamed somewhere instead (RunOut), which is the
+	// one case where this package never had it to keep.
+	Stderr string
+}
+
+func (e *Error) Error() string {
+	msg := fmt.Sprintf("git %s: %v", strings.Join(e.Args, " "), e.Err)
+	if e.Stderr == "" {
+		return msg
+	}
+	return msg + ": " + e.Stderr
+}
+
+func (e *Error) Unwrap() error { return e.Err }
+
+// Reason is what git reported about err, with none of this package's
+// wrapping around it: the lines to put in front of an operator who is being
+// asked to fix something on their own machine, for whom "git commit -q -m
+// ...: exit status 128:" ahead of them is noise they cannot act on.
+//
+// Nearly always that is git's own stderr. Where git failed and said nothing
+// — a hook that exits quietly, a signal — what is left is how it ended, and
+// that is what comes back, alone: a caller quoting this has told somebody
+// these are git's words, and handing them the command line we built would
+// make that untrue as well as useless. An error that is not a git failure at
+// all comes back as its own message, so a caller with an error and somebody
+// to show it to can quote this without checking which of the three it has.
+func Reason(err error) string {
+	var gitErr *Error
+	if errors.As(err, &gitErr) {
+		if gitErr.Stderr != "" {
+			return gitErr.Stderr
+		}
+		return gitErr.Err.Error()
+	}
+	return err.Error()
+}
+
 // Run executes git in dir and returns its trimmed stdout. On failure the
-// returned error includes stderr.
+// returned error is an *Error, which includes stderr.
 func Run(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -25,7 +79,7 @@ func Run(dir string, args ...string) (string, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+		return "", &Error{Args: args, Err: err, Stderr: strings.TrimSpace(stderr.String())}
 	}
 	return strings.TrimSpace(stdout.String()), nil
 }
@@ -41,7 +95,7 @@ func RunOut(dir string, progress io.Writer, args ...string) error {
 	cmd.Stdout = progress
 	cmd.Stderr = progress
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		return &Error{Args: args, Err: err}
 	}
 	return nil
 }

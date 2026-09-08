@@ -23,6 +23,17 @@
 // HasConfiguredIdentity), and the caller has to say that this is stricter
 // than git, or an operator on that box reads a skipped commit as a bug.
 //
+// A commit git was asked for and refused ends the same way, and Create says
+// which of those two happened as well: an identity somebody configured, and
+// signing set up with no key that works on this machine, or a hook that says
+// no. Nothing is being decided on the operator's behalf there — git simply
+// will not do what their own configuration asks — so what comes back is the
+// instance and git's own words about the commit, for a caller that has to
+// tell them what to fix. What is not done is asking again with that
+// configuration turned off: an unsigned commit under a policy they set is
+// the same objection as an author they never chose, one file of their
+// permanent history away.
+//
 // What lands in an instance is data and nothing else — a manifest, dossier
 // and work directories, scaffolding it owns from here on, and an empty
 // drivers/ for whatever drivers it comes to own. Not one file of it is a
@@ -46,8 +57,20 @@ import (
 	"github.com/blockadence/gh-archimedes/internal/gitutil"
 )
 
-// Result is the instance Create made: where it is, and whether it starts on
-// a first commit.
+// Result is the instance Create made: where it is, and how it stands with
+// respect to its first commit. Three states, and Path is set in all of them
+// — an instance that is not committed is still an instance:
+//
+//   - Committed: the scaffolding is the instance's first commit.
+//   - Not committed, CommitErr nil: nobody had configured an identity to
+//     commit under, so no commit was attempted and there is nothing of
+//     git's to report.
+//   - Not committed, CommitErr set: git was asked and refused, and
+//     CommitErr is why — in git's own words, via gitutil.Reason.
+//
+// The caller has something different to say in each case, which is why the
+// second and third are distinguishable at all rather than one "no commit"
+// flag: one is a setting to make, the other is a machine to fix.
 type Result struct {
 	// Path is the instance directory that was created.
 	Path string
@@ -55,6 +78,10 @@ type Result struct {
 	// Committed reports whether the scaffolding is the instance's first
 	// commit.
 	Committed bool
+
+	// CommitErr is git's refusal of that commit, where one was attempted.
+	// Always nil when Committed.
+	CommitErr error
 }
 
 // CommitSubject is the subject Create gives an instance's first commit. It
@@ -67,6 +94,23 @@ func CommitSubject(name string) string {
 
 // Create scaffolds an instance named name under destParent from the
 // template tree src.
+//
+// Its two halves end differently, and that difference is the whole of the
+// cleanup rule. Writing the instance — the files, and the repository they
+// sit in — is Create's own work: if any of it fails, what is on disk is not
+// an instance, so dest goes back and the error is returned. The first commit
+// is the operator's, made on their behalf: if it does not happen, the
+// instance is there and usable, so it is reported in Result rather than
+// returned as a failure.
+//
+// So the rule is not "an error means the directory goes back" but the
+// question behind it — is there an instance here? Nothing was at dest a
+// moment ago, so everything under it is ours to take back, and a half-built
+// one left behind would make the retry fail with "already exists" instead of
+// with whatever actually went wrong. Once the instance is whole, taking it
+// back over a commit costs the operator the valuable half to punish them for
+// the half that needs them, and a retry after they have fixed their machine
+// would produce the identical directory.
 func Create(src fs.FS, name, destParent string) (Result, error) {
 	dest := filepath.Join(destParent, name)
 	if _, err := os.Stat(dest); err == nil {
@@ -75,25 +119,14 @@ func Create(src fs.FS, name, destParent string) (Result, error) {
 		return Result{}, fmt.Errorf("checking %s: %w", dest, err)
 	}
 
-	committed, err := scaffold(src, name, dest)
-	if err != nil {
-		// Nothing was there a moment ago, so everything under dest is
-		// ours to take back — and leaving half an instance behind would
-		// make the retry fail with "already exists" rather than with
-		// whatever actually went wrong.
-		_ = os.RemoveAll(dest)
-		return Result{}, err
-	}
-	return Result{Path: dest, Committed: committed}, nil
-}
-
-func scaffold(src fs.FS, name, dest string) (committed bool, err error) {
 	if err := materialize(src, dest); err != nil {
-		return false, err
+		return discard(dest, err)
 	}
 	if _, err := gitutil.Run(dest, "init", "-q"); err != nil {
-		return false, err
+		return discard(dest, err)
 	}
+
+	res := Result{Path: dest}
 
 	// Asked after `git init` rather than before, so an identity set on this
 	// repository alone counts the same as a global one — and asked at all
@@ -105,18 +138,45 @@ func scaffold(src fs.FS, name, dest string) (committed bool, err error) {
 	// is `git add -A && git commit`, and an index left half-filled here would
 	// make that line quietly wrong about what it commits.
 	if !gitutil.HasConfiguredIdentity(dest) {
-		return false, nil
+		return res, nil
 	}
 
+	// Git may still refuse: signing configured with no key it can use here,
+	// a hook that says no, a full disk. The refusal is kept whole rather than
+	// summarized, because what an operator has to fix is in git's own words
+	// and this package cannot know which of those it is. What is not done is
+	// asking again with the configuration turned off — `--no-gpg-sign` past a
+	// broken key writes something into the instance's permanent history that
+	// contradicts what its owner asked for, which is the same objection that
+	// rules out an author nobody chose.
+	//
+	// Staging counts as part of the commit rather than as Create's own work,
+	// so a failure in either is the same news: it is what the commit is made
+	// of, the instance is equally whole and equally uncommitted whichever of
+	// the two would not run, and the line the operator is given repeats both.
+	//
+	// The index is left as git left it, staged. Unlike the skipped commit
+	// above there is no wrong impression to avoid: `git add -A && git
+	// commit`, which is what the operator is told to run either way, stages
+	// exactly what is already there.
 	for _, args := range [][]string{
 		{"add", "-A"},
 		{"commit", "-q", "-m", CommitSubject(name)},
 	} {
 		if _, err := gitutil.Run(dest, args...); err != nil {
-			return false, err
+			res.CommitErr = err
+			return res, nil
 		}
 	}
-	return true, nil
+	res.Committed = true
+	return res, nil
+}
+
+// discard takes dest back and reports err, for the failures that leave no
+// instance behind them.
+func discard(dest string, err error) (Result, error) {
+	_ = os.RemoveAll(dest)
+	return Result{}, err
 }
 
 // materialize writes every file in src under dest.

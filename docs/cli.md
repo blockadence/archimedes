@@ -628,8 +628,19 @@ fixtures wherever the test owns the repository; reach for this only when it
 doesn't.
 
 The bash suite under `tests/` exercises the shipped drivers end to end
-against this binary, and builds the same repo shape from
-`tests/gitfixture.sh`; keep the two in step.
+against this binary, and builds the same repo shapes from
+`tests/gitfixture.sh`; keep the two in step. `make_origin_and_clone_at` is
+`testrepo.New`'s twin and `make_repo_at` is `Init`'s — a checkout with no
+origin, on `main`, carrying one commit. Where `Init` seeds a `README.md` and
+`Spec.Files` is how a Go test asks for different ones, `make_repo_at` commits
+whatever the caller has already written into the directory and falls back to
+that same `README.md` only when there is nothing there; the fixtures are the
+same shape, and what varies is how each language's call sites were already
+spelling the seed. Both carry the same fixed identity, and clear it out of the
+environment while they set it: git reads `GIT_AUTHOR_NAME` and friends ahead
+of every config file, so a fixture that only wrote `git config user.email`
+would commit as whatever the shell was carrying, and a `-c user.email=` at
+the call site could not reach the driver subprocesses a test spawns at all.
 `tests/gitfixture.sh` also holds the three ways a test file says what
 identity it runs under, the bash twins of `testrepo`'s: `isolate_git`, for
 the files that scaffold an instance and so need a commit to succeed
@@ -639,7 +650,12 @@ git itself will not commit; and `unconfigure_git_identity`, for the machine
 with nothing configured that git will guess an identity for anyway. The last
 two are the pair `tests/init_without_a_git_identity.sh` walks in turn, since
 one operator's box is one and another's is the other and `init` owes them
-both the same answer. An identity belongs in the test file that needs one
+both the same answer. `tests/init_when_git_refuses_the_commit.sh` is the
+third machine: `isolate_git` for the identity that makes it that machine
+rather than one of the two above, and two `git config --global` lines of its
+own pointing commit signing at a `gpg` that is not there. Its Go twin is
+`testrepo.RefuseCommits`, which reaches the same machine through a
+`pre-commit` hook, since a test cannot break a gpg it cannot assume. An identity belongs in the test file that needs one
 and never in `.github/workflows/test.yml`: a runner without one is the
 machine that caught `init` assuming one, and configuring the workflow around
 that would blind the only runner that reliably reproduces it.
@@ -677,9 +693,10 @@ also the only one with no `--root`: it takes the name to create and the
 parent directory to create it in. It writes the embedded template there and
 commits the result as the instance's first commit — a fresh history, so instance-specific (possibly
 sensitive) content never shares one with this repo. A destination that
-already exists is refused rather than merged into, and a run that fails
-part-way removes what it wrote, so the retry fails for the real reason
-instead of "already exists".
+already exists is refused rather than merged into, and a run that fails while
+writing the instance removes what it wrote, so the retry fails for the real
+reason instead of "already exists". A first commit that does not happen is
+not one of those failures — see below.
 
 That first commit is the one part of `init` that depends on the machine
 rather than on the binary, since a commit has to be authored by somebody —
@@ -711,6 +728,36 @@ whose account git can guess from, and the uncommitted notice says so in as
 many words: an operator who has just watched git commit in every other
 repository they own would otherwise read a skipped commit as a bug rather
 than as a decision.
+
+The commit can also fail with an identity configured and perfectly correct:
+signing configured with no key that works here — a dotfile copied to a new
+laptop, a container with no keyring, a `gpg.program` that is not installed —
+a `pre-commit` hook that says no, a disk with nothing left on it. `init` ends
+there the same way, with the instance written and kept and a notice that the
+commit did not happen, and with two differences the cause forces. It cannot
+name the remedy the way the identity notice does, because the causes are a
+list nobody can finish: it frames the failure in its own words and quotes
+git's underneath, which is the only part that names the particular thing to
+fix. And it says that no second attempt was made with the configuration
+turned off, because `--no-gpg-sign` past a broken key is the fix that
+suggests itself and would put a commit in the operator's permanent history
+contradicting what they set on purpose — the same objection as an author
+nobody chose. Neither case exits non-zero: `init`'s status is about the
+instance, and in both of them the instance is there.
+
+That is what splits `instance.Create`'s cleanup rule in two, and the rule is
+now the question behind it rather than the mechanism — is there an instance
+here? Writing the instance, the files and the repository they sit in, is
+Create's own work, and a failure part-way through leaves something that is
+not an instance, so the directory goes back and the error is returned. The
+first commit is the operator's, made on their behalf, and a refusal leaves an
+instance that is whole and usable, so it is reported in the `Result` rather
+than returned as a failure. Taking the directory back there would cost them
+the valuable half to punish them for the half that needs them, and the retry
+after they had fixed their machine would rebuild the identical directory.
+`tests/init_when_git_refuses_the_commit.sh` drives that through the installed
+binary on a machine configured to reproduce it, down to running the retry
+`init` printed.
 
 `bootstrap` discovers a GitHub org's repos, clones the ones not already
 checked out beside the instance, and scaffolds each one's `repos.yaml` entry

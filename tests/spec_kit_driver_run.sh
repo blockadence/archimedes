@@ -70,6 +70,8 @@ FILLED
     echo "claude: session failed" >&2; exit 1 ;;
   commit)
     git add -A
+    # Deliberately not the fixture's identity, as in pocock_driver_run.sh:
+    # the case is a commit somebody else made in the operator's repo.
     git -c user.email=agent@example.com -c user.name=agent commit -qm "agent committed the scaffolding"
     echo "# filled" > .specify/memory/constitution.md
     ;;

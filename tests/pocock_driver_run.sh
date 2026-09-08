@@ -74,6 +74,9 @@ case "${CLAUDE_STUB_MODE:-write}" in
     write_map
     echo "# 1. Widgets are priced in cents" > ADR.md
     git add -A
+    # The one identity in this suite still spelled out at the call site, and
+    # deliberately not the fixture's: the case is a commit somebody else made
+    # in the operator's repo, so it has to be somebody else's name on it.
     git -c user.email=agent@example.com -c user.name=agent commit -qm "agent committed its own work"
     ;;
   hang)

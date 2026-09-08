@@ -167,6 +167,14 @@ git would guess an author from your account and commit under it quite
 happily: the instance is your repository, that commit is in its history for
 good, and the name in it should be one you chose.
 
+Where git has an identity and still refuses the commit — commit signing
+configured with no key that works on that machine is the usual one — the
+instance is written and kept just the same, and what `init` prints is its own
+account of what happened with git's reason quoted underneath and the command
+that finishes the job. It does not get past the refusal by committing
+unsigned: that would put something in your history that contradicts what you
+configured, which is the same objection as an author you never chose.
+
 Running it requires `git` and `gh` (authenticated). `sync-templates`
 additionally requires
 [`multi-gitter`](https://github.com/lindell/multi-gitter).

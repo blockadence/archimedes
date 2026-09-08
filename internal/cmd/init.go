@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/blockadence/gh-archimedes"
+	"github.com/blockadence/gh-archimedes/internal/gitutil"
 	"github.com/blockadence/gh-archimedes/internal/instance"
 	"github.com/blockadence/gh-archimedes/internal/invocation"
 )
@@ -30,7 +32,12 @@ container, a CI runner, or simply never having got round to it — the
 instance is still written, and the first commit is left for you to make once
 you have set one. That holds on machines where git would guess an author
 from your account and commit under it: an instance is your repository, and a
-name you never chose would stay in its history.`,
+name you never chose would stay in its history.
+
+The same where git refuses the commit for a reason of its own — signing
+configured with no key it can use here, a hook that says no. The instance is
+written and kept, git's reason is reported, and the commit waits for you
+rather than being made some other way than the one you configured.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			res, err := instance.Create(archimedes.Template(), args[0], args[1])
@@ -40,7 +47,13 @@ name you never chose would stay in its history.`,
 
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "Instance ready at %s\n\n", res.Path)
-			if !res.Committed {
+			// Nothing is said where the commit was made: an operator on a
+			// machine that works is owed the path and the next step, not a
+			// paragraph about a commit that happened.
+			switch {
+			case res.CommitErr != nil:
+				fmt.Fprintf(out, refusedCommitNotice, indent(gitutil.Reason(res.CommitErr)), res.Path, instance.CommitSubject(args[0]))
+			case !res.Committed:
 				fmt.Fprintf(out, uncommittedNotice, res.Path, instance.CommitSubject(args[0]))
 			}
 			fmt.Fprintf(out, "Next: cd %s && %s bootstrap <github-org>\n", res.Path, invocation.Name())
@@ -85,3 +98,63 @@ in its history. Set an identity, then make that commit yourself:
   cd %s && git add -A && git commit -m "%s"
 
 `
+
+// refusedCommitNotice is what init says when git was asked for the
+// instance's first commit and would not make it: commit signing configured
+// with no key that works on this machine, a `pre-commit` hook that says no, a
+// disk with nothing left on it. An identity is configured and correct here —
+// this is not the notice above, and pointing at `git config user.name` would
+// send an operator to fix something that is not broken.
+//
+// Like that one it is printed rather than returned as an error, for the same
+// reason and by the same rule: the instance is written, it is a repository,
+// and it is usable exactly as it stands. What is missing is a commit, and
+// handing back an empty parent directory would take the valuable half away
+// over the half that needs the operator — see instance.Create, where that
+// rule is stated.
+//
+// It says three things this package can say for itself before it quotes
+// git, because git's own text is the raw output this notice exists to stop
+// being the first thing an operator reads: that the instance is there,
+// that only the commit did not happen, and that no second attempt was made
+// with their configuration disabled. The last of those is worth the line —
+// `--no-gpg-sign` past a broken key is the fix that suggests itself, and it
+// would put a commit in their permanent history that contradicts what they
+// set on purpose.
+//
+// What it cannot do is name the remedy the way the notice above does, and
+// the reason is the point of quoting git at all: the causes are a list
+// nobody can finish, so the tool frames the failure and git supplies the
+// particular. The retry command is still exact, and once their machine is
+// fixed it is the whole of what is left to run.
+//
+// Takes git's reason (already indented), the instance path and the commit
+// subject.
+const refusedCommitNotice = `Not committed: git refused the instance's first commit. The instance itself
+is written and is a git repository; only the commit did not happen, and it
+was not retried with your configuration turned off — what git would not do
+here is what that configuration asked for, and an instance's first commit
+stays in its history.
+
+git reported:
+
+%s
+
+That is this machine's git rather than anything about the instance. Fix it,
+then make the commit yourself:
+
+  cd %s && git add -A && git commit -m "%s"
+
+`
+
+// indent puts git's own words where a notice quotes them: two spaces in, on
+// however many lines git wrote them.
+func indent(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = "  " + line
+		}
+	}
+	return strings.Join(lines, "\n")
+}

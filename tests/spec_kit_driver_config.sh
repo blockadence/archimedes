@@ -54,13 +54,8 @@ echo "spec-kit driver is reachable through archimedes run-driver:"
 
 REPO="$WORK/repo"
 mkdir -p "$REPO"
-(
-  cd "$REPO"
-  git init -q
-  echo "hi" > README.md
-  git add -A
-  git -c user.email=test@example.com -c user.name=test commit -qm init
-)
+echo "hi" > "$REPO/README.md"
+make_repo_at "$REPO"
 
 out_path="$WORK/out.md"
 # No ARCHIMEDES_DRIVERS_DIR and no instance: spec-kit comes out of the

@@ -242,6 +242,38 @@ func StripGitIdentity(t testing.TB) {
 	}
 }
 
+// RefusedCommitMessage is what the hook RefuseCommits installs writes on its
+// way out. It is exported because the tests that use that fixture assert
+// git's words reached an operator, and a copy of the string in each of them
+// would be two things to keep in step instead of one.
+const RefusedCommitMessage = "pre-commit hook said no"
+
+// RefuseCommits is the machine none of the three above are: an identity
+// configured, correct, and git's to use, and git refusing the commit all the
+// same. What operators actually meet there is commit signing configured with
+// no key that works on the box — a dotfile copied to a new laptop, a
+// container with no keyring — which a test cannot stage without a gpg to
+// break, so a `pre-commit` hook that says no stands in for it. Any of them
+// reaches the code under test the same way: git was asked, and would not.
+//
+// It layers one setting over whatever config the caller already arranged
+// rather than replacing it, which is what git's environment triple is for,
+// so it composes with IsolateGit and must be called after it — the identity
+// is what makes this machine the one it is. It owns that triple for the
+// length of the test; a caller with a second setting to layer has to write
+// both itself.
+func RefuseCommits(t testing.TB) {
+	t.Helper()
+	hooks := t.TempDir()
+	hook := "#!/bin/sh\necho '" + RefusedCommitMessage + "' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
+	t.Setenv("GIT_CONFIG_VALUE_0", hooks)
+}
+
 // UnconfigureGitIdentity is the machine between those two: nothing
 // configured anywhere, and git left free to guess an identity from the OS
 // account the way it does in any repository on that box. It is the machine

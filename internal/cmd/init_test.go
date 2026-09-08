@@ -126,6 +126,55 @@ func TestInitSaysTheInstanceIsUncommittedAndHowToCommitIt(t *testing.T) {
 	}
 }
 
+// The machine the notice above does not fit: an identity configured, correct
+// and git's to use, and git refusing the commit all the same — signing set up
+// with no key that works here, a hook that says no, a full disk. That once
+// ended `init` with git's own wrapped-up stderr as the first thing it said
+// and an empty parent directory to show for the run.
+//
+// What it gets instead is the instance, and a sentence of the tool's own
+// about the commit with git's reason quoted underneath it. Not the identity
+// advice: nothing is wrong with their identity, and telling them to set one
+// would send them to fix the wrong thing.
+func TestInitSaysWhyGitRefusedTheCommitAndKeepsTheInstance(t *testing.T) {
+	parent := initParent(t)
+	testrepo.RefuseCommits(t)
+
+	out := execute(t, "init", "widgets", parent)
+
+	dest := filepath.Join(parent, "widgets")
+	for _, path := range []string{"repos.yaml", ".git"} {
+		if _, err := os.Stat(filepath.Join(dest, path)); err != nil {
+			t.Errorf("a refused commit took the instance with it: no %s (%v)", path, err)
+		}
+	}
+	if out := testrepo.GitOut(t, dest, "rev-list", "--all", "--count"); out != "0" {
+		t.Errorf("commit count = %s, want 0: git refused the commit", out)
+	}
+
+	for _, want := range []string{
+		"Not committed",                   // the tool's own words, first
+		"pre-commit hook said no",         // git's, quoted, so they know what to fix
+		dest,                              // where the instance they still have is
+		"git add -A",                      // and the command that finishes it
+		instance.CommitSubject("widgets"), // under the subject init would have used
+		"bootstrap",                       // still the next step
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output does not say %q:\n%s", want, out)
+		}
+	}
+	// Raw git output as the first thing the tool says is the whole of what
+	// this replaced, and our own wrapping of it is the tell.
+	if strings.Contains(out, "exit status") {
+		t.Errorf("output hands back git's failure unframed:\n%s", out)
+	}
+	// The identity advice belongs to the other machine. Here it is wrong.
+	if strings.Contains(out, "git config --global user.name") {
+		t.Errorf("output tells an operator with an identity to configure one:\n%s", out)
+	}
+}
+
 // The other half of that contract, and the one that rots silently: on a
 // machine that does have an identity, none of the above is said at all.
 func TestInitSaysNothingAboutIdentityWhenItCommitted(t *testing.T) {
