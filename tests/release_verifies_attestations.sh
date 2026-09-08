@@ -2,31 +2,23 @@
 # A release run has to prove the attestation exists before anyone can
 # install what it attests to.
 #
-# tests/release_provenance.sh reads release.yml and pins that we *asked*
-# for attestations -- the input is set, the grants are scoped, the verify
-# command is documented. Every one of those assertions is about a file, and
-# all of them pass on a repository that has never produced an attestation.
-# The way that goes wrong is silent: the action gates its attest step on a
-# string comparison against a composite-action input, and anything that
-# stops producing that exact string skips the step instead of failing. The
-# run is green, twelve binaries ship, and the first person to find out is an
-# operator whose `gh attestation verify` reports no attestation -- which is
-# indistinguishable, to them, from the tampering that command exists to
-# catch.
+# Why that is not already true is argued once, in the header of
+# `.github/release-verify.sh`, and not restated here. What matters for this
+# file is that the script is the only thing between a release and an
+# install, so every way it could report success without having checked
+# anything is a way the whole guarantee evaporates quietly.
 #
-# `.github/release-verify.sh` closes that by running the operator's own
-# command against the built assets before the drafted release is promoted,
-# and this file drives that script against a stub `gh`. The stub is what
-# makes the failure paths reachable: an attestation that is missing, a
-# lookup that is not readable yet, a dist/ that a glob expanded to nothing,
-# and a draft flag that quietly stopped applying are all outcomes you cannot
-# ask a real release to produce on demand -- and "check it fails on purpose
-# once" is worth more as a test that keeps checking than as something
-# somebody did by hand in a branch that is gone.
+# So this drives the real script against a stub `gh`. The stub is what makes
+# those paths reachable at all: a missing attestation, a lookup that is not
+# readable yet, a `dist/` a glob expanded to nothing, a draft flag that
+# stopped applying, a `gh` that reads stdin, and a promotion that fails are
+# none of them things you can ask a real release to do on demand. The issue
+# behind this asked that whatever landed "be checked by making it fail on
+# purpose once"; making it fail on purpose every run is worth more.
 #
 # What this cannot prove, and must not be read as claiming: that GitHub
-# mints a real attestation or that its API serves one back. It proves that
-# when the answer is no, nothing gets promoted.
+# mints a real attestation or serves one back. It proves that when the
+# answer is no, nothing gets promoted.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
@@ -66,6 +58,9 @@ case "${1:-} ${2:-}" in
   "attestation verify")
     asset="$3"
     base="$(basename "$asset")"
+    # A `gh` that reads stdin. Real ones may: the point is that the script
+    # must not hand it the descriptor its own loop is reading assets from.
+    [ "${GH_STUB_EATS_STDIN:-0}" = "1" ] && cat >/dev/null
     # An asset GitHub has no attestation for, however long you wait.
     case "${GH_STUB_MISSING:-}" in
       "") ;;
@@ -123,6 +118,7 @@ run_verify() { # [dist-dir]
   GH_STUB_MISSING="${MISSING:-}" \
   GH_STUB_FIRST_TRY_FAILS="${FIRST_TRY_FAILS:-0}" \
   GH_STUB_EDIT_FAILS="${EDIT_FAILS:-0}" \
+  GH_STUB_EATS_STDIN="${EATS_STDIN:-0}" \
     "$VERIFY" "$dist" "$REPO" "$TAG" >"$WORK/run.log" 2>&1
   STATUS=$?
   RUN="$(cat "$WORK/run.log")"
@@ -197,6 +193,20 @@ run_verify "$WORK/no-such-dist"
 assert_eq "$STATUS" "1" "a missing dist/ fails too"
 assert_not_promoted "and a missing dist/ promotes nothing"
 
+# The quieter cousin of the empty glob, and the one that looks nothing like
+# a bug: the loop is fed by a here-string, so it and `gh` share a
+# descriptor. A `gh` that reads stdin drains the remaining assets, `read`
+# sees EOF, and the loop ends having verified the first asset and reported
+# for all of them -- green, promoted, eleven binaries unchecked.
+fresh_dist
+EATS_STDIN=1 run_verify
+assert_eq "$STATUS" "0" "a gh that reads stdin does not truncate the run"
+while IFS= read -r a; do
+  [ -n "$a" ] || continue
+  assert_contains "$GH_CALLS" "attestation verify $DIST/$a --repo $REPO" \
+    "and $a is still verified"
+done <<< "$ASSETS"
+
 # The other half of "nothing unverified is installable" is that the release
 # was never installable to begin with. `draft_release` is gated inside the
 # action on the same kind of string comparison as the attest step, so the
@@ -221,6 +231,19 @@ fresh_dist
 FIRST_TRY_FAILS=1 RETRIES=3 run_verify
 assert_eq "$STATUS" "0" "a lookup that succeeds on a retry passes"
 assert_promoted "and the release is promoted once it does"
+
+# ...and says that it did. Whether the read is actually racy cannot be
+# established from outside a real release run, so the budget is a hedge
+# and this line is the only thing that will ever settle it: a release that
+# needed a retry has to be findable in the logs, or the hedge quietly
+# becomes the answer.
+assert_contains "$RUN" "ATTESTATION-LOOKUP-RETRIES=3" \
+  "and a run that needed retries says so, in a line worth grepping for"
+
+fresh_dist
+run_verify
+assert_not_contains "$RUN" "ATTESTATION-LOOKUP-RETRIES" \
+  "while a run that needed none stays quiet, so the marker means something"
 
 # The budget is for the run, not for each asset. Per-asset retries would
 # make a genuinely missing attestation take twelve full waits to report,

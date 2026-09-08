@@ -81,8 +81,11 @@ jobs:
           # so nothing unverified is ever reachable. What it costs is this:
           # a second step that has to do the promoting, one more place the
           # publish can half-finish, and a failed run that leaves a draft
-          # somebody has to clean up before re-tagging.
-          # `.github/release-verify.sh` carries that recovery procedure.
+          # nobody promoted. Recovering from that one is a plain re-run --
+          # the action looks for an existing release before it creates one,
+          # and gh finds a draft by tag, so the re-run uploads into the same
+          # draft with --clobber rather than making a second.
+          # `.github/release-verify.sh` carries the detail.
           draft_release: true
           # No `gpg_fingerprint:`, and that is a decision rather than an
           # omission. The action accepts one and passes it to its release
@@ -116,4 +119,12 @@ jobs:
       - name: Verify the attestations, then publish the draft
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/release-verify.sh dist "${{ github.repository }}" "${{ github.ref_name }}"
+          # Through the environment rather than interpolated into the `run:`
+          # line. A tag name is chosen by whoever pushes it, and `${{ }}` is
+          # substituted into the script before bash sees it -- so a tag
+          # named `v1$(...)` would run inside a job holding contents,
+          # id-token and attestations write. Quoting does not help: command
+          # substitution expands inside double quotes.
+          RELEASE_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: .github/release-verify.sh dist "$RELEASE_REPO" "$RELEASE_TAG"

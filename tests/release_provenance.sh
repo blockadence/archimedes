@@ -71,18 +71,21 @@ echo "a release asset carries evidence of where it came from:"
 assert_file_exists "$RELEASE_WF" "there is a workflow that publishes a release"
 
 release_job="$(workflow_job_block "$RELEASE_WF" release)"
-release_grants="$(printf '%s\n' "$release_job" | uncommented)"
+release_uncommented="$(printf '%s\n' "$release_job" | uncommented)"
 
 # The evidence itself, produced by the run that builds the assets rather
-# than by someone attaching a file afterwards.
-assert_contains "$release_job" "generate_attestations: true" \
+# than by someone attaching a file afterwards. Read from the comment-free
+# job for the reason given above: the prose around these inputs discusses
+# them by name, and a match on that is a match on the sentence explaining
+# the input rather than on the input.
+assert_contains "$release_uncommented" "generate_attestations: true" \
   "the release run attests to the assets it built"
 
 # ...which needs two grants beyond the `contents: write` that publishing
 # already takes.
-assert_contains "$release_grants" "id-token: write" \
+assert_contains "$release_uncommented" "id-token: write" \
   "the release job can mint the OIDC token the attestation is signed with"
-assert_contains "$release_grants" "attestations: write" \
+assert_contains "$release_uncommented" "attestations: write" \
   "the release job can write the attestation back to the repository"
 
 # And they stop there. A token that can sign on this repository's behalf
@@ -120,7 +123,7 @@ assert_contains "$decision_note" "gpg_fingerprint" \
 # nothing attested and nothing verified, which is the exact gap the
 # verification exists to close, reopened by an input whose comment says it
 # is about GPG.
-assert_not_contains "$release_grants" "gpg_fingerprint" \
+assert_not_contains "$release_uncommented" "gpg_fingerprint" \
   "and does not pass one, so dist/ is the whole of what a release publishes"
 
 # ...and the run confirms it got one, rather than trusting that it asked.
@@ -131,21 +134,21 @@ assert_not_contains "$release_grants" "gpg_fingerprint" \
 # the built assets, and the assertions below pin that the step exists, that
 # it runs on what was published rather than before it, and that it is the
 # thing standing between the assets and an install.
-assert_contains "$release_job" "release-verify.sh" \
+assert_contains "$release_uncommented" "release-verify.sh" \
   "the release run verifies the attestations it asked for"
 
 # Before the check runs, nothing is installable: `gh extension install`
 # reads `releases/latest`, which does not return drafts. This is the input
 # that makes a failed check mean "a draft nobody promoted" instead of "a
 # release nobody can trust", and it is half of the decision recorded below.
-assert_contains "$release_job" "draft_release: true" \
+assert_contains "$release_uncommented" "draft_release: true" \
   "the release is drafted first, so nothing unverified is ever installable"
 
 # Order, not just presence. A verify placed before the action would run on
 # a dist/ that does not exist yet and pass over nothing -- the same silent
 # green this file exists to end, wearing the check's name.
 step_line() { # <needle> -> the line number of that step within the job block
-  printf '%s\n' "$release_job" | grep -n "$1" | head -1 | cut -d: -f1
+  printf '%s\n' "$release_uncommented" | grep -n "$1" | head -1 | cut -d: -f1
 }
 publishes_at="$(step_line 'cli/gh-extension-precompile')"
 verifies_at="$(step_line 'release-verify.sh')"
@@ -158,7 +161,7 @@ fi
 # The ways a step stays in the file while reporting success regardless.
 # `continue-on-error` is the one that gets added later, by someone stopping
 # a flake, and it leaves every assertion above still passing.
-assert_not_contains "$release_grants" "continue-on-error" \
+assert_not_contains "$release_uncommented" "continue-on-error" \
   "no step in the release job is allowed to fail quietly"
 
 # The decision the issue asked to be made on purpose -- draft-then-promote

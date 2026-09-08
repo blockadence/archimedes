@@ -2,55 +2,54 @@
 # Confirms a drafted release can actually be verified, then publishes it.
 #
 # `release.yml` asks cli/gh-extension-precompile for attestations, and
-# tests/release_provenance.sh pins that we asked. Neither is evidence that
-# a release got one. The action gates its attest step on
-# `if: ${{ inputs.generate_attestations == 'true' }}` -- a string
-# comparison against a composite-action input -- and anything that stops
-# producing that exact string skips the step rather than failing it. A
-# skipped step is not a red run: twelve binaries publish, the run is green,
-# and the first person to find out is an operator whose
-# `gh attestation verify` reports no attestation. That operator cannot tell
-# that from tampering, which is the one thing the command exists to
-# distinguish.
-#
-# So this runs the operator's own command, against the assets the run just
-# built, before anyone can install them. It is worth more than an
-# inspection of our own side of it precisely because it fails for the same
-# reasons theirs would: a missing attestation, a digest that does not
-# match, an API that will not confirm the binding.
+# tests/release_provenance.sh pins that we asked. Neither is evidence that a
+# release got one: the action gates its attest step on a string comparison
+# against a composite-action input, and anything that stops producing that
+# exact string skips the step rather than failing it. A skipped step is a
+# green run over twelve unattested binaries. This runs the operator's own
+# command instead, so it fails for the same reasons theirs would.
 #
 # WHAT A FAILURE DOES, decided rather than left to whoever holds the tag:
-# nothing gets published. `release.yml` passes `draft_release: true`, so
-# the action leaves a draft -- which `gh extension install` will not install
+# nothing is published. `release.yml` passes `draft_release: true`, so the
+# action leaves a draft -- which `gh extension install` will not install
 # from, because it reads `releases/latest` and that endpoint does not return
-# drafts. This script promotes the draft on its last line and only there, so
-# the only release an operator can reach is one whose assets were verified.
-# A failed run leaves a draft nobody promoted and a red release run. To
-# recover: fix the cause, delete the draft (`gh release delete <tag> --yes`
-# -- a re-run would otherwise leave a second draft on the same tag, which
-# GitHub allows), and push the tag again. Promoting the draft by hand is the
-# escape hatch, and it is a deliberate act rather than the default.
+# drafts. This script promotes the draft on its last line and only there.
+#
+# To recover from a failed run: fix the cause and re-run. The action's
+# build_and_release.sh does `gh release view "$TAG"` before it creates
+# anything, and gh's release lookup falls back to finding a *draft* by tag
+# name, so a re-run finds the existing draft and re-uploads into it with
+# `--clobber` rather than leaving a second one. Nothing needs deleting
+# first. Promoting the draft by hand stays available and stays a deliberate
+# act.
 #
 # WHAT THIS DEPENDS ON beyond this repository, because a check that fails
 # for reasons nobody can act on is worse than no check:
 #
 #   - `gh`, preinstalled on GitHub-hosted runners.
 #   - GitHub's attestations API, which `gh attestation verify` asks for the
-#     attestation by artifact digest. This read happens seconds after the
-#     same run wrote it, and if it is not immediately consistent the check
-#     would fail a few percent of good releases -- for which the fix people
-#     learn is "re-run it", which is also the fix for a real failure. The
-#     retry budget below is the answer: a bounded wait absorbs propagation,
-#     and an attestation that does not exist never appears no matter how
-#     long you wait, so waiting cannot turn a real failure green.
+#     attestation by artifact digest -- a read happening seconds after the
+#     same run wrote it.
 #   - Sigstore's trust root, which `gh attestation verify` fetches to check
 #     the signing certificate.
 #
-# If the retry budget turns out to be papering over a real race rather than
-# a brief one, the fix is `--bundle`: verify against the bundle the attest
-# step produced instead of a lookup. That needs the bundle path out of a
-# step nested inside the composite action, which is why it is not what this
-# does today.
+# THE RACE, AND WHY THIS IS NOT YET AN ANSWER TO IT. If that read is not
+# immediately consistent, a check with no wait would fail a few percent of
+# good releases -- and the fix people learn ("re-run it") is also the fix
+# for a real failure, which is worse than not checking at all. Whether the
+# read *is* racy has not been established: it cannot be, from outside a real
+# release run. So the retry budget below is a hedge, not a finding, and it
+# is instrumented rather than silent -- every retry prints, and a run that
+# needed any says so in a line written to be grepped for. That is the
+# measurement. If real releases routinely need retries, the read is racy in
+# a way a bounded wait only hides, and the fix is `--bundle`: verify against
+# the bundle the attest step produced instead of a lookup. That needs the
+# bundle path out of a step nested inside the composite action, which is why
+# it is not what this does today. If releases never need one, the budget
+# costs nothing and the question is answered.
+#
+# A bounded wait cannot turn a real failure green either way: an attestation
+# that does not exist never appears, however long you wait.
 #
 # Usage: release-verify.sh <dist-dir> <repo> <tag>
 set -euo pipefail
@@ -59,22 +58,22 @@ dist="${1:?usage: release-verify.sh <dist-dir> <repo> <tag>}"
 repo="${2:?usage: release-verify.sh <dist-dir> <repo> <tag>}"
 tag="${3:?usage: release-verify.sh <dist-dir> <repo> <tag>}"
 
-# One budget for the run rather than one per asset. The delay this is
-# absorbing is a property of the run -- every attestation was written in the
-# same burst -- so a straggling asset should draw on what the others did not
-# need. Per-asset retries would also make a genuinely missing attestation
-# take twelve full waits to report, and a check nobody waits for the end of
-# is a check nobody reads.
+# One budget for the run rather than one per asset. The delay it absorbs is
+# a property of the run -- every attestation was written in the same burst
+# -- so a straggling asset should draw on what the others did not need.
+# Per-asset retries would also make a genuinely missing attestation take
+# twelve full waits to report.
 retries="${ARCHIMEDES_RELEASE_VERIFY_RETRIES:-5}"
 delay="${ARCHIMEDES_RELEASE_VERIFY_DELAY:-10}"
+retries_used=0
 
-# The release is still a draft, so there is still something to gate. The
-# action decides this from `[[ "$DRAFT_RELEASE" = "true" ]]` -- the same
-# shape of string comparison that can quietly stop matching as the attest
-# step's can -- and if it stopped applying, the assets are already public
-# and this whole script is reporting on a decision that was made without it.
-# Better to say so than to verify something and promote what is already
-# promoted.
+# The release is still a draft, so there is still something to gate.
+# `draft_release` is decided inside the action by `[[ "$DRAFT_RELEASE" =
+# "true" ]]` -- the same shape of string comparison that can quietly stop
+# matching as the attest step's can. If it stopped applying, the assets are
+# already installable and this script is reporting on a decision made
+# without it. Better to say so than to verify something and promote what is
+# already promoted.
 draft="$(gh release view "$tag" --repo "$repo" --json isDraft --jq .isDraft)"
 if [ "$draft" != "true" ]; then
   echo "error: $repo $tag is not a draft (isDraft=$draft)." >&2
@@ -86,9 +85,9 @@ fi
 
 # A glob that expands to nothing is the one failure mode that would restore
 # exactly the silence this exists to end: the loop below runs zero times,
-# every assertion in it holds vacuously, and the step goes green over a
-# release nobody checked. So the assets are counted before they are
-# verified, and no assets is a failure.
+# every check in it holds vacuously, and the step goes green over a release
+# nobody verified. So the assets are counted before they are verified, and
+# the count is checked again afterwards.
 if [ ! -d "$dist" ]; then
   echo "error: no $dist/ to verify -- the build left nothing behind." >&2
   exit 1
@@ -98,41 +97,62 @@ fi
 # expanding an empty array under `set -u` is an error, and empty is the case
 # this most needs to handle.
 assets="$(find "$dist" -maxdepth 1 -type f | LC_ALL=C sort)"
-count=0
-while IFS= read -r asset; do
-  if [ -n "$asset" ]; then count=$((count + 1)); fi
-done <<< "$assets"
-
-if [ "$count" -eq 0 ]; then
+if [ -z "$assets" ]; then
   echo "error: $dist/ holds no assets to verify." >&2
   echo "       A release that published nothing verifiable must not go" >&2
   echo "       green just because there was nothing to check." >&2
   exit 1
 fi
+expected="$(printf '%s\n' "$assets" | wc -l | tr -d ' ')"
 
-echo "verifying $count asset(s) in $dist/ against $repo:"
+echo "verifying $expected asset(s) in $dist/ against $repo:"
 
+verified=0
 while IFS= read -r asset; do
   [ -n "$asset" ] || continue
   # `until`, so a failing verify is a loop condition rather than something
-  # errexit acts on -- and so the retry is spelled once, around the real
-  # command, with nothing between the failure and the decision to wait.
-  until gh attestation verify "$asset" --repo "$repo"; do
+  # errexit acts on. stdin is closed to it because this loop is fed by a
+  # here-string on the same descriptor: a subprocess that read from stdin
+  # would swallow the remaining assets and end the loop early, verifying
+  # one and reporting for twelve. The count check after the loop catches
+  # that even if this redirect is ever dropped.
+  until gh attestation verify "$asset" --repo "$repo" </dev/null; do
     if [ "$retries" -le 0 ]; then
       echo "" >&2
       echo "error: $(basename "$asset") has no attestation this repository" >&2
-      echo "       can verify. Nothing has been promoted: the release is" >&2
-      echo "       still a draft and is not installable." >&2
+      echo "       can verify, and the run's retry budget is spent." >&2
+      echo "       Nothing has been promoted: the release is still a draft" >&2
+      echo "       and is not installable." >&2
       exit 1
     fi
     retries=$((retries - 1))
+    retries_used=$((retries_used + 1))
     echo "  $(basename "$asset"): not readable yet, $retries retry/retries left"
     sleep "$delay"
   done
+  verified=$((verified + 1))
 done <<< "$assets"
 
+# The loop ran over everything it said it would. Anything that ends it early
+# -- a subprocess eating stdin, a read error -- would otherwise leave a
+# green step that checked a fraction of the release.
+if [ "$verified" -ne "$expected" ]; then
+  echo "error: verified $verified of $expected asset(s); the check did not" >&2
+  echo "       cover the release and nothing has been promoted." >&2
+  exit 1
+fi
+
+# The measurement described in the header. One line, phrased so that
+# "did any release need a retry?" is a search rather than a reading.
+if [ "$retries_used" -gt 0 ]; then
+  echo ""
+  echo "ATTESTATION-LOOKUP-RETRIES=$retries_used -- the attestation read was" \
+       "not immediately consistent. If this line shows up on most releases," \
+       "switch to --bundle; see the header of .github/release-verify.sh."
+fi
+
 echo ""
-echo "all $count asset(s) verified; publishing $repo $tag"
+echo "all $verified asset(s) verified; publishing $repo $tag"
 
 # The last line, and the only place the draft becomes a release. Everything
 # above is what earns it.
