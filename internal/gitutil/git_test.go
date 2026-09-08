@@ -2,6 +2,7 @@ package gitutil_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -150,4 +151,45 @@ func TestIsAncestor(t *testing.T) {
 			}
 		})
 	}
+}
+
+// HasCommitIdentity guards a commit, so what it must agree with is git's own
+// answer to the same question — asserted here by committing, or failing to,
+// in the repository it was asked about.
+func TestHasCommitIdentity(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(testing.TB)
+		want  bool
+	}{
+		{"configured", testrepo.IsolateGit, true},
+		{"none at all", testrepo.StripGitIdentity, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup(t)
+			dir := t.TempDir()
+			testrepo.Git(t, dir, "init", "-q")
+
+			if got := gitutil.HasCommitIdentity(dir); got != tt.want {
+				t.Errorf("HasCommitIdentity = %v, want %v", got, tt.want)
+			}
+			if got := canCommit(t, dir); got != tt.want {
+				t.Errorf("git itself commits = %v, so HasCommitIdentity's %v is the wrong answer", got, tt.want)
+			}
+		})
+	}
+}
+
+// canCommit reports whether git will actually make a commit in dir, which is
+// the only thing HasCommitIdentity is a prediction of. It runs git itself
+// rather than going through testrepo's runner, which is the one place in
+// this module's tests that is the right way round: the runner fails the test
+// when git does, and here git failing is the answer being asked for.
+func canCommit(t *testing.T, dir string) bool {
+	t.Helper()
+	cmd := exec.Command("git", "commit", "-q", "--allow-empty", "-m", "probe")
+	cmd.Dir = dir
+	return cmd.Run() == nil
 }

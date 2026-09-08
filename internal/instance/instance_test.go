@@ -49,10 +49,11 @@ func TestCreateWritesTheTemplateTreeIntoANewDirectory(t *testing.T) {
 	testrepo.IsolateGit(t)
 	parent := t.TempDir()
 
-	dest, err := instance.Create(fakeTemplate(), "widgets", parent)
+	res, err := instance.Create(fakeTemplate(), "widgets", parent)
 	if err != nil {
 		t.Fatal(err)
 	}
+	dest := res.Path
 
 	if want := filepath.Join(parent, "widgets"); dest != want {
 		t.Errorf("dest = %q, want %q", dest, want)
@@ -80,11 +81,15 @@ func TestCreateStartsTheInstanceOnItsOwnFreshHistory(t *testing.T) {
 	testrepo.IsolateGit(t)
 	parent := t.TempDir()
 
-	dest, err := instance.Create(fakeTemplate(), "widgets", parent)
+	res, err := instance.Create(fakeTemplate(), "widgets", parent)
 	if err != nil {
 		t.Fatal(err)
 	}
+	dest := res.Path
 
+	if !res.Committed {
+		t.Error("Committed = false on a machine that has an identity to commit under")
+	}
 	if got := testrepo.GitOut(t, dest, "rev-list", "--count", "HEAD"); got != "1" {
 		t.Errorf("commit count = %s, want 1: an instance starts on its own history", got)
 	}
@@ -94,6 +99,63 @@ func TestCreateStartsTheInstanceOnItsOwnFreshHistory(t *testing.T) {
 	// Everything the template carried is in that commit, dotfiles included.
 	if got := testrepo.GitOut(t, dest, "status", "--porcelain"); got != "" {
 		t.Errorf("a fresh instance is not clean:\n%s", got)
+	}
+}
+
+// The machine the tool meets first: a fresh laptop, a container, a CI
+// runner, where git has no identity and every commit dies with "Please tell
+// me who you are". The files are the valuable half of what init does, and
+// they land; the commit is the half that needs an operator git does not
+// have yet, and it waits for them.
+func TestCreateScaffoldsWithoutCommittingWhenGitHasNoIdentity(t *testing.T) {
+	testrepo.StripGitIdentity(t)
+	parent := t.TempDir()
+
+	res, err := instance.Create(fakeTemplate(), "widgets", parent)
+	if err != nil {
+		t.Fatalf("no identity is not a failure, it is a machine: %v", err)
+	}
+
+	if res.Committed {
+		t.Error("Committed = true, but there was no identity to commit under")
+	}
+	// The instance itself is all there. A caller told the operator this
+	// worked, so it has to have.
+	for _, path := range []string{"repos.yaml", ".gitignore", "drivers/README.md", "work/.gitkeep"} {
+		if _, err := os.Stat(filepath.Join(res.Path, path)); err != nil {
+			t.Errorf("the instance is missing %s: %v", path, err)
+		}
+	}
+	// git init still ran, so the operator's own first commit is one command
+	// away rather than two.
+	if _, err := os.Stat(filepath.Join(res.Path, ".git")); err != nil {
+		t.Errorf("the instance is not a git repository: %v", err)
+	}
+	if out := testrepo.GitOut(t, res.Path, "rev-list", "--all", "--count"); out != "0" {
+		t.Errorf("commit count = %s, want 0: nothing may be committed without an identity", out)
+	}
+
+	// Nothing is staged either. What the operator is told to run is `git add
+	// -A && git commit`, and a half-staged index would make that line quietly
+	// wrong about what it was committing.
+	if out := testrepo.GitOut(t, res.Path, "diff", "--cached", "--name-only"); out != "" {
+		t.Errorf("the index is not empty:\n%s", out)
+	}
+}
+
+// The second criterion of the issue this came from, asserted rather than
+// argued: an instance is the operator's own repository and its first commit
+// is in its history forever, so no identity of ours may ever appear in one.
+func TestCreateNeverCommitsUnderAnIdentityItInvented(t *testing.T) {
+	testrepo.StripGitIdentity(t)
+
+	res, err := instance.Create(fakeTemplate(), "widgets", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if out := testrepo.GitOut(t, res.Path, "log", "--all", "--format=%an <%ae>"); out != "" {
+		t.Errorf("an instance carries an author nobody configured: %s", out)
 	}
 }
 
@@ -139,13 +201,52 @@ func TestCreateLeavesNothingBehindWhenItFails(t *testing.T) {
 	}
 }
 
+// The other half of the cleanup path, and the half no test reached: a git
+// step that genuinely fails, after `git init` has already made dest a
+// repository. It is neither of the two cases beside it — materialize failing
+// happens before git is involved at all, and a missing identity is now a
+// success — so it is the one a future edit could quietly turn into a partial
+// instance while both of those kept passing.
+func TestCreateLeavesNothingBehindWhenAGitStepFails(t *testing.T) {
+	testrepo.IsolateGit(t)
+	refuseCommits(t)
+	parent := t.TempDir()
+
+	if _, err := instance.Create(fakeTemplate(), "widgets", parent); err == nil {
+		t.Fatal("expected an error, got none")
+	}
+
+	if _, err := os.Stat(filepath.Join(parent, "widgets")); !os.IsNotExist(err) {
+		t.Errorf("a partial instance was left behind: %v", err)
+	}
+}
+
+// refuseCommits makes `git commit` fail wherever this test runs one, by way
+// of a pre-commit hook that says no. It leaves the identity alone on
+// purpose: the failure being staged is the one that survives a machine with
+// everything configured, so that a skipped commit and a failed one stay
+// visibly different things.
+func refuseCommits(t *testing.T) {
+	t.Helper()
+	hooks := t.TempDir()
+	if err := os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Layered over the config IsolateGit already wrote rather than replacing
+	// it, which is what this environment triple is for.
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
+	t.Setenv("GIT_CONFIG_VALUE_0", hooks)
+}
+
 func TestCreateScaffoldsTheTemplateThisRepoShips(t *testing.T) {
 	testrepo.IsolateGit(t)
 
-	dest, err := instance.Create(archimedes.Template(), "widgets", t.TempDir())
+	res, err := instance.Create(archimedes.Template(), "widgets", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
+	dest := res.Path
 
 	for _, path := range []string{"repos.yaml", "WORKSPACE-MAP.md", "AGENTS.md", ".gitignore"} {
 		if _, err := os.Stat(filepath.Join(dest, path)); err != nil {

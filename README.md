@@ -131,6 +131,12 @@ Archimedes; everything after that is the same install acting on that data.
 An instance is never refreshed from here, and a second instance on the same
 machine uses the same install.
 
+On a machine where git has no identity configured — a new laptop, a
+container, a devcontainer — `init` writes the instance and leaves its first
+commit for you, printing the two `git config` commands to set and the commit
+to run. It will not invent an author to make that commit itself: the
+instance is your repository, and that commit is in its history for good.
+
 Running it requires `git` and `gh` (authenticated). `sync-templates`
 additionally requires
 [`multi-gitter`](https://github.com/lindell/multi-gitter).

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blockadence/gh-archimedes/internal/instance"
 	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
@@ -76,5 +77,50 @@ func TestInitPointsAtTheNextCommandInTheFormTheOperatorCanRun(t *testing.T) {
 				t.Errorf("init's next step does not say %q:\n%s", tc.want, out)
 			}
 		})
+	}
+}
+
+// The whole of what an operator on a fresh machine gets. `init` is the first
+// command anybody runs, and on a laptop or container where git has never
+// been configured it is also the first place the tool could hand them raw
+// git output instead of an explanation. What it hands them instead is the
+// instance, plus the two commands that make its first commit theirs.
+func TestInitSaysTheInstanceIsUncommittedAndHowToCommitIt(t *testing.T) {
+	testrepo.StripGitIdentity(t)
+	parent := t.TempDir()
+
+	out := execute(t, "init", "widgets", parent)
+
+	dest := filepath.Join(parent, "widgets")
+	if !strings.Contains(out, dest) {
+		t.Errorf("output does not say where the instance is:\n%s", out)
+	}
+	for _, want := range []string{
+		"git config --global user.name",
+		"git config --global user.email",
+		"git add -A",
+		instance.CommitSubject("widgets"),
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output does not tell the operator to run %q:\n%s", want, out)
+		}
+	}
+	// It is still the same next step. Being uncommitted does not stop an
+	// instance being usable, and burying `bootstrap` here would make it look
+	// like it does.
+	if !strings.Contains(out, "bootstrap") {
+		t.Errorf("output does not point at the next step:\n%s", out)
+	}
+}
+
+// The other half of that contract, and the one that rots silently: on a
+// machine that does have an identity, none of the above is said at all.
+func TestInitSaysNothingAboutIdentityWhenItCommitted(t *testing.T) {
+	parent := initParent(t)
+
+	out := execute(t, "init", "widgets", parent)
+
+	if strings.Contains(out, "git config") {
+		t.Errorf("output tells an operator to configure git after committing for them:\n%s", out)
 	}
 }
