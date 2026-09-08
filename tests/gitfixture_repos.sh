@@ -55,13 +55,17 @@ echo "the fixed identity beats one the test file inherited:"
 
 # git reads GIT_AUTHOR_NAME and friends ahead of every config file, so a
 # fixture that only wrote `git config user.email` would quietly commit as
-# whatever the environment was carrying. Exported here in the test file's own
-# shell, which is where a runner's or a developer's would be too -- the
-# fixture clearing them is what everything below depends on, the follow-up
-# commits and the driver subprocesses a real test file spawns alike.
-export GIT_AUTHOR_NAME=inherited GIT_AUTHOR_EMAIL=inherited@example.com
-export GIT_COMMITTER_NAME=inherited GIT_COMMITTER_EMAIL=inherited@example.com
+# whatever the environment was carrying. Put into the test file's own shell,
+# which is where a runner's or a developer's would be too -- the fixture
+# clearing them is what everything below depends on, the follow-up commits
+# and the driver subprocesses a real test file spawns alike. Said twice
+# because the first fixture call is supposed to have cleared it.
+inherit_an_identity() {
+  export GIT_AUTHOR_NAME=inherited GIT_AUTHOR_EMAIL=inherited@example.com
+  export GIT_COMMITTER_NAME=inherited GIT_COMMITTER_EMAIL=inherited@example.com
+}
 
+inherit_an_identity
 INHERITED="$WORK/inherited"
 make_repo_at "$INHERITED"
 
@@ -73,8 +77,7 @@ assert_eq "$(git -C "$INHERITED" log -1 --format='%ae %ce')" "t@t t@t" \
 assert_eq "${GIT_AUTHOR_NAME-gone} ${GIT_COMMITTER_NAME-gone}" "gone gone" \
   "cleared, rather than overridden per command: what the fixture cannot reach with -c flags is the subprocesses a test spawns"
 
-export GIT_AUTHOR_NAME=inherited GIT_AUTHOR_EMAIL=inherited@example.com
-export GIT_COMMITTER_NAME=inherited GIT_COMMITTER_EMAIL=inherited@example.com
+inherit_an_identity
 
 CLONE="$WORK/clone"
 make_origin_and_clone_at "$WORK/clone-origin.git" "$CLONE" README.md $'hi\n'

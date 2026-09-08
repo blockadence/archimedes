@@ -210,7 +210,7 @@ SNAP6="$WORK/snapshot6"
 snapshot_repo_state "$REPO6" > "$SNAP6"
 echo "an ADR nobody asked for" > "$REPO6/ADR.md"
 git -C "$REPO6" add -A
-git -C "$REPO6" commit -qm "committed it too" >/dev/null
+git -C "$REPO6" commit -qm "committed it too"
 
 if err="$(paths_changed_since_snapshot "$REPO6" "$SNAP6" 2>&1)"; then
   fail "naming what changed refuses when HEAD moved, rather than reporting nothing changed"
@@ -238,7 +238,7 @@ snapshot_repo_state "$REPO4" > "$SNAP4"
 mkdir -p "$REPO4/.specify/memory"
 echo "scaffolding" > "$REPO4/.specify/memory/constitution.md"
 git -C "$REPO4" add -A
-git -C "$REPO4" commit -qm "committed the scaffolding" >/dev/null
+git -C "$REPO4" commit -qm "committed the scaffolding"
 
 if err="$(restore_repo_state "$REPO4" "$SNAP4" 2>&1)"; then
   fail "restore refuses when HEAD moved during the run"

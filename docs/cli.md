@@ -609,8 +609,12 @@ The bash suite under `tests/` exercises the shipped drivers end to end
 against this binary, and builds the same repo shapes from
 `tests/gitfixture.sh`; keep the two in step. `make_origin_and_clone_at` is
 `testrepo.New`'s twin and `make_repo_at` is `Init`'s — a checkout with no
-origin, built around whatever files the caller has already written into the
-directory. Both carry the same fixed identity, and clear it out of the
+origin, on `main`, carrying one commit. Where `Init` seeds a `README.md` and
+`Spec.Files` is how a Go test asks for different ones, `make_repo_at` commits
+whatever the caller has already written into the directory and falls back to
+that same `README.md` only when there is nothing there; the fixtures are the
+same shape, and what varies is how each language's call sites were already
+spelling the seed. Both carry the same fixed identity, and clear it out of the
 environment while they set it: git reads `GIT_AUTHOR_NAME` and friends ahead
 of every config file, so a fixture that only wrote `git config user.email`
 would commit as whatever the shell was carrying, and a `-c user.email=` at

@@ -85,7 +85,17 @@ make_repo_at() {
 # repo committing as something no fixture chose. The same guard, for the same
 # reason, as the one inside isolate_git; and unlike a `-c user.email=` at the
 # call site it reaches the subprocesses a test spawns too, which is where the
-# drivers under test do their committing.
+# drivers under test do their committing — the two stub sessions that commit
+# as agent@example.com included, since a `-c` of their own would lose to the
+# environment exactly as the fixed identity's did.
+#
+# Two things follow from the clearing being the shell's and not the repo's.
+# It does not survive a `( ... )` or `$( ... )` around the fixture call, so
+# ask for a repo in the test file's own shell. And it is the deliberate
+# opposite of strip_git_identity and unconfigure_git_identity, which say the
+# test file is a machine with no identity: a repo fixture called after either
+# of those would quietly turn that machine back into an ordinary one. No file
+# does both today, and none should start.
 configure_git_identity() {
   local dir="$1"
 
