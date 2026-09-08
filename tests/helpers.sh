@@ -90,9 +90,10 @@ build_archimedes() {
 # Several test files read the workflows to pin guarantees that live nowhere
 # but there -- the release waits on the tests (ci_gates_release.sh), the
 # published assets are attested (release_provenance.sh), the billed suite is
-# not reachable from a fork (ci_runs_live_drivers.sh). They all need the
-# same thing of a workflow file, and reading it several ways would be
-# several answers to the same question.
+# not reachable from a fork (ci_runs_live_drivers.sh), no action is on a
+# deprecated Node (ci_action_runtimes.sh). They all need the same thing of a
+# workflow file, and reading it several ways would be several answers to the
+# same question.
 #
 # <file> <header-line>, the header given exactly as it appears, indent and
 # trailing colon included: `yaml_block wf.yml "  release:"`.
@@ -120,8 +121,8 @@ manifest_field() {
 }
 
 # One job's body out of a GitHub workflow: everything indented under
-# `  <name>:` up to the next job. Enough structure for the three files that
-# read workflows -- ci_gates_release.sh, release_provenance.sh and
+# `  <name>:` up to the next job. Enough structure for the files that read
+# workflows -- ci_gates_release.sh, release_provenance.sh and
 # ci_runs_live_drivers.sh -- to tell "the release job needs the test job"
 # from "the file contains the word needs somewhere". Shared rather than
 # copied into each, so their readings of the same YAML cannot drift apart.
@@ -132,6 +133,21 @@ manifest_field() {
 # <workflow-file> <job-name>
 workflow_job_block() {
   yaml_block "$1" "  $2:"
+}
+
+# Every action a workflow will actually run, one `owner/action@ref` per
+# line, deduplicated. Beside the two readers above rather than inside the
+# file that wants it today, for the reason stated there: one reading of the
+# workflows, not one per question asked of them.
+#
+# Instruction lines only. These files explain themselves at length, so a
+# paragraph naming an action is not a step that runs it -- the anchored
+# match is what draws that line, since a commented-out `# - uses: ...` can
+# never satisfy it. <workflow-file>...
+workflow_uses() {
+  grep -hE '^[[:space:]]*(-[[:space:]]*)?uses:' "$@" \
+    | sed -E 's/^[[:space:]]*(-[[:space:]]*)?uses:[[:space:]]*//; s/[[:space:]]*(#.*)?$//' \
+    | sort -u
 }
 
 # The names of every job in a workflow, one per line. <workflow-file>

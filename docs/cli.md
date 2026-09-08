@@ -528,6 +528,76 @@ fixed-location drivers have to leave someone else's repository as they
 found it, and a second copy of the code that does that would be the one
 that drifts — on the failure path, where nobody is watching.
 
+## What an instance records as a path
+
+Every path an instance writes down is relative to the instance root, and
+that is a decision about readership rather than a formatting preference.
+An instance is a git repository: its manifest, its dossiers, its map and
+its `work/` are committed to it and read by everyone who has it, on
+machines whose directory layout is their own. So `bootstrap` records a
+checkout as `../<name>`, `WORKSPACE-MAP.md` links relatively, and a dossier
+stub names `../<repo>`.
+
+`spawn`'s worktree column in `work/<slug>/status.md` was the exception and
+is not any more (issue 46). It recorded
+`/Users/someone/Code/service-a-worktrees/widget-fix` — a directory that
+exists on exactly one machine, in a file shared with everyone. That was not
+only untidy: `prune` takes the column at its word and hands it to `git
+worktree remove`, so a teammate who cloned the instance was naming a path
+their box has never had.
+
+The alternative considered first was the opposite one — that a spawned
+worktree is per-machine state like `.archimedes-notify.json`, and the row
+was never meant to travel, so `work/` should not be the instance's
+committed content at all. It was rejected because `work/<slug>/` is also
+where a unit of work's *reference material* lives, the ticket and the
+mockup and the notes that `spawn` materializes into every worktree, and
+sharing those is the whole reason the directory exists. Splitting the
+directory to un-share one column of one file buys less than making the
+column mean the same thing everywhere.
+
+And it does mean the same thing everywhere.
+`../service-a-worktrees/widget-fix` is not a claim that the directory is
+there; it is where this unit of work's worktree belongs, which is as true
+on a colleague's clone as `repos.yaml`'s `../service-a` is true before
+they have cloned anything.
+
+`internal/worktree` owns the whole of that — `Path` (where a worktree
+lives, beside its checkout), `Record` (how it is written down), `Resolve`
+(how a reader turns the row back into a usable path) — so a writer and a
+reader cannot come to different conclusions about the shape. `spawn`
+records through `Record`; `status.Discover` and `prune.Scan` resolve
+through `Resolve`, and both take the instance root rather than its `work/`
+directory for that reason. The parse layers underneath (`status.ParseFile`,
+`prune.ParseStatusFile`) report the column exactly as the file states it:
+they are given a file, not an instance, and inventing a root to resolve
+against is the mistake this is fixing.
+
+`Resolve` answers with a path usable from any working directory, even when
+the root it is given is not — `--root .` is the ordinary way to name an
+instance, and the answer is consumed by git running inside the target
+repo, which would read a shell-relative path against that repo instead.
+An empty column stays empty rather than resolving to the instance root,
+which is what `prune` would otherwise hand to `git worktree remove`.
+
+Rows written under the old shape still read. `Resolve` returns an absolute
+value untouched, so an instance that already carries them keeps working on
+the machine that wrote them — the only machine they were ever usable from.
+Nothing rewrites them: a row is replaced by the spawn that supersedes it or
+removed by the prune that retires it, and a migration pass would be
+rewriting the one machine's truth into another's guess.
+
+`spawn`'s `Result` and its printed lines keep the absolute path. Those
+answer for this machine — a `cd` line the operator pastes, a path an MCP
+client hands to a tool — and are not written into the instance.
+
+What holds the rule is
+`TestAScaffoldedInstanceIsTheSameHoweverItWasInvoked` — the same test that
+"What an instance's own docs name" leans on above — which compares two
+scaffolded instances byte for byte with nothing normalized away. Two runs
+land in two different temp directories, so a path that is true in one of
+them fails the comparison and names the file it came from.
+
 ## Adding a subcommand
 
 Each subcommand lives in its own `internal/cmd/<name>.go`, exposing a
@@ -600,6 +670,59 @@ only the `openspec` CLI (`npm install -g @fission-ai/openspec`), which the
 workflow installs so that it runs there too — pinned to a version there,
 since that install is the one part of a release gate that reaches the
 network, and an upstream reword should not be able to hold up a tag.
+
+### The Node the actions run on
+
+Every `uses:` across the three workflows is on a release that does not
+target Node 20, and `tests/ci_action_runtimes.sh` is what keeps it that way.
+
+This is not housekeeping. GitHub's runners were forcing the node20 actions
+onto Node 24 and annotating every run to say so, and when that override goes
+it goes on `test.yml` first — which is `release.yml`'s gate, so the first
+thing to break would be the ability to cut a release, for a reason with
+nothing to do with the tag being pushed. `live-drivers.yml` is the worse
+case rather than the milder one: it is `workflow_dispatch` and a weekly
+cron, so it is the file that gets discovered broken by a report nobody is
+reading.
+
+The versions:
+
+| file | actions |
+|---|---|
+| `test.yml` | `actions/checkout@v7`, `actions/setup-go@v7` |
+| `release.yml` | `actions/checkout@v7`, `cli/gh-extension-precompile@v2` |
+| `live-drivers.yml` | `actions/checkout@v7`, `actions/setup-go@v7`, `actions/setup-node@v7`, `astral-sh/setup-uv@v10.0.1` |
+
+The test records a floor per action — the lowest major whose `action.yml`
+says `runs: using: node24` — rather than the exact version in the tree, so a
+routine bump is not also a test edit, and an action nobody has recorded a
+floor for fails rather than passing quietly. Its header has the `gh api`
+one-liner for working a new floor out. What it cannot do is check that table
+against upstream, because a test in a release gate must not need the
+network; that half was checked by reading each upstream `action.yml`, and
+then by a real run of each of the three files reporting no annotation. Read
+the run rather than trusting the bump: a green square is not the evidence,
+the absence of the warning on the job is.
+
+`cli/gh-extension-precompile@v2` is the one action here we do not control,
+and the answer for it is that it was never affected: it is a composite
+action, so there is no Node runtime under it to deprecate — which is why the
+annotation on `release.yml` named only `actions/checkout` — and its own
+nested actions are SHA-pinned upstream and already on node24. It is
+deliberately not bumped. A bump would mean re-reading its changelog for what
+it does with `generate_attestations` and `draft_release`, which is the one
+failure mode in this repository that publishes the wrong thing rather than
+nothing, and the deprecation gives no reason to take that on.
+
+`astral-sh/setup-uv` is the one step named by full version (`@v10.0.1`)
+rather than by floating major, and that is upstream's doing rather than a
+pinning policy of ours: that action stopped publishing major tags with its
+v8 release, so `@v7` is the newest floating major that exists and its line
+has had no release since March 2026 — staying on it would mean sitting on a
+branch that will not get the next deprecation's fix. Deliberately not done
+anywhere here: pinning actions to commit SHAs. That is a supply-chain
+decision with its own argument and its own maintenance cost, and it is not
+what the deprecation was asking for.
 
 ## The live driver tests
 
@@ -701,8 +824,13 @@ Both fail the test with git's own output if the command doesn't succeed.
 terminates nearly everything it prints with a newline no caller wants.
 
 Every fixture the package builds carries a fixed commit identity, so no test
-has to spell one out to commit. A test whose subject *builds the repository
-itself* has no fixture checkout to carry it, and calls
+has to spell one out to commit — written into the checkout's config and
+cleared out of the test's environment in the same breath, since git reads
+`GIT_AUTHOR_NAME` and friends ahead of every config file and a fixture that
+only wrote the config would commit as whatever the suite was launched
+carrying. Clearing it is `t.Setenv`'s, so a test that builds a fixture is a
+test that may not call `t.Parallel`. A test whose subject *builds the
+repository itself* has no fixture checkout to carry it, and calls
 `testrepo.IsolateGit(t)` instead: git gets a global config of that test's
 own holding an identity and nothing else, so the test doesn't pass or fail
 on whether the machine running the suite happens to have a global

@@ -88,10 +88,9 @@ func TestParseFileMissingErrors(t *testing.T) {
 
 func TestDiscover(t *testing.T) {
 	dir := t.TempDir()
-	workDir := filepath.Join(dir, "work")
 
 	writeStatus := func(slug, content string) {
-		slugDir := filepath.Join(workDir, slug)
+		slugDir := filepath.Join(dir, "work", slug)
 		if err := os.MkdirAll(slugDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -101,24 +100,32 @@ func TestDiscover(t *testing.T) {
 	}
 
 	rowFor := func(slug string) string {
-		return "# " + slug + "\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n| service-a | " + slug + " | /wt | note | - |\n"
+		return "# " + slug + "\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
+			"| service-a | " + slug + " | ../service-a-worktrees/" + slug + " | note | - |\n"
 	}
 
 	writeStatus("alpha", rowFor("alpha"))
 	writeStatus("beta", rowFor("beta"))
 
 	t.Run("all slugs", func(t *testing.T) {
-		got, err := Discover(workDir, "")
+		got, err := Discover(dir, "")
 		if err != nil {
 			t.Fatalf("Discover returned error: %v", err)
 		}
 		if len(got) != 2 {
 			t.Fatalf("expected 2 entries, got %d: %#v", len(got), got)
 		}
+		// The column is recorded against the instance root, so what a
+		// reader gets back is a path it can use rather than the "../" the
+		// file carries.
+		want := filepath.Join(filepath.Dir(dir), "service-a-worktrees", "alpha")
+		if got[0].Worktree != want {
+			t.Errorf("worktree = %q, want it resolved against the instance root: %q", got[0].Worktree, want)
+		}
 	})
 
 	t.Run("filtered to one slug", func(t *testing.T) {
-		got, err := Discover(workDir, "alpha")
+		got, err := Discover(dir, "alpha")
 		if err != nil {
 			t.Fatalf("Discover returned error: %v", err)
 		}
@@ -136,4 +143,29 @@ func TestDiscover(t *testing.T) {
 			t.Fatalf("expected no entries, got %#v", got)
 		}
 	})
+}
+
+// An instance that already carries absolute rows still reads. They mean
+// what they always meant — a path on the machine that wrote them — so
+// resolving must not join them onto the root and produce a path that is
+// true nowhere.
+func TestDiscoverLeavesAnAbsoluteRowAlone(t *testing.T) {
+	dir := t.TempDir()
+	slugDir := filepath.Join(dir, "work", "alpha")
+	if err := os.MkdirAll(slugDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# alpha\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
+		"| service-a | alpha | /Users/someone/Code/service-a-worktrees/alpha | note | - |\n"
+	if err := os.WriteFile(filepath.Join(slugDir, "status.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Discover(dir, "")
+	if err != nil {
+		t.Fatalf("Discover returned error: %v", err)
+	}
+	if len(got) != 1 || got[0].Worktree != "/Users/someone/Code/service-a-worktrees/alpha" {
+		t.Fatalf("got %#v, want the row's own absolute path", got)
+	}
 }

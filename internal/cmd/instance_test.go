@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/blockadence/gh-archimedes/internal/bootstrap"
@@ -131,20 +130,18 @@ func instanceFiles(t *testing.T, root string) map[string]string {
 // One test over the whole instance rather than one per command: the rule is
 // about the artifact, and a command added later is held to it by being part
 // of what scaffoldInstance produces.
+//
+// The two scaffolds are compared byte for byte, with nothing normalized
+// away. That is only possible because an instance records no path that is
+// true on one machine: two runs land in two different temp directories and
+// write the same files anyway. `spawn`'s worktree column was the exception
+// and is not any more (issue 46, and internal/worktree), so a normalizing
+// step re-introduced here would be hiding a regression of it.
 func TestAScaffoldedInstanceIsTheSameHoweverItWasInvoked(t *testing.T) {
 	scaffold := func(ghExtension string) map[string]string {
 		t.Setenv("GH_EXTENSION", ghExtension)
-		root, parent := scaffoldInstance(t)
-
-		files := instanceFiles(t, root)
-		// spawn records where each worktree is, and a worktree is a real
-		// absolute path beside the instance -- so two scaffolds differ
-		// there by which temp directory they were built in, which is not
-		// what this compares. The install is the only variable left.
-		for path, content := range files {
-			files[path] = strings.ReplaceAll(content, parent, "<parent>")
-		}
-		return files
+		root, _ := scaffoldInstance(t)
+		return instanceFiles(t, root)
 	}
 
 	standalone, extension := scaffold(""), scaffold("1")

@@ -9,6 +9,7 @@ import (
 	"github.com/blockadence/gh-archimedes/internal/dossier"
 	"github.com/blockadence/gh-archimedes/internal/spawn"
 	"github.com/blockadence/gh-archimedes/internal/testrepo"
+	"github.com/blockadence/gh-archimedes/internal/worktree"
 )
 
 // materializeFixture is a minimal instance root plus one target repo and a
@@ -32,7 +33,7 @@ func newMaterializeFixture(t *testing.T, slug string) materializeFixture {
 	}
 	mustMkdirAll(t, f.root)
 
-	f.worktree = spawn.WorktreePath(f.repoPath, slug)
+	f.worktree = worktree.Path(f.repoPath, slug)
 	testrepo.Git(t, f.repoPath, "worktree", "add", f.worktree, "-b", slug)
 
 	return f
