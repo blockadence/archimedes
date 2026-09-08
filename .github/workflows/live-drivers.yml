@@ -58,6 +58,10 @@ concurrency:
 jobs:
   live-drivers:
     runs-on: ubuntu-latest
+    # A headless agent session that hangs would otherwise sit here until the
+    # 6-hour default, weekly, unattended. Both files together are minutes of
+    # work; anything past this is stuck, not slow.
+    timeout-minutes: 30
     # The credential lives on this environment, not on the repository, so
     # it is reachable only from a job that names it -- a second job added
     # to this file later does not get it by being nearby.
