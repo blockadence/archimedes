@@ -10,6 +10,7 @@ import (
 	"testing/fstest"
 
 	"github.com/blockadence/gh-archimedes"
+	"github.com/blockadence/gh-archimedes/internal/gitutil"
 	"github.com/blockadence/gh-archimedes/internal/instance"
 	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
@@ -213,14 +214,14 @@ func TestCreateLeavesNothingBehindWhenItFails(t *testing.T) {
 }
 
 // The other half of the cleanup path, and the half no test reached: a git
-// step that genuinely fails, after `git init` has already made dest a
-// repository. It is neither of the two cases beside it — materialize failing
-// happens before git is involved at all, and a missing identity is now a
-// success — so it is the one a future edit could quietly turn into a partial
-// instance while both of those kept passing.
-func TestCreateLeavesNothingBehindWhenAGitStepFails(t *testing.T) {
+// step that genuinely fails while Create is still building the instance. It
+// is not materialize failing, which happens before git is involved at all,
+// and it is not the commit, which is no longer Create's own work to fail at
+// — see the two tests below. It is the one a future edit could quietly turn
+// into a partial instance while both of those kept passing.
+func TestCreateLeavesNothingBehindWhenTheRepositoryCannotBeMade(t *testing.T) {
 	testrepo.IsolateGit(t)
-	refuseCommits(t)
+	refuseGitInit(t)
 	parent := t.TempDir()
 
 	if _, err := instance.Create(fakeTemplate(), "widgets", parent); err == nil {
@@ -232,22 +233,82 @@ func TestCreateLeavesNothingBehindWhenAGitStepFails(t *testing.T) {
 	}
 }
 
-// refuseCommits makes `git commit` fail wherever this test runs one, by way
-// of a pre-commit hook that says no. It leaves the identity alone on
-// purpose: the failure being staged is the one that survives a machine with
-// everything configured, so that a skipped commit and a failed one stay
-// visibly different things.
-func refuseCommits(t *testing.T) {
-	t.Helper()
-	hooks := t.TempDir()
-	if err := os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+// The other side of that rule, and the machine this one is: git configured
+// to do something to every commit that it then cannot do — signing with a
+// key that is not on this box, a hook that says no. The identity is there
+// and correct, so nothing is skipped; git is asked, and refuses.
+//
+// What comes back is not an error. The instance is written, it is a
+// repository, and the only thing missing is a commit its owner can make once
+// they have fixed what their own configuration asks for. Deleting it would
+// take the valuable half away over the half that needs them — which is
+// exactly the trade the no-identity case already decided.
+func TestCreateKeepsTheInstanceWhenGitRefusesTheFirstCommit(t *testing.T) {
+	testrepo.IsolateGit(t)
+	testrepo.RefuseCommits(t)
+
+	res, err := instance.Create(fakeTemplate(), "widgets", t.TempDir())
+	if err != nil {
+		t.Fatalf("a commit git refused is not a failure to create the instance: %v", err)
+	}
+
+	if res.Committed {
+		t.Error("Committed = true, but git refused the commit")
+	}
+	if res.CommitErr == nil {
+		t.Fatal("CommitErr = nil, so the caller cannot tell a refused commit from a skipped one")
+	}
+	// And it carries git's own reason, since the caller has to tell an
+	// operator what to fix and this package cannot know what that is.
+	if reason := gitutil.Reason(res.CommitErr); !strings.Contains(reason, testrepo.RefusedCommitMessage) {
+		t.Errorf("CommitErr does not carry git's reason: %q", reason)
+	}
+
+	for _, path := range []string{"repos.yaml", ".gitignore", "drivers/README.md", "work/.gitkeep", ".git"} {
+		if _, err := os.Stat(filepath.Join(res.Path, path)); err != nil {
+			t.Errorf("the instance is missing %s: %v", path, err)
+		}
+	}
+	if out := testrepo.GitOut(t, res.Path, "rev-list", "--all", "--count"); out != "0" {
+		t.Errorf("commit count = %s, want 0: git refused the commit", out)
+	}
+}
+
+// A commit that never happened is the same news whichever way it did not
+// happen, and Result says which: no identity configured to commit under
+// leaves CommitErr nil, because nothing was attempted and there is nothing
+// of git's to quote. The caller prints two different notices off that
+// distinction, so it is pinned here rather than left to hold by accident.
+func TestCreateReportsNoCommitErrorWhereTheCommitWasNeverAttempted(t *testing.T) {
+	testrepo.UnconfigureGitIdentity(t)
+
+	res, err := instance.Create(fakeTemplate(), "widgets", t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
-	// Layered over the config IsolateGit already wrote rather than replacing
-	// it, which is what this environment triple is for.
+
+	if res.Committed {
+		t.Fatal("Committed = true, but nobody configured an identity to commit under")
+	}
+	if res.CommitErr != nil {
+		t.Errorf("CommitErr = %v, but git was never asked to commit", res.CommitErr)
+	}
+}
+
+// refuseGitInit makes `git init` itself fail, which takes a configured
+// default branch name git will not accept — the one step of Create's own
+// work that is git's and can be made to fail without touching the
+// filesystem. Layered over the config IsolateGit wrote rather than replacing
+// it, which is what git's environment triple is for.
+//
+// It stays here rather than joining testrepo's fixtures because it is not a
+// machine anybody is on: it is the one way found to break the half of Create
+// that must take its directory back.
+func refuseGitInit(t *testing.T) {
+	t.Helper()
 	t.Setenv("GIT_CONFIG_COUNT", "1")
-	t.Setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
-	t.Setenv("GIT_CONFIG_VALUE_0", hooks)
+	t.Setenv("GIT_CONFIG_KEY_0", "init.defaultBranch")
+	t.Setenv("GIT_CONFIG_VALUE_0", "..not a branch name")
 }
 
 func TestCreateScaffoldsTheTemplateThisRepoShips(t *testing.T) {

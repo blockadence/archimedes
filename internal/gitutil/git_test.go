@@ -1,9 +1,11 @@
 package gitutil_test
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blockadence/gh-archimedes/internal/gitutil"
@@ -265,4 +267,62 @@ func canCommit(t *testing.T, dir string) bool {
 	cmd := exec.Command("git", "commit", "-q", "--allow-empty", "-m", "probe")
 	cmd.Dir = dir
 	return cmd.Run() == nil
+}
+
+// A git failure is two things at once, and callers need different halves of
+// it. One is passing the error up the stack, where the command that failed
+// and its exit status are the point. The other is quoting git to an operator
+// who is being asked to fix something on their own machine, where "git
+// commit -q -m ...: exit status 128:" in front of git's sentence is noise
+// they cannot act on. Reason is that second half, and this pins that it is
+// git's words with none of ours around them -- and that the first half is
+// unchanged.
+func TestReasonIsGitsOwnWordsWithNoneOfOursAroundThem(t *testing.T) {
+	dir := t.TempDir()
+	testrepo.Git(t, dir, "init", "-q")
+
+	_, err := gitutil.Run(dir, "cat-file", "-p", "deadbeef")
+	if err == nil {
+		t.Fatal("expected an error from a git command that cannot succeed, got none")
+	}
+
+	reason := gitutil.Reason(err)
+	if !strings.Contains(reason, "deadbeef") {
+		t.Errorf("Reason = %q, want git's own complaint about deadbeef", reason)
+	}
+	for _, ours := range []string{"exit status", "cat-file -p"} {
+		if strings.Contains(reason, ours) {
+			t.Errorf("Reason = %q, want git's words without our %q wrapping", reason, ours)
+		}
+	}
+	// The error itself still says everything it always did: a caller
+	// returning it up the stack is reporting a failure, not quoting git.
+	for _, want := range []string{"git cat-file -p deadbeef", "exit status", "deadbeef"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to still name %q", err, want)
+		}
+	}
+}
+
+// A git command can fail and say nothing: a hook that exits quietly, a
+// signal. What is quoted then is how git ended and nothing else -- the
+// caller has already told somebody these are git's words, and our own
+// "git commit -q -m ...:" in front of them would be neither.
+func TestReasonIsHowGitEndedWhenGitSaidNothing(t *testing.T) {
+	err := &gitutil.Error{Args: []string{"commit", "-q", "-m", "Scaffold widgets"}, Err: errors.New("exit status 1")}
+
+	if got := gitutil.Reason(err); got != "exit status 1" {
+		t.Errorf("Reason = %q, want how git ended with none of our wrapping", got)
+	}
+}
+
+// Reason is quoted unconditionally by callers that have an error and an
+// operator to show it to, so it has to answer for errors that are not git
+// failures at all rather than make every call site check first.
+func TestReasonFallsBackToTheErrorsOwnMessage(t *testing.T) {
+	err := errors.New("something else went wrong")
+
+	if got := gitutil.Reason(err); got != "something else went wrong" {
+		t.Errorf("Reason = %q, want the error's own message", got)
+	}
 }
