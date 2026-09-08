@@ -61,9 +61,19 @@ write_more_than_the_map() {
   echo '{"model":"opus"}' > .claude/settings.local.json
   echo "// tidied up while I was here" >> src/index.js
 }
+# The session tidying up work the operator had not committed. Not a leftover
+# and not a change against HEAD either: both of these paths were already dirty
+# when the run started, so the snapshot has them by name and every check
+# written against a name reads the write as the state that predated it.
+write_over_uncommitted_work() {
+  echo "helpfully rewritten" > scratch-note.md
+  echo "console.log('reformatted')" > src/index.js
+}
 case "${CLAUDE_STUB_MODE:-write}" in
   write)
     write_map ;;
+  clobber)
+    write_map; write_over_uncommitted_work ;;
   noop)
     : ;;   # a session that read the repo and wrote nothing
   fail)
@@ -252,6 +262,37 @@ assert_contains "$(cat "$REPO/src/index.js" 2>/dev/null)" "// mine, uncommitted"
   "and an uncommitted edit to a tracked file is still there"
 assert_eq "$(git -C "$REPO" status --porcelain)" "$before_status" \
   "the repo is dirty in exactly the way it was dirty before, and no other"
+
+echo ""
+echo "pocock driver, the session writes over work the repo already had:"
+
+# The half of "never worse off" the driver cannot deliver, and therefore has
+# to say. Leaving the operator's uncommitted work alone is right up until the
+# session writes to it, and then there is nothing to put back: what those
+# files said was never committed and nothing here kept a copy. So the run
+# fails naming them, the same way it fails for a leftover, and the rollback
+# says separately which of them it could not undo -- because a driver whose
+# floor reads "the repo ends as it was found" must not quietly mean "except
+# where it doesn't".
+fresh_repo "$REPO"
+echo "notes to self" > "$REPO/scratch-note.md"
+echo "// mine, uncommitted" >> "$REPO/src/index.js"
+OUT="$WORK/clobber.md"
+if err="$(CLAUDE_STUB_MODE=clobber "$ARCHIMEDES_BIN" run-driver pocock "$REPO" "$OUT" 2>&1 >/dev/null)"; then
+  fail "a run whose session wrote over the operator's uncommitted work exits non-zero"
+else
+  pass "a run whose session wrote over the operator's uncommitted work exits non-zero"
+fi
+assert_contains "$err" "scratch-note.md" \
+  "the failure names the untracked file the session wrote over"
+assert_contains "$err" "src/index.js" \
+  "and the tracked one it had no more right to rewrite for having been dirty already"
+assert_contains "$err" "cannot be put back" \
+  "and says plainly that this is the one thing the rollback cannot undo"
+assert_file_missing "$OUT" \
+  "no context map is harvested from a run that wrote over the operator's own work"
+assert_eq "$(cat "$REPO/scratch-note.md" 2>/dev/null)" "helpfully rewritten" \
+  "the file is left as the session left it -- there is no copy of what it said, so guessing would be the worse answer"
 
 echo ""
 echo "pocock driver, interrupted mid-run:"

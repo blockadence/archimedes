@@ -15,6 +15,14 @@
 # then restore everything except the constitution itself. run-driver.sh
 # harvests that one file (see driver.yaml's fixed_path) and prunes the
 # directories it empties, leaving the target repo exactly as it was found.
+#
+# Exactly as it was found, with one exception this cannot close: work the
+# operator had in the repo uncommitted, which the scaffolding or the session
+# then wrote over. Nothing holds a copy of what those files said, so the
+# rollback names them on stderr and leaves them. The run still succeeds --
+# unlike pocock's, scaffolding this repo was always the job here, and failing
+# would not un-write anything -- but the operator is told. The reasoning, and
+# the one place this still cannot look, are in ../lib/repo-snapshot.sh.
 set -euo pipefail
 
 [ $# -eq 1 ] || { echo "usage: run.sh <repo-path>" >&2; exit 1; }
