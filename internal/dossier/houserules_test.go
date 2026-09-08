@@ -105,3 +105,28 @@ func TestHouseRulesTreatsThePreRetirementStubAsNoRules(t *testing.T) {
 		t.Errorf("an instance scaffolded before the retirement had its stub read as a real house rule:\n%s", got)
 	}
 }
+
+// And a dossier scaffolded when the stub still spelled out one of the two
+// invocations carries that wording. Same repo, same absence of house rules:
+// the reword was a docs fix, and a dossier nobody has edited since must not
+// start delivering the placeholder as a mandated rule because of it.
+func TestHouseRulesTreatsTheSingleInvocationStubAsNoRules(t *testing.T) {
+	dir := t.TempDir()
+	legacy := "TBD. Mandated decisions that must be respected even if unusual — the kind of\n" +
+		"thing a new contributor (or agent) would otherwise get wrong by using good\n" +
+		"judgment. Kept separate from \"Known gotchas\" below: gotchas are surprising\n" +
+		"facts about the repo, house rules are standing directives. Edit this section\n" +
+		"only here — `archimedes sync-house-rules` pushes a durable copy into the\n" +
+		"repo itself, and `archimedes spawn` injects an ephemeral copy into every\n" +
+		"worktree spawned for it, so this dossier is the one place changes need to\n" +
+		"be made."
+	writeDossier(t, dir, "r", "# r\n\n"+dossier.HouseRulesHeading+"\n"+legacy+"\n\n## Known gotchas\nTBD\n")
+
+	got, err := dossier.HouseRules(dir, "r")
+	if err != nil {
+		t.Fatalf("HouseRules: %v", err)
+	}
+	if got != "" {
+		t.Errorf("an instance scaffolded before the reword had its stub read as a real house rule:\n%s", got)
+	}
+}

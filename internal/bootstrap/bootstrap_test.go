@@ -281,12 +281,21 @@ func TestRunChangesNothingWhenNothingChanged(t *testing.T) {
 }
 
 // snapshot reads every file under root, keyed by its path relative to root.
+// An instance's own git history is excluded: what is being compared is what
+// bootstrap wrote, and two runs that committed it would differ by hash for
+// a reason that is not the one under test.
 func snapshot(t *testing.T, root string) map[string]string {
 	t.Helper()
 	files := map[string]string{}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		switch {
+		case err != nil:
 			return err
+		case d.IsDir():
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
@@ -299,4 +308,44 @@ func snapshot(t *testing.T, root string) map[string]string {
 		t.Fatal(err)
 	}
 	return files
+}
+
+// What bootstrap writes is the instance's own content from the moment it
+// lands: committed to its history, edited by its operator, read by
+// teammates and agents on machines that may have the other install or
+// neither. So none of it may record which install ran the command — one
+// identical instance either way, the same rule `init` is held to by
+// TestInitWritesTheSameInstanceHoweverItWasInvoked.
+func TestRunWritesTheSameInstanceHoweverItWasInvoked(t *testing.T) {
+	scaffold := func(ghExtension string) map[string]string {
+		t.Setenv("GH_EXTENSION", ghExtension)
+		dir := t.TempDir()
+		root := newInstance(t, dir)
+		origin := newOrigin(t, dir, "service-a", "main")
+
+		runBootstrap(t, root, lister(OrgRepo{Name: "service-a", SSHURL: origin}))
+
+		return snapshot(t, root)
+	}
+
+	standalone, extension := scaffold(""), scaffold("1")
+
+	if len(standalone) == 0 {
+		t.Fatal("scaffolded nothing to compare")
+	}
+	for path, want := range standalone {
+		got, ok := extension[path]
+		if !ok {
+			t.Errorf("the gh extension install scaffolds no %s", path)
+			continue
+		}
+		if got != want {
+			t.Errorf("%s differs by install:\nstandalone:\n%s\ngh extension:\n%s", path, want, got)
+		}
+	}
+	for path := range extension {
+		if _, ok := standalone[path]; !ok {
+			t.Errorf("the gh extension install scaffolds an extra %s", path)
+		}
+	}
 }

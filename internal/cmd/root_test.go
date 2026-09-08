@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"io/fs"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
 	"github.com/blockadence/gh-archimedes"
+	"github.com/blockadence/gh-archimedes/internal/dossier"
 )
 
 // Installed as a gh extension the binary is exactly the same program, run
@@ -146,6 +148,22 @@ func bareCommandsIn(text string, subcommands map[string]bool) []string {
 	}
 }
 
+// assertNamesSubcommandsAlone fails when content tells its reader to type a
+// command only one of the two installs provides. `what` names where it was
+// found, for a message that points at the file to fix.
+//
+// The content is flattened to one line first: these files are hard-wrapped,
+// so the mention this is most likely to meet is an `archimedes` and its
+// subcommand split across two of them, which a literal search would walk
+// straight past.
+func assertNamesSubcommandsAlone(t *testing.T, what, content string, subcommands map[string]bool) {
+	t.Helper()
+	for _, named := range bareCommandsIn(strings.Join(strings.Fields(content), " "), subcommands) {
+		t.Errorf("%s says %q, which only a standalone install can run: name the subcommand alone (%q)",
+			what, "archimedes "+named, named)
+	}
+}
+
 // The instance template is on the far side of the line the test above
 // draws. What that one guards is what the tool *prints*, which can be built
 // from invocation.Name() because it is composed fresh on the machine
@@ -181,14 +199,7 @@ func TestTheInstanceTemplateNamesNoCommandHalfItsReadersHaventGot(t *testing.T) 
 		if err != nil {
 			return err
 		}
-		// Scanned as one line: the template is hard-wrapped, so the mention
-		// this is most likely to meet is a `archimedes\nspawn` split across
-		// two of them, which a literal search would walk straight past.
-		text := strings.Join(strings.Fields(string(content)), " ")
-		for _, named := range bareCommandsIn(text, subcommands) {
-			t.Errorf("the template's %s says %q, which only a standalone install can run: name the subcommand alone (%q)",
-				path, "archimedes "+named, named)
-		}
+		assertNamesSubcommandsAlone(t, "the template's "+path, string(content), subcommands)
 		return nil
 	})
 	if err != nil {
@@ -235,4 +246,26 @@ func templateFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(content)
+}
+
+// The dossier stub `bootstrap` scaffolds sits on the same side of that line
+// as the template, for the same reasons and with the same fix: it is
+// written into `repos/<repo>.md`, committed to the instance's history,
+// edited by its operator and read by teammates and agents who may have
+// either install. It is not a template file -- nothing copies it out of the
+// embedded tree -- so the walk above cannot see it, and it needs its own
+// against the same real subcommand list.
+func TestTheScaffoldedDossierNamesNoCommandHalfItsReadersHaventGot(t *testing.T) {
+	subcommands := subcommandNames(newRootCmd())
+
+	dir := t.TempDir()
+	if _, err := dossier.WriteStub(dir, dossier.Stub{Name: "widget-service", Path: "../widget-service", BaseBranch: "main"}); err != nil {
+		t.Fatalf("WriteStub: %v", err)
+	}
+	content, err := os.ReadFile(dossier.Path(dir, "widget-service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertNamesSubcommandsAlone(t, "the scaffolded dossier", string(content), subcommands)
 }
