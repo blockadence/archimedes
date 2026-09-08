@@ -33,15 +33,10 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 REPO="$WORK/repo"
 mkdir -p "$REPO/src"
-(
-  cd "$REPO"
-  git init -q
-  echo "# readme" > README.md
-  echo "console.log('hi')" > src/index.js
-  echo "doomed" > src/doomed.js
-  git add -A
-  git -c user.email=test@example.com -c user.name=test commit -qm init
-)
+echo "# readme" > "$REPO/README.md"
+echo "console.log('hi')" > "$REPO/src/index.js"
+echo "doomed" > "$REPO/src/doomed.js"
+make_repo_at "$REPO"
 
 # State that was already there before the driver ran: one untracked file and
 # one dirty tracked file. Neither belongs to the driver, so restore must
@@ -106,13 +101,8 @@ echo "repo snapshot/restore, no kept path:"
 
 REPO2="$WORK/repo2"
 mkdir -p "$REPO2"
-(
-  cd "$REPO2"
-  git init -q
-  echo "# readme" > README.md
-  git add -A
-  git -c user.email=test@example.com -c user.name=test commit -qm init
-)
+echo "# readme" > "$REPO2/README.md"
+make_repo_at "$REPO2"
 
 SNAP2="$WORK/snapshot2"
 snapshot_repo_state "$REPO2" > "$SNAP2"
@@ -133,13 +123,8 @@ echo "repo snapshot/restore, directories holding no files:"
 # directory listing, or the "no trace" guarantee quietly isn't one.
 REPO3="$WORK/repo3"
 mkdir -p "$REPO3/keep-me/nested"
-(
-  cd "$REPO3"
-  git init -q
-  echo "# readme" > README.md
-  git add -A
-  git -c user.email=test@example.com -c user.name=test commit -qm init
-)
+echo "# readme" > "$REPO3/README.md"
+make_repo_at "$REPO3"
 
 SNAP3="$WORK/snapshot3"
 snapshot_repo_state "$REPO3" > "$SNAP3"
@@ -164,14 +149,9 @@ echo "repo snapshot/restore, naming what the run changed:"
 # a run touched would be free to disagree with the one that cleans up.
 REPO5="$WORK/repo5"
 mkdir -p "$REPO5/src"
-(
-  cd "$REPO5"
-  git init -q
-  echo "# readme" > README.md
-  echo "console.log('hi')" > src/index.js
-  git add -A
-  git -c user.email=test@example.com -c user.name=test commit -qm init
-)
+echo "# readme" > "$REPO5/README.md"
+echo "console.log('hi')" > "$REPO5/src/index.js"
+make_repo_at "$REPO5"
 echo "mine" > "$REPO5/scratch-note.md"
 
 SNAP5="$WORK/snapshot5"
@@ -224,21 +204,13 @@ echo "repo snapshot/restore, naming what the run changed when HEAD moved:"
 # nothing".
 REPO6="$WORK/repo6"
 mkdir -p "$REPO6"
-(
-  cd "$REPO6"
-  git init -q
-  echo "# readme" > README.md
-  git add -A
-  git -c user.email=test@example.com -c user.name=test commit -qm init
-)
+echo "# readme" > "$REPO6/README.md"
+make_repo_at "$REPO6"
 SNAP6="$WORK/snapshot6"
 snapshot_repo_state "$REPO6" > "$SNAP6"
 echo "an ADR nobody asked for" > "$REPO6/ADR.md"
-(
-  cd "$REPO6"
-  git add -A
-  git -c user.email=test@example.com -c user.name=test commit -qm "committed it too"
-) >/dev/null
+git -C "$REPO6" add -A
+git -C "$REPO6" commit -qm "committed it too" >/dev/null
 
 if err="$(paths_changed_since_snapshot "$REPO6" "$SNAP6" 2>&1)"; then
   fail "naming what changed refuses when HEAD moved, rather than reporting nothing changed"
@@ -258,23 +230,15 @@ echo "repo snapshot/restore, HEAD moved during the run:"
 # guesswork, so it refuses and says so.
 REPO4="$WORK/repo4"
 mkdir -p "$REPO4"
-(
-  cd "$REPO4"
-  git init -q
-  echo "# readme" > README.md
-  git add -A
-  git -c user.email=test@example.com -c user.name=test commit -qm init
-)
+echo "# readme" > "$REPO4/README.md"
+make_repo_at "$REPO4"
 
 SNAP4="$WORK/snapshot4"
 snapshot_repo_state "$REPO4" > "$SNAP4"
 mkdir -p "$REPO4/.specify/memory"
 echo "scaffolding" > "$REPO4/.specify/memory/constitution.md"
-(
-  cd "$REPO4"
-  git add -A
-  git -c user.email=test@example.com -c user.name=test commit -qm "committed the scaffolding"
-) >/dev/null
+git -C "$REPO4" add -A
+git -C "$REPO4" commit -qm "committed the scaffolding" >/dev/null
 
 if err="$(restore_repo_state "$REPO4" "$SNAP4" 2>&1)"; then
   fail "restore refuses when HEAD moved during the run"
