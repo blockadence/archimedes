@@ -167,6 +167,24 @@ done <<< "$ASSETS"
 assert_contains "$GH_CALLS" "--repo $REPO" \
   "and scopes the check to this repository, the way the documented one does"
 
+# The log has to say so per asset, and the script has to be what says it.
+# Established by the first real release (v0.1.0-rc.1): on a runner,
+# `gh attestation verify` prints nothing at all on success -- its report
+# is gated on an interactive terminal -- so the whole of what twelve
+# verifies left in the job log was the count lines release-verify.sh
+# printed around them. The stub above is chattier than the real gh, which
+# is exactly how a gap like that stays invisible to a suite.
+#
+# The count check the script does after its loop is what actually catches
+# a loop that ended early; this is what makes that catch legible. Without
+# it, "verified one asset and reported for twelve" and the truth produce
+# the same log, which is the silence this whole file exists to end.
+while IFS= read -r a; do
+  [ -n "$a" ] || continue
+  assert_contains "$RUN" "$a: verified" \
+    "and the log says so for $a, rather than leaving gh to say it"
+done <<< "$ASSETS"
+
 echo ""
 echo "a release whose assets do not verify is not published:"
 

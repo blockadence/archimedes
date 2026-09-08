@@ -204,6 +204,30 @@ verifies them and promotes the draft. A tag containing a `-`
 (`v0.2.0-rc.1`) publishes as a prerelease, which `gh extension install`
 will not hand to anyone — the safe way to exercise the workflow end to end.
 
+With one exception, and it is the same property from the other side: a
+prerelease cannot be installed as an extension *at all*, so the rehearsal
+exercises everything except the install. `gh extension install` decides
+whether a repository is a binary extension by asking `releases/latest`,
+which does not return prereleases; it concludes there is no release, looks
+for a script at the repository root instead, and reports `extension is not
+installable`. `--pin` does not reach past that — the pinned tag is read
+further in, inside the branch that first decision never takes. To rehearse
+the install itself, clear the prerelease flag for as long as it takes and
+set it back:
+
+```
+gh release edit <tag> --prerelease=false
+gh extension install blockadence/gh-archimedes
+gh release edit <tag> --prerelease
+gh extension remove archimedes
+```
+
+The release is installable by anyone for the length of that window, which
+is the cost of finding out. This is written down because it was learned the
+expensive way, in issue 43: the criterion "install what the run published"
+and the property "nobody can install it by accident" cannot both hold at
+once, and nothing said so until a real tag was cut.
+
 The build itself is ours (`build_script_override`) rather than the action's,
 for two reasons the action cannot accommodate: the main package is
 `./cmd/archimedes` and not the repository root (the root is the library
@@ -295,17 +319,33 @@ The second of those is the one with a real hazard in it. That read happens
 seconds after the same run wrote it, and if it is not immediately
 consistent, an unguarded check would fail a few percent of good releases —
 for which the fix people learn ("re-run it") is also the fix for a real
-failure. **Whether the read is actually racy is not established**, and it
-cannot be from outside a real release run. So the script carries a bounded
-retry budget shared across the assets as a hedge, not as a finding, and
-instruments it: a run that needed any retries prints a line beginning
-`ATTESTATION-LOOKUP-RETRIES=`, which is the measurement. If that shows up
-on most releases the read is racy in a way a bounded wait only hides, and
-the answer is `--bundle` — verify against the bundle the attest step
-produced instead of a lookup, which needs a path out of a step nested
-inside the composite action. If it never shows up, the budget cost nothing
-and the question is answered. Either way a wait cannot turn a real failure
-green: an attestation that does not exist never appears.
+failure. So the script carries a bounded retry budget shared across the
+assets, and instruments it: a run that needed any retries prints a line
+beginning `ATTESTATION-LOOKUP-RETRIES=`. That line is the measurement.
+
+**Three releases have now been measured, and none needed a retry.**
+`v0.1.0-rc.1`, `-rc.2` and `-rc.3` each verified twelve assets and printed
+no marker line. What that is worth, stated precisely rather than
+generously:
+
+- Each run's verify loop *started* 0.36–0.57s after the attest step logged
+  `Attestation created for 12 subjects`, so each run's **first** lookup is
+  the tightest timing a release produces — and it succeeded first try, three
+  times out of three.
+- The loops then ran ~40s each, so the twelfth lookup is ~40s after the
+  write. Only the first read of each run really tests immediate
+  consistency.
+- "Thirty-six lookups, no retries" is inferred from the per-run count check
+  rather than from thirty-six timestamps, because `gh` prints nothing on
+  success — see below.
+
+So `--bundle` is not needed now, and the budget stays rather than being
+declared unnecessary: three runs on one commit inside one hour on one
+runner pool is a small sample against a failure mode whose danger is that
+it is intermittent, and the cost of keeping the budget is nothing on a
+healthy run. `--bundle` remains the answer if the marker line starts
+showing up. Either way a wait cannot turn a real failure green: an
+attestation that does not exist never appears.
 
 Two limits it does not close. It verifies the bytes in `dist/`, which are
 the bytes uploaded in the same step, not a re-download from the release — a
@@ -315,7 +355,17 @@ us. And it is proven against a stub `gh`
 failure it is supposed to have — a missing attestation, a lookup not
 readable yet, a `dist/` a glob expanded to nothing, a draft flag that
 quietly stopped applying, a `gh` that eats the loop's stdin — but a stub is
-not a release. The first real tag is still the first real evidence.
+not a release.
+
+The real tags have since been cut, and one thing the stub had been hiding
+came out with them: the stub `gh` prints on a successful verify and the
+real one does not. `gh attestation verify` gates its report on an
+interactive terminal, so on a runner twelve successful verifies wrote
+nothing at all to the log, and the whole of the evidence was the two count
+lines the script printed around them. The script now prints `verified
+<asset>` itself, once per asset. The count check was always what caught a
+loop that ended early; this is what lets a reader see it having worked,
+rather than having to take the exit status for it.
 
 #### Attestations rather than GPG
 
