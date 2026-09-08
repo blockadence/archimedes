@@ -73,14 +73,19 @@ Two kinds of mention deliberately stay fixed, and the test is scoped to
 - Prose naming the program as a thing rather than as something to type —
   "the drivers archimedes ships", "inside the archimedes binary" — which is
   the same program under either install.
-- Anything written into a *file*: the `HOUSE_RULES.md` `sync-house-rules`
-  commits into a target repo, the PR templates `sync-templates` pushes, the
-  dossier stubs `bootstrap` scaffolds. Keying a committed file's content to
+- Anything this tool writes into somebody else's repository: the
+  `HOUSE_RULES.md` `sync-house-rules` commits into a target repo, the PR
+  templates `sync-templates` pushes. Keying a committed file's content to
   how the operator who generated it happened to install would put a
   spurious diff in every such repo the first time somebody with the other
   install ran the sync. The MCP tool descriptions stay fixed for the same
   reason: they document which subcommand a tool is equivalent to, to an
   agent that is not going to type either.
+
+What the tool writes into the operator's *own* instance — the template
+`init` scaffolds, the dossier stubs `bootstrap` writes — is held to that
+same rule and then one more, since those files exist to tell a reader what
+to run. See "What an instance's own docs name" below.
 
 **The binary knows which build it is.** See below.
 
@@ -118,6 +123,27 @@ fails the suite rather than shipping. Instances
 that already exist keep the docs they were scaffolded with: nothing
 refreshes a template file into an instance, which is the same rule that
 makes the seeded content theirs (see "Two embedded trees").
+
+One file written into an instance is not a template file, and so is not
+reached by that walk: the dossier stub `bootstrap` scaffolds into
+`repos/<repo>.md`. It is the same class of file with the same readers — an
+operator edits it, the instance commits it, a teammate or agent with either
+install reads it — so it follows the same convention, naming
+`sync-house-rules` and `spawn` alone and leaving the form to the README
+section. `TestTheScaffoldedDossierNamesNoCommandHalfItsReadersHaventGot`
+runs the same walk over a freshly written stub, and
+`TestRunWritesTheSameInstanceHoweverItWasInvoked` holds bootstrap's whole
+written output identical under both installs the way `init`'s is.
+
+Rewording that stub costs more than rewording a template file, because
+`internal/dossier` matches it byte-for-byte to tell an untouched
+placeholder from a real house rule — the package's worst failure being
+instructional boilerplate delivered into somebody's repository as a
+mandated rule. So each wording it has ever written stays listed in
+`retiredStubBodies`, where a dossier scaffolded under an older one still
+reads as having no house rules recorded. Entries are added, never removed:
+knowing one is gone would mean knowing no dossier anywhere still carries
+it.
 
 ### Version
 
