@@ -559,6 +559,23 @@ That split is why a weekly cadence is enough. A change of ours that breaks
 a driver fails on the push that made it; only a change of theirs waits for
 Monday.
 
+Underneath both sits `tests/fixed_location_conformance.sh`, which holds
+every driver declaring `output_mode: fixed-location` to the half of that
+contract Archimedes cannot enforce: the target repo is left exactly as it
+was found apart from the harvested `fixed_path`. It discovers the drivers by
+reading the manifests rather than from a list, so a third one is covered the
+day it declares the mode and without a test of its own.
+
+It asks one thing of a driver, which the three shipped ones already do:
+every CLI it runs is named by a `command -v <name>` guard before it touches
+the repo. That is where the check learns what to stand a stub session in
+for, and it is all-or-nothing — a driver whose guards it cannot read whole
+is failed rather than run, because the alternative is reaching whatever the
+driver really wraps, which for a driver in this mode is a billed call. An
+instance's own drivers are outside its reach, which
+`template/drivers/README.md` says out loud where a driver author will read
+it.
+
 ## Test fixtures
 
 A test that needs a real repository to work against builds one with
