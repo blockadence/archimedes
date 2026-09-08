@@ -89,13 +89,22 @@ make_repo_at() {
 # as agent@example.com included, since a `-c` of their own would lose to the
 # environment exactly as the fixed identity's did.
 #
+# The clearing is both suites', not this one's: configureIdentity does it too,
+# with t.Setenv and os.Unsetenv where this uses `unset`, because a Go test
+# binary inherits the same shell's identity and its fixtures had the same
+# quiet failure — a developer's real name recorded in a throwaway repo, and
+# nothing red. Keep the pair in step; this comment describes both.
+#
 # Two things follow from the clearing being the shell's and not the repo's.
 # It does not survive a `( ... )` or `$( ... )` around the fixture call, so
-# ask for a repo in the test file's own shell. And it is the deliberate
-# opposite of strip_git_identity and unconfigure_git_identity, which say the
-# test file is a machine with no identity: a repo fixture called after either
-# of those would quietly turn that machine back into an ordinary one. No file
-# does both today, and none should start.
+# ask for a repo in the test file's own shell — the Go side trades that
+# hazard for a different one, since t.Setenv is scoped to the test rather
+# than to a process but bars the test from calling t.Parallel. And it is
+# the deliberate opposite of strip_git_identity and
+# unconfigure_git_identity, which say the test file is a machine with no
+# identity: a repo fixture called after either of those would quietly turn
+# that machine back into an ordinary one. That much is true in both suites.
+# No file does both today, and none should start.
 configure_git_identity() {
   local dir="$1"
 
