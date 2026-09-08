@@ -196,6 +196,21 @@ modes are supported:
   route written down, and it generalizes to any driver in this position
   (`drivers adopt spec-kit` puts a copy here to read).
 
+  For the drivers Archimedes ships, that obligation is checked rather than
+  taken on trust: `tests/fixed_location_conformance.sh` in the Archimedes
+  repository finds every driver declaring this mode by reading the manifests
+  — no list to add one to — points each at a throwaway repo with a stub
+  standing in for the CLI it runs, has that stub write past the declared
+  `fixed_path` the way a real scaffolder or a real agent session does, and
+  asks the one question the contract turns on: did the repo come back as it
+  was found? It runs on every push and costs nothing, and a driver added
+  there needs no test of its own to be held to it.
+
+  A driver *you* write here is outside that suite's reach — it runs in the
+  Archimedes repository, over the drivers that ship from there — so this
+  half of the promise is yours to keep. `lib/repo-snapshot.sh` is the route,
+  and `drivers adopt spec-kit` puts a worked example beside it.
+
   What a driver does about the leftovers it finds is its own call, and the
   two shipped ones answer differently on purpose. `spec-kit`'s scaffolding
   was always going to be there, so putting it back is routine and the run
