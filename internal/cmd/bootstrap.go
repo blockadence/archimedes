@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"io"
-
 	"github.com/spf13/cobra"
 
 	"github.com/blockadence/gh-archimedes/internal/bootstrap"
@@ -24,8 +22,11 @@ what's missing, and nothing already written — a dossier, a declared
 convention pack, a local checkout — is touched.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
+			if err := requireBins("git", "gh"); err != nil {
+				return err
+			}
 			opts.Org = args[0]
-			return runBootstrap(opts, c.OutOrStdout(), c.ErrOrStderr())
+			return bootstrap.Run(opts, c.OutOrStdout(), c.ErrOrStderr())
 		},
 	}
 
@@ -33,19 +34,4 @@ convention pack, a local checkout — is touched.`,
 	cmd.Flags().BoolVar(&opts.IncludeArchived, "include-archived", false, "also track the org's archived repos")
 
 	return cmd
-}
-
-// runBootstrap checks for what a bootstrap pass needs on the machine and
-// then runs it. opts.List is what discovers the org's repos: production
-// callers arrive here with bootstrap.ListOrgRepos, tests with a fake, so a
-// test can scaffold a real instance without a gh session, a network, or an
-// org that exists.
-//
-// out receives the result lines meant for the operator; progress receives
-// git's own clone output.
-func runBootstrap(opts bootstrap.Options, out, progress io.Writer) error {
-	if err := requireBins("git", "gh"); err != nil {
-		return err
-	}
-	return bootstrap.Run(opts, out, progress)
 }

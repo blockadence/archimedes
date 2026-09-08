@@ -2,9 +2,7 @@ package cmd
 
 import (
 	"io/fs"
-	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -191,10 +189,10 @@ func assertNamesSubcommandsAlone(t *testing.T, what, content string, subcommands
 // `archimedes sync-house-rules` for months. A second hand-named walk fixed
 // that one file and left the same gap in front of the third.
 //
-// So this scaffolds the artifact -- init's tree plus a bootstrap pass over
-// a fake org -- and reads every file in it. What a subcommand nobody has
-// thought about yet writes into an instance is covered by being in the
-// instance, without anything here naming it.
+// So this reads the artifact -- everything scaffoldInstance produces --
+// rather than the writers of it. What a subcommand nobody has thought about
+// yet writes into an instance is covered by being in the instance, without
+// anything here naming it.
 func TestAScaffoldedInstanceNamesNoCommandHalfItsReadersHaventGot(t *testing.T) {
 	subcommands := subcommandNames(newRootCmd())
 	root, parent := scaffoldInstance(t)
@@ -203,60 +201,43 @@ func TestAScaffoldedInstanceNamesNoCommandHalfItsReadersHaventGot(t *testing.T) 
 	// and holds one fixed form on purpose: keying a committed file to how
 	// the operator who generated it happened to install would put a
 	// spurious diff in every such repo the first time somebody with the
-	// other install ran the sync. bootstrap clones those repositories as
-	// siblings of the instance, so the whole of that exemption here is
-	// where the walk is rooted -- one directory higher and it would be
-	// reading them. Stand one in, so that moving the root fails loudly
-	// instead of quietly starting to police somebody else's repo.
-	elsewhere := filepath.Join(parent, scaffoldedRepo, "HOUSE_RULES.md")
+	// other install ran the sync. Those repositories are cloned as siblings
+	// of the instance, so the whole of that exemption here is where the
+	// read is rooted -- one directory higher and it would be reading them.
+	// Stand one in, so that moving the root fails saying so rather than
+	// quietly starting to police somebody else's repo.
+	elsewhere := filepath.Join(parent, orgRepoName, "HOUSE_RULES.md")
 	writeFile(t, elsewhere, "Refresh this file with `archimedes sync-house-rules`.\n")
 
-	var walked []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		switch {
-		case err != nil:
-			return err
-		case d.IsDir():
-			// The instance's own history: compressed objects, not prose.
-			if d.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		walked = append(walked, path)
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
+	files := instanceFiles(t, root)
+
+	for rel, content := range files {
 		// Every file, `scaffolding/` included. Those are pushed into other
 		// people's repositories and so stay fixed under either install,
 		// which is a stricter rule than this one rather than a different
 		// one -- there is nothing here for them to fail, and no reason to
 		// carve them out.
-		assertNamesSubcommandsAlone(t, "the instance's "+rel, string(content), subcommands)
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
+		assertNamesSubcommandsAlone(t, "the instance's "+rel, content, subcommands)
 	}
 
-	if slices.Contains(walked, elsewhere) {
-		t.Errorf("the walk read %s, which is not in the instance but beside it: "+
-			"rooted there it polices repositories this tool only writes into", elsewhere)
+	sibling := filepath.Join(parent, orgRepoName) + string(filepath.Separator)
+	for rel := range files {
+		if strings.HasPrefix(filepath.Join(root, rel), sibling) {
+			t.Errorf("%s was read as part of the instance, but it is beside one: "+
+				"rooted there this polices repositories the tool only writes into", rel)
+		}
 	}
 
-	// And it did reach the two files the hand-named walks used to name, so
-	// that a walk covering nothing cannot pass by finding nothing.
+	// And the files the hand-named walks used to name were reached, plus
+	// the one neither of them would have: a walk covering nothing must not
+	// pass by finding nothing.
 	for _, want := range []string{
-		filepath.Join(root, "README.md"),
-		filepath.Join(root, "repos", scaffoldedRepo+".md"),
+		"README.md",
+		filepath.Join("repos", orgRepoName+".md"),
+		filepath.Join("work", workSlug, "status.md"),
 	} {
-		if !slices.Contains(walked, want) {
-			t.Errorf("the walk never read %s: it covers less of an instance than it looks like it does", want)
+		if _, ok := files[want]; !ok {
+			t.Errorf("the instance's %s was never read: this covers less of one than it looks like it does", want)
 		}
 	}
 }

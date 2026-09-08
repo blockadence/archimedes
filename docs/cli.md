@@ -132,11 +132,13 @@ it.
 That is a prose convention, so it is guarded like one, and guarded over the
 artifact rather than over a list of the writers of it:
 `TestAScaffoldedInstanceNamesNoCommandHalfItsReadersHaventGot` scaffolds a
-real instance — `init`, then a `bootstrap` pass over a fake org — and reads
-every file in it against the real subcommand list, flattening hard wraps
-first because `archimedes` and its subcommand can sit on two lines. A file
-a later subcommand writes into an instance is covered by being in the
-instance; nothing has to name it. Two companions hold the other end: that
+real instance — `init`, a `bootstrap` pass over a fake org, then a `spawn`
+in it — and reads every file it holds against the real subcommand list,
+flattening hard wraps first because `archimedes` and its subcommand can sit
+on two lines. What a subcommand writes into an instance is covered by being
+in the instance rather than by anything naming it; a subcommand added later
+is covered by joining that scaffolding, which is also what holds it to
+`TestAScaffoldedInstanceIsTheSameHoweverItWasInvoked`. Two companions hold the other end: that
 the README section still exists and still shows both forms, and that
 `AGENTS.md` still names it, since a renamed heading would leave the one
 cross-reference an agent follows pointing at nothing. A sentence added
@@ -150,15 +152,17 @@ embedded template, one over a freshly written dossier stub — and it failed
 the way a list does. The stub was not a template file, nothing looked at
 it, and it told its readers to run `archimedes sync-house-rules` for months
 after the convention it broke was written down. Adding a second hand-named
-walk fixed that file and left the same gap in front of the third.
+walk fixed that file and left the same gap in front of the third, which
+turned out to exist: the `work/<slug>/status.md` `spawn` writes was in no
+list and is in the instance.
 
-Where the walk is rooted is the whole of the other exemption. `bootstrap`
-clones the org's repos as *siblings* of the instance, so a walk one
-directory higher would be reading repositories this tool only writes into,
-whose content is deliberately fixed under both installs. The test stands
-one of those files in beside the instance and asserts the walk never read
-it, so moving the root fails loudly rather than quietly starting to police
-somebody else's repo. `scaffolding/` is the opposite case and stays in: it
+Where the read is rooted is the whole of the other exemption. `bootstrap`
+clones the org's repos as *siblings* of the instance and `spawn` puts their
+worktrees beside them again, so one directory higher would be reading
+repositories this tool only writes into, whose content is deliberately
+fixed under both installs. The test stands one of those files in beside the
+instance and asserts it was never read, so moving the root fails saying so
+rather than quietly starting to police somebody else's repo. `scaffolding/` is the opposite case and stays in: it
 lives inside the instance and is pushed into other repos, which is a
 stricter rule than this one rather than a different one, so it has nothing
 here to fail.
