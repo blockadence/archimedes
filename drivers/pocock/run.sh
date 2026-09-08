@@ -69,13 +69,16 @@ cleanup() {
   exit "$status"
 }
 #
-# EXIT alone is enough for the way runs actually get interrupted: a Ctrl-C
-# or a killed process tree signals the whole group, so the session dies too
-# and the `|| abort` below carries it here. (A signal delivered to this
-# shell alone, while it waits on the subshell, is swallowed by bash before
-# any trap sees it -- INT and TERM traps don't change that, so there are
-# none.)
+# Hung off EXIT so that every way out of this script goes through it, rather
+# than off the handful of failures anyone thought to write an `|| abort`
+# for.
 trap cleanup EXIT
+
+# And an interrupt turned into an exit, so it goes through that same trap
+# rather than being decided by what the session did with its own copy of
+# the signal. Both the reasoning and the window it leaves are in
+# ../lib/repo-snapshot.sh, beside the rollback itself.
+exit_on_interrupt "$REPO_PATH"
 
 # Fail, leaving the trap above to put the repo back. Nothing is kept -- the
 # contract says a driver that exits non-zero leaves no file behind.

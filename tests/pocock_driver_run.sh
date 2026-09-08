@@ -80,17 +80,42 @@ case "${CLAUDE_STUB_MODE:-write}" in
     git -c user.email=agent@example.com -c user.name=agent commit -qm "agent committed its own work"
     ;;
   hang)
-    # Everything a run that got all the way through would have done, the
-    # disobedience included -- so an interrupt that gets swallowed rather
-    # than acted on finishes normally and leaves both behind, which is
-    # exactly the failure this mode exists to catch. Then it announces
-    # itself and sits in the foreground until released, so the test can
-    # signal the driver while bash is blocked on a child, which is where a
-    # real Ctrl-C lands.
-    write_map; write_more_than_the_map
+    # Everything a run that got all the way through would have done -- so an
+    # interrupt that gets swallowed rather than acted on finishes normally
+    # and harvests a perfectly good map from a repo nobody finished cleaning
+    # up, which is exactly the failure this mode exists to catch. Then it
+    # announces itself and sits in the foreground, so the test can signal the
+    # driver while bash is blocked on a child, which is where a real Ctrl-C
+    # lands.
+    #
+    # Only the map, deliberately, though this mode used to disobey as well.
+    # The disobedience gave the driver a second reason to exit non-zero that
+    # had nothing to do with the interrupt, and the case passed on it: a
+    # driver that swallowed the signal outright still failed the run for
+    # writing more than it was asked to. Left with the map alone, the
+    # interrupt is the only thing that can end this run badly.
+    #
+    # CLAUDE_STUB_ON_SIGNAL picks which of the two shapes an interrupted
+    # session takes, because the driver has to survive both and only one of
+    # them used to be exercised:
+    #
+    #   dies   killed by the signal, the shape the driver's rollback was
+    #          originally reasoned about
+    #   traps  catches it, shuts down cleanly and exits zero, which is what
+    #          a well-behaved CLI does -- and what bash reads as "the child
+    #          handled the interrupt", so the shell's own copy of it is
+    #          dropped and the run carries on as if nothing happened
+    write_map
+    if [ "${CLAUDE_STUB_ON_SIGNAL:-dies}" = "traps" ]; then
+      trap 'touch "$CLAUDE_STUB_SENTINEL.signalled"; exit 0' INT TERM
+    fi
     touch "$CLAUDE_STUB_SENTINEL"
+    # Nothing releases this but the signal. The bound is a backstop for a
+    # signal that never arrives, and it is long enough that hitting it is a
+    # broken test rather than a slow machine -- the driver then finishes an
+    # ordinary successful run, and the assertions below say so loudly.
     waited=0
-    until [ -f "$CLAUDE_STUB_SENTINEL.release" ] || [ "$waited" -ge 300 ]; do
+    while [ "$waited" -lt 300 ]; do
       sleep 0.1; waited=$((waited + 1))
     done
     ;;
@@ -229,47 +254,91 @@ assert_eq "$(git -C "$REPO" status --porcelain)" "$before_status" \
   "the repo is dirty in exactly the way it was dirty before, and no other"
 
 echo ""
-echo "pocock driver, killed mid-run:"
+echo "pocock driver, interrupted mid-run:"
 
 # The case hand-placed error handling cannot reach, and the reason the
 # rollback is the exit trap rather than something on the success path. By
-# the moment of the kill the session has already written both the map and
-# the files it was told not to, so a driver that shrugged the interrupt off
-# would leave the lot in someone else's repo with nobody watching.
-fresh_repo "$REPO"
-SENTINEL="$WORK/session-started"
-rm -f "$SENTINEL" "$SENTINEL.release"
-# `set -m` gives the driver a process group of its own, so the interrupt can
-# be delivered the way a real one is -- to the driver and its session
-# together -- without taking this test process down with it.
-set -m
-CLAUDE_STUB_MODE=hang CLAUDE_STUB_SENTINEL="$SENTINEL" "$DRIVER_BIN" "$REPO" >"$WORK/killed.log" 2>&1 &
-driver_pid=$!
-set +m
+# the moment of the kill the session has already written the map, so a
+# driver that shrugged the interrupt off would harvest a context map for a
+# repo nobody finished cleaning up -- and leave the rest in someone else's
+# repo with nobody watching.
+#
+# It is run twice, because an interrupt reaches the driver in two shapes and
+# the rollback has to cover both. The session dying from the signal is the
+# one the driver was originally written against. The session catching the
+# signal and exiting zero is the one that used to walk straight through it:
+# bash defers a signal that arrives while it is waiting on a foreground
+# child, and then decides what to do with it from how that child ended, so a
+# session that shuts down cleanly makes the shell drop the operator's
+# interrupt and finish the run.
+INTERRUPT="$(deliverable_interrupt)"
+case "$INTERRUPT" in
+  INT) expected_status=130 ;;
+  TERM) expected_status=143 ;;
+esac
+[ "$INTERRUPT" = "INT" ] || echo "  (SIGINT is ignored in this shell and cannot be restored; interrupting with SIG$INTERRUPT)"
 
-waited=0
-until [ -f "$SENTINEL" ] || [ "$waited" -ge 300 ]; do sleep 0.1; waited=$((waited + 1)); done
+for shape in dies traps; do
+  case "$shape" in
+    dies) shape_label="the session is killed by it" ;;
+    traps) shape_label="the session catches it and exits zero" ;;
+  esac
 
-if [ -f "$SENTINEL" ]; then
-  pass "the driver got as far as the session, with the session's writing done"
-  assert_file_exists "$REPO/docs/adr/001-widgets.md" "what the session wrote really is in the repo at the moment of the kill"
-  kill -INT -"$driver_pid" 2>/dev/null
-  touch "$SENTINEL.release"
-  wait "$driver_pid"; killed_status=$?
-  if [ "$killed_status" -ne 0 ]; then
-    pass "a driver interrupted mid-run exits non-zero rather than looking like a success"
-  else
-    fail "a driver interrupted mid-run exits non-zero rather than looking like a success"
+  fresh_repo "$REPO"
+  SENTINEL="$WORK/session-started-$shape"
+  rm -f "$SENTINEL" "$SENTINEL.signalled"
+  # `set -m` gives the driver a process group of its own, so the interrupt
+  # can be delivered the way a real one is -- to the driver and its session
+  # together -- without taking this test process down with it.
+  set -m
+  CLAUDE_STUB_MODE=hang CLAUDE_STUB_SENTINEL="$SENTINEL" CLAUDE_STUB_ON_SIGNAL="$shape" \
+    "$DRIVER_BIN" "$REPO" >"$WORK/killed-$shape.log" 2>&1 &
+  driver_pid=$!
+  set +m
+
+  waited=0
+  until [ -f "$SENTINEL" ] || [ "$waited" -ge 300 ]; do sleep 0.1; waited=$((waited + 1)); done
+
+  if [ ! -f "$SENTINEL" ]; then
+    fail "interrupted mid-run, $shape_label: the driver got as far as the session (timed out waiting)"
+    kill -KILL -"$driver_pid" 2>/dev/null
+    wait "$driver_pid" 2>/dev/null
+    continue
   fi
-  assert_widget_repo_pristine "$REPO" "killed mid-run"
+
+  pass "interrupted mid-run, $shape_label: the driver got as far as the session, with the session's writing done"
+  assert_file_exists "$REPO/CONTEXT.md" \
+    "interrupted mid-run, $shape_label: the map the session wrote really is in the repo at the moment of the kill"
+
+  kill -"$INTERRUPT" -"$driver_pid" 2>/dev/null
+  wait "$driver_pid"; killed_status=$?
+
+  # Asked before anything else, because every assertion below it is only
+  # worth reading once the signal is known to have landed. A driver that was
+  # never signalled runs to an ordinary success, and an ordinary success
+  # fails all of them for a reason that has nothing to do with rollback.
+  if [ "$shape" = "traps" ]; then
+    assert_file_exists "$SENTINEL.signalled" \
+      "interrupted mid-run, $shape_label: the session really did receive the signal"
+  fi
+
+  if [ "$killed_status" -ne 0 ]; then
+    pass "interrupted mid-run, $shape_label: the driver exits non-zero rather than looking like a success"
+  else
+    fail "interrupted mid-run, $shape_label: the driver exits non-zero rather than looking like a success"
+    cat "$WORK/killed-$shape.log" >&2
+  fi
+  # And the exact status, not merely non-zero: 128 + the signal's number is
+  # what a run stopped by that signal reports. For the `dies` shape it is
+  # the only positive evidence that the signal landed and was acted on,
+  # rather than the run having failed for some unrelated reason of its own
+  # -- the marker file above gives `traps` that evidence directly.
+  assert_eq "$killed_status" "$expected_status" \
+    "interrupted mid-run, $shape_label: the driver exits $expected_status, the status of a run stopped by SIG$INTERRUPT"
+  assert_widget_repo_pristine "$REPO" "interrupted mid-run, $shape_label"
   assert_file_missing "$REPO/CONTEXT.md" \
-    "an interrupted run leaves nothing behind to harvest, the map included"
-else
-  fail "the driver got as far as the session, with the session's writing done (timed out waiting)"
-  touch "$SENTINEL.release"
-  kill -INT -"$driver_pid" 2>/dev/null
-  wait "$driver_pid" 2>/dev/null
-fi
+    "interrupted mid-run, $shape_label: nothing is left behind to harvest, the map included"
+done
 
 echo ""
 echo "pocock driver, the session commits:"

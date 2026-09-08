@@ -23,6 +23,40 @@
 # A second copy of this would be the one that drifts, and it would drift on
 # the failure path, where nobody is watching.
 #
+# WHAT THE ROLLBACK CANNOT COVER. A driver calls restore_repo_state from an
+# exit trap, and reaches that trap on an interrupt by trapping INT and TERM
+# and exiting. That covers a Ctrl-C, a killed process tree, a `timeout` and
+# a cancelled CI job. It leaves a window, and the window is worth naming
+# here rather than in either driver, because it is a property of undoing a
+# run from the outside rather than of what any one run unpacks:
+#
+#   * SIGKILL, and a machine that loses power, cannot be trapped at all.
+#     The repo is left exactly as the session left it -- scaffolding,
+#     half-written map and all -- and nothing announces that.
+#
+#   * A signal that was ignored when the driver started stays ignored.
+#     POSIX forbids a shell from trapping or restoring one, and bash sets
+#     SIGINT to SIG_IGN for anything it starts asynchronously without job
+#     control, a disposition inherited through forks and execs. So a driver
+#     run from a background job in a script -- which is how a harness that
+#     runs drivers concurrently would start one -- cannot be Ctrl-C'd. It
+#     can still be TERM'd, which is why both are trapped and not just INT.
+#
+#   * A trapped signal is deferred while the shell waits on the session,
+#     and the trap body runs once the session returns. So the rollback
+#     begins after the session process is gone, never during it, and a
+#     session that ignores the signal and keeps working holds the rollback
+#     up for as long as it runs.
+#
+#   * A second signal arriving while restore_repo_state is partway through
+#     stops it partway through. What has been undone stays undone; the
+#     rest does not, and the repo is left between the two states.
+#
+# Each of those ends with an operator's repo dirty and no message saying
+# so. Closing them needs something outside the driver process -- a runner
+# that keeps the snapshot and re-runs the restore, rather than a shell
+# trying to clean up after its own death.
+#
 # Requires bash 4+ for associative arrays, same as the drivers that source
 # it. Sourced, not run: `source ../lib/repo-snapshot.sh`.
 
@@ -206,6 +240,48 @@ restore_repo_state() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
     [ -n "${dirs_before["$value"]:-}" ] && continue
     rmdir "$repo/$value" 2>/dev/null || true
   done < <(list_repo_dirs "$repo")
+}
+
+# Arm INT and TERM so that an interrupt takes the caller into its EXIT trap,
+# where the rollback above lives. Call it once, after that EXIT trap is set.
+#
+# A driver's rollback hangs off EXIT, and an interrupt is not reliably
+# something that makes a shell exit. The reasoning this replaces was that a
+# Ctrl-C signals the whole process group, so the session dies with it and
+# the driver's `|| abort` carries the run into the exit trap. That holds
+# only when the session is *killed by* the signal. Bash defers a signal
+# that arrives while it is waiting on a foreground child, and when the
+# child is reaped it decides what to do with the deferred signal from how
+# that child ended: died from it, and the shell re-raises it on itself;
+# ended any other way, and the shell reads that as the child having handled
+# the interrupt, and drops its own copy. So a session that traps SIGINT and
+# shuts down cleanly, which is what a well-behaved CLI does, exits zero --
+# and the run walks straight past the operator's Ctrl-C, keeps its output,
+# disarms the rollback and exits zero with everything the run unpacked
+# still sitting in their repo. Same for a signal that reached the driver
+# alone and never touched the session.
+#
+# Trapping them costs the shell nothing it was relying on: a trapped signal
+# is still deferred until the foreground session returns, which is the
+# order the rollback has to happen in anyway. What changes is that whether
+# an interrupt stops the run is no longer the session's to decide.
+#
+# Here rather than in each driver for the reason this whole file is here:
+# it is failure-path code, and a second copy of it would be the one that
+# drifts. What it still does not cover is named at the top of this file.
+exit_on_interrupt() { # <repo-path>
+  INTERRUPTED_REPO="$1"
+  trap 'interrupted_by INT 130' INT
+  trap 'interrupted_by TERM 143' TERM
+}
+
+# The body those two traps run. Separate from exit_on_interrupt, and
+# reaching the repo path through a variable rather than an argument,
+# because a trap's command is a string evaluated when the signal arrives --
+# long after the arguments it was set up with have gone.
+interrupted_by() { # <signal-name> <exit-status>
+  echo "interrupted by SIG$1 -- rolling $INTERRUPTED_REPO back to how it was found and keeping nothing" >&2
+  exit "$2"
 }
 
 # Refuse, printing why, if <repo-path>'s HEAD is not the commit
