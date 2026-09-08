@@ -5,11 +5,10 @@
 // The three belong together because the second is a decision, not a
 // formatting detail. work/<slug>/status.md is the instance's own content —
 // committed to its history, read by everyone who has the instance, on
-// machines that never ran the spawn. `template/.gitignore` ignores one
-// file, `.archimedes-notify.json`, because it is per-machine and
-// disposable; work/ is not ignored, and cannot be, since work/<slug>/ is
-// also where a unit of work's reference material lives and sharing that is
-// the point.
+// machines that never ran the spawn. work/ is not ignored and cannot be,
+// since work/<slug>/ is also where a unit of work's reference material
+// lives and sharing that is the point, which internal/workdir argues in
+// full. What follows from it for the column is here.
 //
 // So the worktree column is held to the rule every other path in an
 // instance already follows: repos.yaml records `../<name>`, WORKSPACE-MAP.md

@@ -9,6 +9,7 @@ import (
 	"github.com/blockadence/gh-archimedes/internal/dossier"
 	"github.com/blockadence/gh-archimedes/internal/gitutil"
 	"github.com/blockadence/gh-archimedes/internal/statusfile"
+	"github.com/blockadence/gh-archimedes/internal/workdir"
 )
 
 // ContextDirName is the conventional, inside-the-worktree location for
@@ -92,7 +93,7 @@ func Materialize(c Context) error {
 
 	// A missing or unreadable work/<slug> is not an error — it just means
 	// there's no reference material.
-	src := filepath.Join(c.Root, "work", c.Slug)
+	src := workdir.Path(c.Root, c.Slug)
 	entries, err := os.ReadDir(src)
 	hasWork := err == nil && len(entries) > 0
 
