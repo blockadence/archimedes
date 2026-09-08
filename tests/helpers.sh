@@ -195,3 +195,44 @@ assert_widget_repo_pristine() {
     "$label: nothing is left in the repo but what it started with"
   assert_eq "$(git -C "$repo" status --porcelain)" "" "$label: the repo's git status is clean"
 }
+
+# The signal a test can actually deliver to a driver it starts, for the
+# cases that interrupt one mid-run.
+#
+# SIGINT is the one that matters and the one to prefer: it is Ctrl-C, and it
+# is what the drivers' rollback is written against. run-all.sh runs each
+# file in the foreground, so the suite itself gets it. But bash sets SIGINT
+# to SIG_IGN for a command it starts asynchronously when job control is off,
+# and an ignored disposition is inherited by every process that command goes
+# on to start -- through `set -m`, through a fork, through an exec. POSIX
+# forbids a shell from trapping or restoring a signal that was ignored on
+# entry, so nothing downstream can undo it. A test file run as
+# `./tests/foo.sh &` -- which is how anyone reaches for concurrency, and how
+# the reproduction for this was written -- therefore cannot deliver SIGINT
+# to anything at all: `kill -INT` against the driver's whole process group
+# is accepted by the kernel and discarded for every process in it, and the
+# run continues to an ordinary success.
+#
+# That is what made the killed-mid-run cases fail whenever they were run
+# that way -- not the load, the backgrounding -- and it is worth being exact
+# about: the process group `set -m` hands out is the right one. It is the
+# signal disposition inside it that no process group can fix.
+#
+# Falling back to SIGTERM there is not a looser test. The drivers have to
+# treat the two identically, and TERM is how a killed process tree, a
+# `timeout`, and a cancelled CI job all arrive anyway. What would be looser
+# is sending a signal that nobody receives and then reading the driver's
+# ordinary success as proof that an interrupt was handled -- which is
+# exactly what the old case did on any machine where it was backgrounded.
+#
+# `trap -- '' SIGINT` is how bash reports a signal it may not touch, which
+# is the whole of what is being asked here. A signal this shell has trapped
+# itself reports its own handler instead and is not confused for one; a
+# signal this shell has deliberately ignored reports the same empty handler
+# and is treated the same way, correctly -- it cannot be delivered either.
+deliverable_interrupt() {
+  case "$(trap -p INT)" in
+    "trap -- '' SIGINT"*) echo TERM ;;
+    *) echo INT ;;
+  esac
+}

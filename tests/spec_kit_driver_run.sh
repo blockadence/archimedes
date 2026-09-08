@@ -76,21 +76,39 @@ FILLED
     echo "# filled" > .specify/memory/constitution.md
     ;;
   hang)
-    # Does everything a successful session would -- so if the interrupt
-    # gets swallowed rather than acted on, the run finishes normally and
-    # reports success, which is exactly the failure being tested for.
-    # Then announces itself and sits in the foreground until released, so
-    # the test can signal the driver while bash is blocked on a child,
-    # which is where a real Ctrl-C lands.
+    # Does everything a successful session would first -- so if the
+    # interrupt gets swallowed rather than acted on, the run finishes
+    # normally and reports success, which is exactly the failure being
+    # tested for. Then announces itself and sits in the foreground, so the
+    # test can signal the driver while bash is blocked on a child, which is
+    # where a real Ctrl-C lands.
+    #
+    # CLAUDE_STUB_ON_SIGNAL picks which of the two shapes an interrupted
+    # session takes, because the driver has to survive both and only one of
+    # them used to be exercised:
+    #
+    #   dies   killed by the signal, the shape the driver's rollback was
+    #          originally reasoned about
+    #   traps  catches it, shuts down cleanly and exits zero, which is what
+    #          a well-behaved CLI does -- and what bash reads as "the child
+    #          handled the interrupt", so the shell's own copy of it is
+    #          dropped and the run carries on as if nothing happened
     cat > .specify/memory/constitution.md <<'FILLED'
 # Widget Catalog Constitution
 
 ### I. Zero-Dependency CommonJS Core
 Every module stays dependency-free.
 FILLED
+    if [ "${CLAUDE_STUB_ON_SIGNAL:-dies}" = "traps" ]; then
+      trap 'touch "$CLAUDE_STUB_SENTINEL.signalled"; exit 0' INT TERM
+    fi
     touch "$CLAUDE_STUB_SENTINEL"
+    # Nothing releases this but the signal. The bound is a backstop for a
+    # signal that never arrives, and it is long enough that hitting it is a
+    # broken test rather than a slow machine -- the driver then finishes an
+    # ordinary successful run, and the assertions below say so loudly.
     waited=0
-    until [ -f "$CLAUDE_STUB_SENTINEL.release" ] || [ "$waited" -ge 300 ]; do
+    while [ "$waited" -lt 300 ]; do
       sleep 0.1; waited=$((waited + 1))
     done
     ;;
@@ -185,48 +203,91 @@ assert_file_missing "$OUT" "no output file is produced"
 assert_widget_repo_pristine "$REPO" "specify scaffolded no constitution"
 
 echo ""
-echo "spec-kit driver, killed mid-run:"
+echo "spec-kit driver, interrupted mid-run:"
 
 # The case hand-placed error handling can't reach, and the reason rollback
 # is the exit trap rather than something on the success path.
-fresh_repo "$REPO"
-SENTINEL="$WORK/session-started"
-rm -f "$SENTINEL" "$SENTINEL.release"
-# `set -m` gives the driver a process group of its own, so the interrupt can
-# be delivered the way a real one is -- to the driver and its session
-# together -- without taking this test process down with it.
-set -m
-CLAUDE_STUB_MODE=hang CLAUDE_STUB_SENTINEL="$SENTINEL" "$DRIVER_BIN" "$REPO" >"$WORK/killed.log" 2>&1 &
-driver_pid=$!
-set +m
+#
+# It is run twice, because an interrupt reaches the driver in two shapes and
+# the rollback has to cover both. The session dying from the signal is the
+# one the driver was originally written against. The session catching the
+# signal and exiting zero is the one that used to walk straight through it:
+# bash defers a signal that arrives while it is waiting on a foreground
+# child, and then decides what to do with it from how that child ended, so a
+# session that shuts down cleanly makes the shell drop the operator's
+# interrupt and finish the run.
+INTERRUPT="$(deliverable_interrupt)"
+case "$INTERRUPT" in
+  INT) expected_status=130 ;;
+  TERM) expected_status=143 ;;
+esac
+[ "$INTERRUPT" = "INT" ] || echo "  (SIGINT is ignored in this shell and cannot be restored; interrupting with SIG$INTERRUPT)"
 
-waited=0
-until [ -f "$SENTINEL" ] || [ "$waited" -ge 300 ]; do sleep 0.1; waited=$((waited + 1)); done
+for shape in dies traps; do
+  case "$shape" in
+    dies) shape_label="the session is killed by it" ;;
+    traps) shape_label="the session catches it and exits zero" ;;
+  esac
 
-if [ -f "$SENTINEL" ]; then
-  pass "the driver got as far as the session, with the scaffolding unpacked"
-  assert_dir_exists "$REPO/.specify" "the scaffolding really is in the repo at the moment of the kill"
-  kill -INT -"$driver_pid" 2>/dev/null
-  touch "$SENTINEL.release"
-  wait "$driver_pid"; killed_status=$?
-  if [ "$killed_status" -ne 0 ]; then
-    pass "a driver interrupted mid-run exits non-zero rather than looking like a success"
-  else
-    fail "a driver interrupted mid-run exits non-zero rather than looking like a success"
+  fresh_repo "$REPO"
+  SENTINEL="$WORK/session-started-$shape"
+  rm -f "$SENTINEL" "$SENTINEL.signalled"
+  # `set -m` gives the driver a process group of its own, so the interrupt
+  # can be delivered the way a real one is -- to the driver and its session
+  # together -- without taking this test process down with it.
+  set -m
+  CLAUDE_STUB_MODE=hang CLAUDE_STUB_SENTINEL="$SENTINEL" CLAUDE_STUB_ON_SIGNAL="$shape" \
+    "$DRIVER_BIN" "$REPO" >"$WORK/killed-$shape.log" 2>&1 &
+  driver_pid=$!
+  set +m
+
+  waited=0
+  until [ -f "$SENTINEL" ] || [ "$waited" -ge 300 ]; do sleep 0.1; waited=$((waited + 1)); done
+
+  if [ ! -f "$SENTINEL" ]; then
+    fail "interrupted mid-run, $shape_label: the driver got as far as the session (timed out waiting)"
+    kill -KILL -"$driver_pid" 2>/dev/null
+    wait "$driver_pid" 2>/dev/null
+    continue
   fi
+
+  pass "interrupted mid-run, $shape_label: the driver got as far as the session, with the scaffolding unpacked"
+  assert_dir_exists "$REPO/.specify" \
+    "interrupted mid-run, $shape_label: the scaffolding really is in the repo at the moment of the kill"
+
+  kill -"$INTERRUPT" -"$driver_pid" 2>/dev/null
+  wait "$driver_pid"; killed_status=$?
+
+  # Asked before anything else, because every assertion below it is only
+  # worth reading once the signal is known to have landed. A driver that was
+  # never signalled runs to an ordinary success, and an ordinary success
+  # fails all of them for a reason that has nothing to do with rollback.
+  if [ "$shape" = "traps" ]; then
+    assert_file_exists "$SENTINEL.signalled" \
+      "interrupted mid-run, $shape_label: the session really did receive the signal"
+  fi
+
+  if [ "$killed_status" -ne 0 ]; then
+    pass "interrupted mid-run, $shape_label: the driver exits non-zero rather than looking like a success"
+  else
+    fail "interrupted mid-run, $shape_label: the driver exits non-zero rather than looking like a success"
+    cat "$WORK/killed-$shape.log" >&2
+  fi
+  # And the exact status, not merely non-zero: 128 + the signal's number is
+  # what a run stopped by that signal reports. For the `dies` shape it is
+  # the only positive evidence that the signal landed and was acted on,
+  # rather than the run having failed for some unrelated reason of its own
+  # -- the marker file above gives `traps` that evidence directly.
+  assert_eq "$killed_status" "$expected_status" \
+    "interrupted mid-run, $shape_label: the driver exits $expected_status, the status of a run stopped by SIG$INTERRUPT"
   # The session had already written the constitution by this point, so a
   # driver that shrugged the interrupt off would have left it sitting there
   # for the driver runner to harvest -- a context map for a repo nobody
   # finished cleaning up.
-  assert_widget_repo_pristine "$REPO" "killed mid-run"
+  assert_widget_repo_pristine "$REPO" "interrupted mid-run, $shape_label"
   assert_file_missing "$REPO/.specify/memory/constitution.md" \
-    "an interrupted run leaves nothing behind to harvest, session's work included"
-else
-  fail "the driver got as far as the session, with the scaffolding unpacked (timed out waiting)"
-  touch "$SENTINEL.release"
-  kill -INT -"$driver_pid" 2>/dev/null
-  wait "$driver_pid" 2>/dev/null
-fi
+    "interrupted mid-run, $shape_label: nothing is left behind to harvest, session's work included"
+done
 
 echo ""
 echo "spec-kit driver, the session commits:"
