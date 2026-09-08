@@ -22,13 +22,6 @@ ROOT="$(cd "$HERE/.." && pwd)"
 TEST_WF="$ROOT/.github/workflows/test.yml"
 RELEASE_WF="$ROOT/.github/workflows/release.yml"
 
-# One job's body out of a workflow: everything indented under `  <name>:`
-# up to the next job. Enough structure to tell "the release job needs the
-# test job" from "the file contains the word needs somewhere".
-job_block() { # <workflow-file> <job-name>
-  yaml_block "$1" "  $2:"
-}
-
 echo "the release is gated on the tests:"
 
 assert_file_exists "$TEST_WF" "there is a workflow that runs the tests"
@@ -63,8 +56,8 @@ docs="$(cat "$ROOT/docs/cli.md" 2>/dev/null)"
 assert_contains "$docs" "go test ./..." "the Go suite command is documented"
 assert_contains "$docs" "./tests/run-all.sh" "the bash suite command is documented"
 
-release_job="$(job_block "$RELEASE_WF" release)"
-gate_job="$(job_block "$RELEASE_WF" test)"
+release_job="$(workflow_job_block "$RELEASE_WF" release)"
+gate_job="$(workflow_job_block "$RELEASE_WF" test)"
 
 assert_contains "$release_job" "cli/gh-extension-precompile" \
   "the release job is the one that publishes"

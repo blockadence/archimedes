@@ -87,12 +87,12 @@ build_archimedes() {
 # everything indented more deeply than the header, up to the first line
 # that dedents back to it or past it. Blank lines don't end a block.
 #
-# Two test files read the workflows to pin guarantees that live nowhere but
-# there (ci_gates_release.sh: the release waits on the tests;
-# ci_runs_live_drivers.sh: the billed suite is not reachable from a fork),
-# and both need the same thing of them -- enough structure to tell "the
-# release job needs the test job" from "the file contains the word needs
-# somewhere". Reading it two ways would be two answers to that question.
+# Several test files read the workflows to pin guarantees that live nowhere
+# but there -- the release waits on the tests (ci_gates_release.sh), the
+# published assets are attested (release_provenance.sh), the billed suite is
+# not reachable from a fork (ci_runs_live_drivers.sh). They all need the
+# same thing of a workflow file, and reading it several ways would be
+# several answers to the same question.
 #
 # <file> <header-line>, the header given exactly as it appears, indent and
 # trailing colon included: `yaml_block wf.yml "  release:"`.
@@ -117,6 +117,29 @@ yaml_block() {
 # would put it back. <manifest> <field>
 manifest_field() {
   sed -n "s/^$2: *//p" "$1"
+}
+
+# One job's body out of a GitHub workflow: everything indented under
+# `  <name>:` up to the next job. Enough structure for the three files that
+# read workflows -- ci_gates_release.sh, release_provenance.sh and
+# ci_runs_live_drivers.sh -- to tell "the release job needs the test job"
+# from "the file contains the word needs somewhere". Shared rather than
+# copied into each, so their readings of the same YAML cannot drift apart.
+#
+# A job block is one case of yaml_block above, and is spelled as one: the
+# job name is what varies, and the nesting rule should not be restated per
+# caller.
+# <workflow-file> <job-name>
+workflow_job_block() {
+  yaml_block "$1" "  $2:"
+}
+
+# The names of every job in a workflow, one per line. <workflow-file>
+workflow_job_names() {
+  awk '
+    /^jobs:/ { injobs = 1; next }
+    injobs && /^  [^ #]/ && /:/ { sub(/:.*/, ""); gsub(/ /, ""); print }
+  ' "$1"
 }
 
 # A throwaway one-commit git repo with just enough of a domain in it for a

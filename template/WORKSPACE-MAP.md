@@ -2,7 +2,7 @@
 
 ## Repos
 
-(populated by `archimedes bootstrap`, then `archimedes render-map`)
+(populated by `bootstrap`, then `render-map`)
 
 ## Relationships
 
