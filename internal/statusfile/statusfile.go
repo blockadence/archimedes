@@ -35,9 +35,11 @@ import (
 // what gets copied into a worktree.
 const Name = "status.md"
 
-// Path is where the instance at root keeps slug's file. The work/<slug>/
-// layout is stated here once, so a writer, a reader and the walk cannot
-// come to different conclusions about where the file is.
+// Path is where the instance at root keeps slug's file: stated once, so a
+// writer, a reader and the walk cannot come to different conclusions about
+// where the file is. The work/<slug> directory around it is not this
+// package's — it is a unit of work's reference material, which spawn
+// materializes and this file is deliberately excluded from.
 func Path(root, slug string) string {
 	return filepath.Join(root, "work", slug, Name)
 }
@@ -82,10 +84,10 @@ type File struct {
 	Rows []Row
 }
 
-// headerFor is the preamble every status.md opens with: its title, a
+// header is the preamble every status.md opens with: its title, a
 // blank, and the table's header and separator. A slug's first spawn
 // writes it; every read skips it.
-func headerFor(slug string) []string {
+func header(slug string) []string {
 	return []string{
 		"# " + slug,
 		"",
@@ -94,7 +96,7 @@ func headerFor(slug string) []string {
 	}
 }
 
-// headerLines is how many lines headerFor writes, and so how many lines a
+// headerLines is how many lines header writes, and so how many lines a
 // read skips before the data starts. A test holds the two together rather
 // than two packages counting the same four lines.
 const headerLines = 4
@@ -106,15 +108,15 @@ const cells = 5
 // table still renders as a table.
 const noCell = "-"
 
-// Header is the preamble as it is written to a new file.
-func Header(slug string) string {
-	return strings.Join(headerFor(slug), "\n") + "\n"
+// preamble is the header as it is written to a new file.
+func preamble(slug string) string {
+	return strings.Join(header(slug), "\n") + "\n"
 }
 
-// FormatRow renders one data row. An empty PR cell is written as the
+// formatRow renders one data row. An empty PR cell is written as the
 // placeholder, since spawn records a row before there is a pull request to
 // name in it.
-func FormatRow(r Row) string {
+func formatRow(r Row) string {
 	pr := r.PR
 	if pr == "" {
 		pr = noCell
@@ -133,7 +135,7 @@ func Append(root string, r Row) error {
 		if !os.IsNotExist(err) {
 			return err
 		}
-		if err := os.WriteFile(path, []byte(Header(r.Slug)), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(preamble(r.Slug)), 0o644); err != nil {
 			return err
 		}
 	}
@@ -144,17 +146,23 @@ func Append(root string, r Row) error {
 	}
 	defer f.Close()
 
-	_, err = f.WriteString(FormatRow(r))
+	_, err = f.WriteString(formatRow(r))
 	return err
 }
 
-// ParseRow reads one "| repo | branch | worktree | note | pr |" line.
+// parseRow reads one "| repo | branch | worktree | note | pr |" line.
 // Splitting on "|" puts an empty field before the opening pipe and another
 // after the closing one, so the cells are fields 1 through cells: a line
 // yielding fewer than cells+1 fields has no last cell to read, and is not
 // a data row. Neither is one whose repo cell is empty — the blank line
 // under the table and any prose added below it both land there.
-func ParseRow(line string) (Row, bool) {
+//
+// A row a hand has broken past that is invisible, and invisible to every
+// reader alike: it is missing from the report as well as from prune's
+// blocker scan, so the operator sees their unit of work gone from `status`
+// rather than each reader answering differently about it. One answer is
+// the whole point — see the package comment.
+func parseRow(line string) (Row, bool) {
 	fields := strings.Split(line, "|")
 	if len(fields) < cells+1 {
 		return Row{}, false
@@ -184,7 +192,7 @@ func Parse(data []byte, slug string) []Row {
 
 	var rows []Row
 	for _, line := range lines[headerLines:] {
-		if row, ok := ParseRow(line); ok {
+		if row, ok := parseRow(line); ok {
 			row.Slug = slug
 			rows = append(rows, row)
 		}
@@ -205,10 +213,12 @@ func ReadFile(path, slug string) (File, error) {
 // Discover reads every work/<slug>/status.md the instance at root has, in
 // path order so a run reports the same thing twice.
 //
-// It takes no slug filter on purpose. A caller narrowed to one unit of
-// work still has to see the others — what another file's rows say is what
-// tells prune the branch it is about to remove is somebody's stacked base
-// — so the narrowing belongs to the caller, over the files it gets back.
+// It takes no slug filter on purpose. Its caller is the one that has to
+// read every file whatever it was asked about — what another file's rows
+// say is what tells prune the branch it is about to remove is somebody's
+// stacked base. A reader that genuinely wants one unit of work reads that
+// unit of work's file, through Path and ReadFile, which is what status
+// does.
 func Discover(root string) ([]File, error) {
 	paths, err := filepath.Glob(Path(root, "*"))
 	if err != nil {
@@ -241,7 +251,7 @@ func RemoveRows(path string, drop func(Row) bool) error {
 	out := make([]string, 0, len(lines))
 	for i, line := range lines {
 		if i >= headerLines {
-			if row, ok := ParseRow(line); ok && drop(row) {
+			if row, ok := parseRow(line); ok && drop(row) {
 				continue
 			}
 		}

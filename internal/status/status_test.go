@@ -52,6 +52,16 @@ func TestDiscover(t *testing.T) {
 		}
 	})
 
+	t.Run("a slug nothing has been spawned into", func(t *testing.T) {
+		got, err := Discover(dir, "never-spawned")
+		if err != nil {
+			t.Fatalf("Discover returned error: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected no rows, got %#v", got)
+		}
+	})
+
 	t.Run("no status.md files yet", func(t *testing.T) {
 		got, err := Discover(filepath.Join(dir, "nonexistent"), "")
 		if err != nil {
@@ -76,5 +86,31 @@ func TestDiscoverReportsTheWorktreeColumnAsRecorded(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Worktree != "../service-a-worktrees/alpha" {
 		t.Fatalf("got %#v, want the row's own recorded column", got)
+	}
+}
+
+// A report on one unit of work reads that unit of work's file. Another
+// slug's file being unreadable is not a reason to refuse the report that
+// was asked for — and is a reason to refuse the whole-instance one, which
+// would otherwise under-report an instance it could not fully read.
+func TestDiscoverNarrowedToOneSlugDoesNotReadTheOthers(t *testing.T) {
+	dir := t.TempDir()
+	writeStatus(t, dir, "alpha", "../service-a-worktrees/alpha")
+	// A status.md that cannot be read at all: a directory where the file
+	// belongs.
+	if err := os.MkdirAll(filepath.Join(dir, "work", "beta", "status.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Discover(dir, "alpha")
+	if err != nil {
+		t.Fatalf("Discover returned error: %v", err)
+	}
+	if len(got) != 1 || got[0].Slug != "alpha" {
+		t.Fatalf("got %#v, want alpha's own row", got)
+	}
+
+	if _, err := Discover(dir, ""); err == nil {
+		t.Error("a whole-instance report must fail on a status.md it cannot read, got nil")
 	}
 }

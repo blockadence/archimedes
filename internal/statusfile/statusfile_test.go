@@ -1,4 +1,4 @@
-package statusfile_test
+package statusfile
 
 import (
 	"os"
@@ -6,14 +6,23 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/blockadence/gh-archimedes/internal/statusfile"
 )
+
+// preambleFor spells the header out rather than building it with the code
+// under test: a fixture that agrees with whatever produces it cannot catch
+// that producer changing, which is the drift this package exists to stop.
+func preambleFor(slug string) string {
+	return "# " + slug + "\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n"
+}
+
+func fileBody(slug string, rows ...string) string {
+	return preambleFor(slug) + strings.Join(rows, "\n") + "\n"
+}
 
 // write puts one unit of work's status.md where an instance keeps it.
 func write(t *testing.T, root, slug, body string) string {
 	t.Helper()
-	path := statusfile.Path(root, slug)
+	path := Path(root, slug)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -23,17 +32,24 @@ func write(t *testing.T, root, slug, body string) string {
 	return path
 }
 
-func body(slug string, rows ...string) string {
-	return statusfile.Header(slug) + strings.Join(rows, "\n") + "\n"
+// The preamble written and the preamble skipped are the same four lines.
+// Held here rather than by two packages counting them.
+func TestTheHeaderWrittenIsThePreambleSkipped(t *testing.T) {
+	if got := preamble("widget-fix"); got != preambleFor("widget-fix") {
+		t.Errorf("preamble = %q, want %q", got, preambleFor("widget-fix"))
+	}
+	if len(header("widget-fix")) != headerLines {
+		t.Errorf("header writes %d lines, parser skips %d", len(header("widget-fix")), headerLines)
+	}
 }
 
 func TestParseReadsEveryCellOfEveryRow(t *testing.T) {
-	got := statusfile.Parse([]byte(body("widget-fix",
+	got := Parse([]byte(fileBody("widget-fix",
 		"| service-a | widget-fix | ../service-a-worktrees/widget-fix | based on main | - |",
 		"| service-b | widget-fix | ../service-b-worktrees/widget-fix | stacked on service-a:widget-fix | 42 |",
 	)), "widget-fix")
 
-	want := []statusfile.Row{
+	want := []Row{
 		{Slug: "widget-fix", Repo: "service-a", Branch: "widget-fix", Worktree: "../service-a-worktrees/widget-fix", Note: "based on main", PR: "-"},
 		{Slug: "widget-fix", Repo: "service-b", Branch: "widget-fix", Worktree: "../service-b-worktrees/widget-fix", Note: "stacked on service-a:widget-fix", PR: "42"},
 	}
@@ -43,15 +59,15 @@ func TestParseReadsEveryCellOfEveryRow(t *testing.T) {
 }
 
 func TestParseSkipsTheHeaderBlanksAndAnythingThatIsNotARow(t *testing.T) {
-	// The header's own line would read as a row named "repo" if the
-	// preamble weren't skipped.
-	content := statusfile.Header("solo") + "\n" +
+	// The header's own line would read as a row about a repo called "repo"
+	// if the preamble weren't skipped.
+	content := preambleFor("solo") + "\n" +
 		"| service-a | solo | /wt | a note | - |\n" +
 		"not a table row\n" +
 		"|  | solo | /wt | no repo | - |\n"
 
-	got := statusfile.Parse([]byte(content), "solo")
-	want := []statusfile.Row{
+	got := Parse([]byte(content), "solo")
+	want := []Row{
 		{Slug: "solo", Repo: "service-a", Branch: "solo", Worktree: "/wt", Note: "a note", PR: "-"},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -60,7 +76,7 @@ func TestParseSkipsTheHeaderBlanksAndAnythingThatIsNotARow(t *testing.T) {
 }
 
 func TestParseOfAFileWithNoRowsYet(t *testing.T) {
-	if got := statusfile.Parse([]byte(statusfile.Header("solo")), "solo"); len(got) != 0 {
+	if got := Parse([]byte(preambleFor("solo")), "solo"); len(got) != 0 {
 		t.Errorf("got %#v, want no rows", got)
 	}
 }
@@ -69,10 +85,10 @@ func TestParseOfAFileWithNoRowsYet(t *testing.T) {
 // let an editor's formatter align — says exactly what the terse one spawn
 // wrote says. Nothing downstream gets to see the spacing.
 func TestAHandAlignedTableParsesAsTheTerseOneDoes(t *testing.T) {
-	terse := statusfile.Parse([]byte(body("widget-fix",
+	terse := Parse([]byte(fileBody("widget-fix",
 		"| service-a | widget-fix | /wt | stacked on service-b:shim-fix | - |",
 	)), "widget-fix")
-	aligned := statusfile.Parse([]byte(body("widget-fix",
+	aligned := Parse([]byte(fileBody("widget-fix",
 		"|  service-a  |  widget-fix  |  /wt  |  stacked   on    service-b:shim-fix  |  -  |",
 	)), "widget-fix")
 
@@ -81,67 +97,49 @@ func TestAHandAlignedTableParsesAsTheTerseOneDoes(t *testing.T) {
 	}
 }
 
-// The preamble the parser skips is the one the writer writes. Held by a
-// test rather than by two people counting the same four lines.
-func TestTheHeaderIsExactlyThePreambleTheParserSkips(t *testing.T) {
-	h := statusfile.Header("widget-fix")
-	if !strings.HasSuffix(h, "\n") {
-		t.Fatalf("header %q does not end its last line", h)
-	}
-	// One row appended to a bare header has to come back, which it only
-	// does if the parser skips exactly as many lines as the header has.
-	rows := statusfile.Parse([]byte(h+statusfile.FormatRow(statusfile.Row{Repo: "service-a", Branch: "widget-fix"})), "widget-fix")
-	if len(rows) != 1 || rows[0].Repo != "service-a" {
-		t.Fatalf("got %#v, want the one row that follows the header", rows)
-	}
-}
-
-func TestFormatRowWritesAPlaceholderForAnEmptyPRCell(t *testing.T) {
-	line := statusfile.FormatRow(statusfile.Row{Repo: "service-a", Branch: "widget-fix", Worktree: "/wt", Note: "based on main"})
-	if line != "| service-a | widget-fix | /wt | based on main | - |\n" {
-		t.Errorf("FormatRow = %q", line)
-	}
-}
-
 func TestAppendCreatesTheFileWithItsHeaderThenAddsToIt(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Dir(statusfile.Path(root, "widget-fix")), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(Path(root, "widget-fix")), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	first := statusfile.Row{Slug: "widget-fix", Repo: "service-a", Branch: "widget-fix", Worktree: "../a", Note: "based on main"}
-	second := statusfile.Row{Slug: "widget-fix", Repo: "service-b", Branch: "widget-fix", Worktree: "../b", Note: "stacked on service-a:widget-fix"}
-	for _, r := range []statusfile.Row{first, second} {
-		if err := statusfile.Append(root, r); err != nil {
+	rows := []Row{
+		{Slug: "widget-fix", Repo: "service-a", Branch: "widget-fix", Worktree: "../a", Note: "based on main"},
+		{Slug: "widget-fix", Repo: "service-b", Branch: "widget-fix", Worktree: "../b", Note: "stacked on service-a:widget-fix"},
+	}
+	for _, r := range rows {
+		if err := Append(root, r); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	file, err := statusfile.ReadFile(statusfile.Path(root, "widget-fix"), "widget-fix")
+	// Byte for byte, including the placeholder in the pr column a row is
+	// recorded with before there is a pull request to name.
+	want := fileBody("widget-fix",
+		"| service-a | widget-fix | ../a | based on main | - |",
+		"| service-b | widget-fix | ../b | stacked on service-a:widget-fix | - |",
+	)
+	data, err := os.ReadFile(Path(root, "widget-fix"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []statusfile.Row{
-		{Slug: "widget-fix", Repo: "service-a", Branch: "widget-fix", Worktree: "../a", Note: "based on main", PR: "-"},
-		{Slug: "widget-fix", Repo: "service-b", Branch: "widget-fix", Worktree: "../b", Note: "stacked on service-a:widget-fix", PR: "-"},
-	}
-	if !reflect.DeepEqual(file.Rows, want) {
-		t.Errorf("rows after two appends\n got: %#v\nwant: %#v", file.Rows, want)
+	if string(data) != want {
+		t.Errorf("file after two appends\n got: %q\nwant: %q", data, want)
 	}
 }
 
 func TestReadFileOfAMissingFileErrors(t *testing.T) {
-	if _, err := statusfile.ReadFile(filepath.Join(t.TempDir(), "missing.md"), "slug"); err == nil {
+	if _, err := ReadFile(filepath.Join(t.TempDir(), "missing.md"), "slug"); err == nil {
 		t.Fatal("expected an error for a missing file, got nil")
 	}
 }
 
 func TestDiscoverReadsEveryUnitOfWorkInPathOrder(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "beta", body("beta", "| service-a | beta | /wt/beta | based on main | - |"))
-	write(t, root, "alpha", body("alpha", "| service-a | alpha | /wt/alpha | based on main | - |"))
+	write(t, root, "beta", fileBody("beta", "| service-a | beta | /wt/beta | based on main | - |"))
+	write(t, root, "alpha", fileBody("alpha", "| service-a | alpha | /wt/alpha | based on main | - |"))
 
-	files, err := statusfile.Discover(root)
+	files, err := Discover(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,8 +149,8 @@ func TestDiscoverReadsEveryUnitOfWorkInPathOrder(t *testing.T) {
 	if files[0].Slug != "alpha" || files[1].Slug != "beta" {
 		t.Errorf("got slugs %q, %q, want them in path order", files[0].Slug, files[1].Slug)
 	}
-	if files[0].Path != statusfile.Path(root, "alpha") {
-		t.Errorf("path = %q, want %q", files[0].Path, statusfile.Path(root, "alpha"))
+	if files[0].Path != Path(root, "alpha") {
+		t.Errorf("path = %q, want %q", files[0].Path, Path(root, "alpha"))
 	}
 	if len(files[0].Rows) != 1 || files[0].Rows[0].Slug != "alpha" {
 		t.Errorf("rows = %#v, want one tagged with its slug", files[0].Rows)
@@ -160,7 +158,7 @@ func TestDiscoverReadsEveryUnitOfWorkInPathOrder(t *testing.T) {
 }
 
 func TestDiscoverOnAnInstanceWithNothingSpawnedYet(t *testing.T) {
-	files, err := statusfile.Discover(t.TempDir())
+	files, err := Discover(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,12 +169,12 @@ func TestDiscoverOnAnInstanceWithNothingSpawnedYet(t *testing.T) {
 
 func TestRemoveRowsDropsWhatItIsAskedForAndLeavesTheHeader(t *testing.T) {
 	root := t.TempDir()
-	path := write(t, root, "widget-fix", body("widget-fix",
+	path := write(t, root, "widget-fix", fileBody("widget-fix",
 		"| service-a | widget-fix | /wt/a | based on main | - |",
 		"| service-b | widget-fix | /wt/b | stacked on service-a:widget-fix | - |",
 	))
 
-	if err := statusfile.RemoveRows(path, func(r statusfile.Row) bool { return r.Repo == "service-a" }); err != nil {
+	if err := RemoveRows(path, func(r Row) bool { return r.Repo == "service-a" }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -184,10 +182,10 @@ func TestRemoveRowsDropsWhatItIsAskedForAndLeavesTheHeader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(string(data), statusfile.Header("widget-fix")) {
+	if !strings.HasPrefix(string(data), preambleFor("widget-fix")) {
 		t.Errorf("header did not survive:\n%s", data)
 	}
-	rows := statusfile.Parse(data, "widget-fix")
+	rows := Parse(data, "widget-fix")
 	if len(rows) != 1 || rows[0].Repo != "service-b" {
 		t.Errorf("got %#v, want only service-b left", rows)
 	}
@@ -196,11 +194,11 @@ func TestRemoveRowsDropsWhatItIsAskedForAndLeavesTheHeader(t *testing.T) {
 // The header's cells are not data, whatever a repo happens to be called.
 func TestRemoveRowsWillNotEatTheHeaderRow(t *testing.T) {
 	root := t.TempDir()
-	path := write(t, root, "widget-fix", body("widget-fix",
+	path := write(t, root, "widget-fix", fileBody("widget-fix",
 		"| repo | widget-fix | /wt/a | based on main | - |",
 	))
 
-	if err := statusfile.RemoveRows(path, func(r statusfile.Row) bool { return r.Repo == "repo" }); err != nil {
+	if err := RemoveRows(path, func(r Row) bool { return r.Repo == "repo" }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -208,19 +206,19 @@ func TestRemoveRowsWillNotEatTheHeaderRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(string(data), statusfile.Header("widget-fix")) {
+	if !strings.HasPrefix(string(data), preambleFor("widget-fix")) {
 		t.Errorf("header did not survive:\n%s", data)
 	}
-	if rows := statusfile.Parse(data, "widget-fix"); len(rows) != 0 {
+	if rows := Parse(data, "widget-fix"); len(rows) != 0 {
 		t.Errorf("got %#v, want the data row gone", rows)
 	}
 }
 
 func TestBranchNameFallsBackToTheSlug(t *testing.T) {
-	if got := (statusfile.Row{Slug: "widget-fix", Branch: "other"}).BranchName(); got != "other" {
+	if got := (Row{Slug: "widget-fix", Branch: "other"}).BranchName(); got != "other" {
 		t.Errorf("BranchName = %q, want the row's own branch column", got)
 	}
-	if got := (statusfile.Row{Slug: "widget-fix"}).BranchName(); got != "widget-fix" {
+	if got := (Row{Slug: "widget-fix"}).BranchName(); got != "widget-fix" {
 		t.Errorf("BranchName = %q, want the slug for a row written without a branch", got)
 	}
 }

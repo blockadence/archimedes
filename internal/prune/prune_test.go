@@ -24,8 +24,11 @@ func writeStatus(t *testing.T, root, slug, body string) string {
 	return path
 }
 
+// statusBody spells the file's preamble out rather than building it with
+// internal/statusfile: a fixture that agrees with whatever produces it
+// cannot catch that producer changing.
 func statusBody(slug string, rows ...string) string {
-	body := statusfile.Header(slug)
+	body := "# " + slug + "\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n"
 	for _, r := range rows {
 		body += r + "\n"
 	}

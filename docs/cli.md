@@ -651,11 +651,12 @@ now sits beside the header it skips, held by a test rather than by two
 packages counting the same four lines; and `prune`'s row removal goes
 through the same rule, so a repo that happened to be called `repo` can no
 longer have the table's own header deleted out from under it. The walk over
-`work/*/status.md` is likewise one glob. It takes no slug filter: a caller
-narrowed to one unit of work still has to read the others, since whether a
-branch is somebody's base is a question about the other files. `status`
-narrows to the rows it reports; `prune` narrows its candidates and keeps
-reading everything else.
+`work/*/status.md` is likewise one glob, and it takes no slug filter,
+because `prune` has to read every file whatever it was asked about:
+whether a branch is somebody's base is a question about the *other* files.
+`status` has no such tie, so narrowed to one slug it reads that slug's file
+and no other — one unit of work's unreadable file must not cost an operator
+the report on the unit of work they asked about.
 
 ## Adding a subcommand
 
@@ -1086,8 +1087,8 @@ nobody has fetched — reports no flag rather than guessing.
 `prune` removes worktrees, branches, and status rows for units of work whose
 PR has merged or closed. It's a dry run unless `--force` is passed, and it
 refuses to remove a branch still acting as another unit of work's stacked
-base — decided from every other `status.md`'s parsed notes, not from their
-text (see "What reads `work/<slug>/status.md`").
+base — decided from every `status.md`'s parsed notes, not from their text
+(see "What reads `work/<slug>/status.md`").
 
 `context-map` sequences a mapping pass across every repo, dependency/base
 repos first, skipping any repo already current for its base branch's latest

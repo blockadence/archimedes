@@ -89,37 +89,38 @@ func (r Report) RebaseNeeded() []Row {
 	return flagged
 }
 
-// BuildReport looks up each entry's live PR state, flags any stacked row
-// its base has merged out from under, and applies the guardrail
-// threshold. A Repos or PR failure degrades that row to noPR rather than
+// BuildReport looks up each status.md row's live PR state, flags any
+// stacked row its base has merged out from under, and applies the
+// guardrail threshold. The rows it takes are the file's (statusfile.Row);
+// the rows it returns are rendered ones. A Repos or PR failure degrades that row to noPR rather than
 // failing the whole report: one unreadable row doesn't stop the others.
-func BuildReport(entries []statusfile.Row, src Sources, guardrailMax int) Report {
-	rows := make([]Row, 0, len(entries))
-	for _, e := range entries {
+func BuildReport(rows []statusfile.Row, src Sources, guardrailMax int) Report {
+	rendered := make([]Row, 0, len(rows))
+	for _, r := range rows {
 		pr := noPR
-		info, err := src.Repos(e.Repo)
+		info, err := src.Repos(r.Repo)
 		if err == nil {
-			if looked, err := src.PR(info.Path, e.Slug); err == nil {
+			if looked, err := src.PR(info.Path, r.Slug); err == nil {
 				pr = looked
 			}
 		}
 
 		row := Row{
-			Slug:     e.Slug,
-			Repo:     e.Repo,
+			Slug:     r.Slug,
+			Repo:     r.Repo,
 			PRNumber: pr.Number,
 			PRState:  pr.State,
-			Note:     e.Note,
+			Note:     r.Note,
 		}
 		if err == nil {
-			row.NeedsRebase, row.RebaseOnto = checkStack(src, e, info)
+			row.NeedsRebase, row.RebaseOnto = checkStack(src, r, info)
 		}
-		rows = append(rows, row)
+		rendered = append(rendered, row)
 	}
 
-	count := len(rows)
+	count := len(rendered)
 	return Report{
-		Rows:         rows,
+		Rows:         rendered,
 		Count:        count,
 		GuardrailMax: guardrailMax,
 		GuardrailHit: count > guardrailMax,

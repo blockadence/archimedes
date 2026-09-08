@@ -8,20 +8,40 @@
 // whether a stacked branch has been left behind by its base merging.
 package status
 
-import "github.com/blockadence/gh-archimedes/internal/statusfile"
+import (
+	"os"
+
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
+)
 
 // Discover reads the rows of every work/<slug>/status.md in the instance
-// at root, optionally narrowed to one slug.
+// at root, or of one slug's file when slugFilter names one.
 //
-// The narrowing is here rather than in the walk because prune's is not the
-// same narrowing: it has to keep reading the files it is not reporting on.
-// A report has no such tie between one unit of work and another.
+// Narrowed, it reads that unit of work's file and no other. A report has
+// no tie between one unit of work and another — unlike prune, which has to
+// keep reading the files it is not acting on, since that is where a
+// stacked base is named — so one slug's unreadable file must not be able
+// to cost an operator the report on the slug they asked about.
 //
 // A row's worktree column comes back as the file records it — relative to
 // the instance root (see internal/worktree) — and is not resolved on the
 // way through. Nothing a report shows is a path: resolving belongs to the
 // layer that hands one to git, which is prune.
 func Discover(root, slugFilter string) ([]statusfile.Row, error) {
+	if slugFilter != "" {
+		file, err := statusfile.ReadFile(statusfile.Path(root, slugFilter), slugFilter)
+		if err != nil {
+			// A slug with no status.md is a slug nothing has been spawned
+			// into: an empty report, not a failed one, the same answer the
+			// walk gives for an instance with no work/ at all.
+			if os.IsNotExist(err) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		return file.Rows, nil
+	}
+
 	files, err := statusfile.Discover(root)
 	if err != nil {
 		return nil, err
@@ -29,9 +49,6 @@ func Discover(root, slugFilter string) ([]statusfile.Row, error) {
 
 	var rows []statusfile.Row
 	for _, f := range files {
-		if slugFilter != "" && f.Slug != slugFilter {
-			continue
-		}
 		rows = append(rows, f.Rows...)
 	}
 	return rows, nil
