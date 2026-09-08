@@ -27,6 +27,11 @@ PLATFORM="$(go env GOOS)-$(go env GOARCH)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+# Scaffolding an instance makes a commit, so this file needs an identity.
+# It gets one here rather than from the CI workflow -- see isolate_git in
+# tests/gitfixture.sh for why that distinction matters.
+isolate_git "$WORK"
+
 echo "the release build produces an installable, self-describing binary:"
 
 # Only the platform this test can actually run. Cross-compiling the other

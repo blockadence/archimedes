@@ -21,6 +21,11 @@ build_archimedes || exit 1
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+# Scaffolding an instance makes a commit, so this file needs an identity.
+# It gets one here rather than from the CI workflow -- see isolate_git in
+# tests/gitfixture.sh for why that distinction matters.
+isolate_git "$WORK"
+
 INSTALLED="$WORK/bin/archimedes"
 mkdir -p "$WORK/bin"
 cp "$ARCHIMEDES_BIN" "$INSTALLED"

@@ -46,6 +46,35 @@ func RunOut(dir string, progress io.Writer, args ...string) error {
 	return nil
 }
 
+// HasCommitIdentity reports whether git in dir can name an author and a
+// committer, which is to say whether a commit there would get past the
+// identity check rather than dying with "Please tell me who you are". It is
+// for callers that commit on an operator's behalf and have something better
+// to do about a machine with no identity than hand back raw git output.
+//
+// It asks git (`git var`) instead of reading user.name and user.email,
+// because those two are not where the answer lives. git also takes an
+// identity from the GIT_AUTHOR_*/GIT_COMMITTER_* environment, and where it
+// finds neither it derives one from the account and then accepts or refuses
+// its own derivation depending on what came back — which is exactly the
+// difference between a developer's laptop, where the derived name is their
+// full name and a commit succeeds, and a fresh container or CI runner,
+// where it is empty and the commit dies. Deferring to git keeps this
+// precisely as permissive as the commit it guards; a rule of our own would
+// refuse on machines where committing works, or pass on machines where it
+// doesn't.
+//
+// Both idents are checked because a commit needs both, and the environment
+// can supply one without the other.
+func HasCommitIdentity(dir string) bool {
+	for _, ident := range []string{"GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"} {
+		if _, err := Run(dir, "var", ident); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
 // CommonDir returns the absolute path of repoPath's shared (commondir) git
 // directory — the same directory across every worktree of that repo.
 func CommonDir(repoPath string) (string, error) {
