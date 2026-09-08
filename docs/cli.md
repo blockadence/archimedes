@@ -596,13 +596,16 @@ doesn't.
 The bash suite under `tests/` exercises the shipped drivers end to end
 against this binary, and builds the same repo shape from
 `tests/gitfixture.sh`; keep the two in step.
-`tests/gitfixture.sh` also holds the two ways a test file says what identity
-it runs under, the bash twins of `testrepo`'s: `isolate_git`, for the files
-that scaffold an instance and so need a commit to succeed
+`tests/gitfixture.sh` also holds the three ways a test file says what
+identity it runs under, the bash twins of `testrepo`'s: `isolate_git`, for
+the files that scaffold an instance and so need a commit to succeed
 (`driver_ownership.sh`, `gh_extension_packaging.sh`,
-`init_scaffolds_data_only.sh`), and `strip_git_identity`, for
-`tests/init_without_a_git_identity.sh`, whose subject is the machine that
-has no identity at all. An identity belongs in the test file that needs one
+`init_scaffolds_data_only.sh`); `strip_git_identity`, for the machine where
+git itself will not commit; and `unconfigure_git_identity`, for the machine
+with nothing configured that git will guess an identity for anyway. The last
+two are the pair `tests/init_without_a_git_identity.sh` walks in turn, since
+one operator's box is one and another's is the other and `init` owes them
+both the same answer. An identity belongs in the test file that needs one
 and never in `.github/workflows/test.yml`: a runner without one is the
 machine that caught `init` assuming one, and configuring the workflow around
 that would blind the only runner that reliably reproduces it.
@@ -645,19 +648,35 @@ part-way removes what it wrote, so the retry fails for the real reason
 instead of "already exists".
 
 That first commit is the one part of `init` that depends on the machine
-rather than on the binary, since git will not commit without an identity to
-commit under — and a fresh laptop, a container and every CI runner have
-none. There, `init` writes the instance, initializes its repository, and
-stops: it reports the instance ready but uncommitted and prints the two
-`git config` settings plus the `git add -A && git commit` that finishes it,
-under the same subject it would have used. What it never does is commit
-under an identity it made up. An instance is the operator's own repository
-and its first commit stays in that history forever, so a fabricated author
-there would be worse than an instance that is merely uncommitted — which is
-also why the identity is decided by asking git (`git var`) rather than by
-reading `user.name` and `user.email`: git takes one from the environment
-too, and derives one from the account where it finds neither, so anything
-but git's own answer would refuse on machines where committing works.
+rather than on the binary, since a commit has to be authored by somebody —
+and a fresh laptop, a container and every CI runner have nobody configured,
+as has any operator who never got round to setting one. There, `init` writes
+the instance, initializes its repository, and stops: it reports the instance
+ready but uncommitted and prints the two `git config` settings plus the `git
+add -A && git commit` that finishes it, under the same subject it would have
+used.
+
+What it never does is commit under an identity nobody chose. An instance is
+the operator's own repository and its first commit stays in that history
+forever, so an author they never picked is worse there than an instance that
+is merely uncommitted — and that includes the one git guesses. Given no
+configuration git derives an identity from the OS account and commits under
+it wherever the derivation comes back usable, which on a developer's macOS
+box it does: their full name and `login@their-hostname.local`, in the
+instance's first commit for good. So the bar is an identity somebody set on
+purpose — in config, or in the `GIT_AUTHOR_*`/`GIT_COMMITTER_*` environment
+where CI systems put it — decided by `gitutil.HasConfiguredIdentity`, which
+is `git var` again under `user.useConfigOnly`. Narrowing the question that
+way keeps the answer git's own rather than making it a rule of ours, which
+would have to re-derive where git looks and would sooner or later forget the
+environment and refuse on the systems that set an identity there
+deliberately.
+
+That leaves `init` deliberately stricter than `git commit` on every machine
+whose account git can guess from, and the uncommitted notice says so in as
+many words: an operator who has just watched git commit in every other
+repository they own would otherwise read a skipped commit as a bug rather
+than as a decision.
 
 `bootstrap` discovers a GitHub org's repos, clones the ones not already
 checked out beside the instance, and scaffolds each one's `repos.yaml` entry

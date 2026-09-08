@@ -25,10 +25,12 @@ Every command after this one acts on that data through this same install.
 
 Refuses a destination that already exists rather than merging into it.
 
-Where git has no identity configured — a fresh machine, a container, a CI
-runner — the instance is still written, and the first commit is left for
-you to make once you have set one. It is never made up: an instance is
-your repository, and a fabricated author would stay in its history.`,
+Where no identity has been configured for git — a fresh machine, a
+container, a CI runner, or simply never having got round to it — the
+instance is still written, and the first commit is left for you to make once
+you have set one. That holds on machines where git would guess an author
+from your account and commit under it: an instance is your repository, and a
+name you never chose would stay in its history.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			res, err := instance.Create(archimedes.Template(), args[0], args[1])
@@ -47,17 +49,36 @@ your repository, and a fabricated author would stay in its history.`,
 	}
 }
 
-// uncommittedNotice is what init says when git had no identity to make the
-// instance's first commit under. It is printed rather than returned as an
-// error because nothing failed: the files — the valuable half of what init
-// does — are all there, and the instance is usable as it stands. What is
-// missing is a commit only its owner can author, so the notice hands over
-// the four commands that finish the job, spelling out the same subject
-// Create would have used rather than leaving the operator to invent one.
+// uncommittedNotice is what init says when nobody had configured git an
+// identity to make the instance's first commit under. It is printed rather
+// than returned as an error because nothing failed: the files — the valuable
+// half of what init does — are all there, and the instance is usable as it
+// stands. What is missing is a commit only its owner can author, so the
+// notice hands over the four commands that finish the job, spelling out the
+// same subject Create would have used rather than leaving the operator to
+// invent one.
+//
+// It also says that git might have committed here and that this deliberately
+// did not, because on the machine where that is true — no configuration, an
+// OS account git can guess a name from, which is most developers' — the
+// operator has watched git commit in every other repository they own and
+// would otherwise read this as the tool being broken. The guess is the whole
+// of what this notice exists to explain; without it the text would be
+// describing a failure that, on their box, did not happen.
+//
+// Both settings are named every time, rather than only the one that did not
+// resolve. Nearly always neither is set, so naming both is naming what is
+// missing; and where one is — a user.name with no user.email — the pair is
+// still what the operator has to end up with, and the three lines below can
+// be run as printed instead of read for which of them applies. A notice that
+// named one setting would be more precise and less useful.
 //
 // Takes the instance path and the commit subject.
-const uncommittedNotice = `Not committed: git has no identity configured, so the first commit was
-skipped rather than made up. Set one, then make that commit yourself:
+const uncommittedNotice = `Not committed: git has no identity you configured, so the first commit was
+skipped rather than made under a name guessed from your account. On some
+machines git makes that guess and commits under it; this does not, because
+an instance is your own repository and an author you never chose would stay
+in its history. Set an identity, then make that commit yourself:
 
   git config --global user.name "Your Name"
   git config --global user.email "you@example.com"

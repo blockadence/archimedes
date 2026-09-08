@@ -150,8 +150,13 @@ func TestInitWritesTheSameInstanceHoweverItWasInvoked(t *testing.T) {
 // been configured it is also the first place the tool could hand them raw
 // git output instead of an explanation. What it hands them instead is the
 // instance, plus the two commands that make its first commit theirs.
+//
+// Unconfigured rather than stripped, because that is the machine an operator
+// who has never run `git config` is on: on a runner git refuses to commit
+// too, but on a developer's box it would guess an author and commit, and
+// this path has to be the one taken on both.
 func TestInitSaysTheInstanceIsUncommittedAndHowToCommitIt(t *testing.T) {
-	testrepo.StripGitIdentity(t)
+	testrepo.UnconfigureGitIdentity(t)
 	parent := t.TempDir()
 
 	out := execute(t, "init", "widgets", parent)
@@ -168,6 +173,14 @@ func TestInitSaysTheInstanceIsUncommittedAndHowToCommitIt(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output does not tell the operator to run %q:\n%s", want, out)
+		}
+	}
+	// And says the part that would otherwise read as a bug. This declines
+	// where git itself would have committed, and an operator watching git
+	// commit in every other repository on that machine is owed the reason.
+	for _, want := range []string{"Not committed", "guess"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output does not say %q, so a skipped commit reads as a failure:\n%s", want, out)
 		}
 	}
 	// It is still the same next step. Being uncommitted does not stop an

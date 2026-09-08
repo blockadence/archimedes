@@ -9,9 +9,10 @@
 // Every one of them carries a fixed commit identity, so no test has to
 // spell one out to commit; IsolateGit gives the same guarantee to a test
 // whose subject builds the repository itself, where there is no fixture
-// checkout to configure. StripGitIdentity is the deliberate absence of one,
-// for the tests whose subject is the machine that hasn't got an identity at
-// all.
+// checkout to configure. StripGitIdentity and UnconfigureGitIdentity are the
+// deliberate absence of one, for the tests whose subject is a machine that
+// has not got an identity: the first where git itself will not commit, the
+// second where nothing is configured but git will guess.
 //
 // It also provides the runner that building such a fixture needs anyway —
 // Git and GitOut, which run one git command and fail the test if it doesn't
@@ -212,19 +213,19 @@ func IsolateGit(t testing.TB) {
 }
 
 // StripGitIdentity is IsolateGit's opposite, for the tests whose subject is
-// what happens when there is no identity to commit under: a fresh laptop, a
-// container, a CI runner. It is a fixture in its own right because that
-// machine is the one no developer has — the identity in a developer's own
-// git config is exactly what hid this case until a runner without one ran
-// the suite.
+// the machine where git itself will not commit: a fresh container, a CI
+// runner, where any commit dies with "empty ident name ... not allowed". It
+// is a fixture in its own right because that machine is the one no developer
+// has — the identity in a developer's own git config is exactly what hid
+// this case until a runner without one ran the suite.
 //
-// The name is emptied rather than unset. With nothing in the environment
-// git derives a name from the account, and whether that derivation comes
-// back usable is a property of the machine: it is empty on a CI runner and
-// a full name on a developer's macOS box, so a test that relied on it would
-// pass in one place and fail in the other. An empty GIT_AUTHOR_NAME reaches
-// git's own "empty ident name ... not allowed" by the same route the runner
-// does, on every machine.
+// The name is emptied rather than unset, and that is what makes this that
+// machine on every machine. Unset, git derives a name from the account, and
+// whether the derivation comes back usable is a property of the box: empty
+// on a CI runner, a full name on a developer's macOS one. An empty
+// GIT_AUTHOR_NAME reaches git's own refusal by the route the runner takes,
+// everywhere. For the other machine with nothing configured — the one where
+// git guesses and commits — see UnconfigureGitIdentity.
 //
 // Only the names, deliberately, though IsolateGit clears the addresses too.
 // That asymmetry is the runner: git derives an address from the account and
@@ -238,5 +239,38 @@ func StripGitIdentity(t testing.TB) {
 	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
 	for _, name := range []string{"GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"} {
 		t.Setenv(name, "")
+	}
+}
+
+// UnconfigureGitIdentity is the machine between those two: nothing
+// configured anywhere, and git left free to guess an identity from the OS
+// account the way it does in any repository on that box. It is the machine
+// an operator who has never run `git config --global user.name` is actually
+// on, which is most of them, and it is the fixture for anything whose answer
+// must not depend on what the account happens to carry.
+//
+// What the guess comes back with is a property of the box — a full name on a
+// developer's macOS one, nothing on a CI runner — so git will commit here in
+// one place and refuse in the other. A test using this fixture asserts what
+// is true of both: that an identity nobody chose is not one to commit an
+// operator's repository under. See gitutil.HasConfiguredIdentity.
+//
+// Nothing is emptied here, only removed, EMAIL included — git reads that one
+// as a configured address in its own right, so leaving a machine's EMAIL
+// standing would make this fixture a different machine on that machine.
+// Emptying is StripGitIdentity's job, and makes a different machine again.
+func UnconfigureGitIdentity(t testing.TB) {
+	t.Helper()
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	// Setenv first and Unsetenv second, as in IsolateGit: Setenv is what
+	// registers the restore at the end of the test, and Unsetenv is what
+	// Setenv cannot do. Unset is what these have to be, since an empty
+	// GIT_AUTHOR_NAME is the other machine.
+	for _, name := range []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
