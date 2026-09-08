@@ -528,6 +528,76 @@ fixed-location drivers have to leave someone else's repository as they
 found it, and a second copy of the code that does that would be the one
 that drifts — on the failure path, where nobody is watching.
 
+## What an instance records as a path
+
+Every path an instance writes down is relative to the instance root, and
+that is a decision about readership rather than a formatting preference.
+An instance is a git repository: its manifest, its dossiers, its map and
+its `work/` are committed to it and read by everyone who has it, on
+machines whose directory layout is their own. So `bootstrap` records a
+checkout as `../<name>`, `WORKSPACE-MAP.md` links relatively, and a dossier
+stub names `../<repo>`.
+
+`spawn`'s worktree column in `work/<slug>/status.md` was the exception and
+is not any more (issue 46). It recorded
+`/Users/someone/Code/service-a-worktrees/widget-fix` — a directory that
+exists on exactly one machine, in a file shared with everyone. That was not
+only untidy: `prune` takes the column at its word and hands it to `git
+worktree remove`, so a teammate who cloned the instance was naming a path
+their box has never had.
+
+The alternative considered first was the opposite one — that a spawned
+worktree is per-machine state like `.archimedes-notify.json`, and the row
+was never meant to travel, so `work/` should not be the instance's
+committed content at all. It was rejected because `work/<slug>/` is also
+where a unit of work's *reference material* lives, the ticket and the
+mockup and the notes that `spawn` materializes into every worktree, and
+sharing those is the whole reason the directory exists. Splitting the
+directory to un-share one column of one file buys less than making the
+column mean the same thing everywhere.
+
+And it does mean the same thing everywhere.
+`../service-a-worktrees/widget-fix` is not a claim that the directory is
+there; it is where this unit of work's worktree belongs, which is as true
+on a colleague's clone as `repos.yaml`'s `../service-a` is true before
+they have cloned anything.
+
+`internal/worktree` owns the whole of that — `Path` (where a worktree
+lives, beside its checkout), `Record` (how it is written down), `Resolve`
+(how a reader turns the row back into a usable path) — so a writer and a
+reader cannot come to different conclusions about the shape. `spawn`
+records through `Record`; `status.Discover` and `prune.Scan` resolve
+through `Resolve`, and both take the instance root rather than its `work/`
+directory for that reason. The parse layers underneath (`status.ParseFile`,
+`prune.ParseStatusFile`) report the column exactly as the file states it:
+they are given a file, not an instance, and inventing a root to resolve
+against is the mistake this is fixing.
+
+`Resolve` answers with a path usable from any working directory, even when
+the root it is given is not — `--root .` is the ordinary way to name an
+instance, and the answer is consumed by git running inside the target
+repo, which would read a shell-relative path against that repo instead.
+An empty column stays empty rather than resolving to the instance root,
+which is what `prune` would otherwise hand to `git worktree remove`.
+
+Rows written under the old shape still read. `Resolve` returns an absolute
+value untouched, so an instance that already carries them keeps working on
+the machine that wrote them — the only machine they were ever usable from.
+Nothing rewrites them: a row is replaced by the spawn that supersedes it or
+removed by the prune that retires it, and a migration pass would be
+rewriting the one machine's truth into another's guess.
+
+`spawn`'s `Result` and its printed lines keep the absolute path. Those
+answer for this machine — a `cd` line the operator pastes, a path an MCP
+client hands to a tool — and are not written into the instance.
+
+What holds the rule is
+`TestAScaffoldedInstanceIsTheSameHoweverItWasInvoked` — the same test that
+"What an instance's own docs name" leans on above — which compares two
+scaffolded instances byte for byte with nothing normalized away. Two runs
+land in two different temp directories, so a path that is true in one of
+them fails the comparison and names the file it came from.
+
 ## Adding a subcommand
 
 Each subcommand lives in its own `internal/cmd/<name>.go`, exposing a

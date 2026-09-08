@@ -38,8 +38,12 @@ func setupInstance(t *testing.T, root, repoName, slug, note string) (repoPath, w
 	if err := os.MkdirAll(statusDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Recorded the way spawn records it: relative to the instance root,
+	// so the rows these tests prune are the rows an instance carries.
+	// Spelled out rather than run through worktree.Record, so the fixture
+	// states the shape instead of agreeing with whatever produces it.
 	status := "# " + slug + "\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
-		"| " + repoName + " | " + slug + " | " + wt + " | " + note + " | - |\n"
+		"| " + repoName + " | " + slug + " | " + repoName + "-worktrees/" + slug + " | " + note + " | - |\n"
 	if err := os.WriteFile(filepath.Join(statusDir, "status.md"), []byte(status), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +106,61 @@ func TestRunPruneForceRemovesWorktreeBranchAndStatusRow(t *testing.T) {
 	}
 }
 
+// An instance spawned into before the worktree column went relative
+// carries absolute rows, and prune has to keep working on the machine
+// those rows are true on -- which is the machine that wrote them, the only
+// one they were ever usable from.
+func TestRunPruneStillReadsAnAbsoluteRow(t *testing.T) {
+	root := t.TempDir()
+	_, wt := setupInstance(t, root, "service-a", "widget-fix", "based on main")
+
+	statusPath := filepath.Join(root, "work", "widget-fix", "status.md")
+	old := strings.Replace(string(readFile(t, statusPath)), "service-a-worktrees/widget-fix", wt, 1)
+	if err := os.WriteFile(statusPath, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	merged := func(_, _ string) (string, error) { return "MERGED", nil }
+	if err := runPrune(&buf, root, "", true, merged); err != nil {
+		t.Fatalf("runPrune: %v", err)
+	}
+
+	if _, err := os.Stat(wt); !os.IsNotExist(err) {
+		t.Errorf("expected the worktree named by the absolute row to be removed, stat err = %v", err)
+	}
+}
+
+// A relative --root is the normal way to run this: an operator stands in
+// the directory holding their instance and names it. The row is relative
+// to the instance, and git runs with its working directory set to the
+// target repo, so resolving the two against each other has to end in a
+// path that means the same thing from anywhere -- the same reason
+// `spawn` absolutizes its root before deriving anything from it.
+func TestRunPruneResolvesARelativeRootToAUsablePath(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "instance")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, wt := setupInstance(t, root, "service-a", "widget-fix", "based on main")
+
+	t.Chdir(parent)
+
+	var buf bytes.Buffer
+	merged := func(_, _ string) (string, error) { return "MERGED", nil }
+	if err := runPrune(&buf, "instance", "", true, merged); err != nil {
+		t.Fatalf("runPrune: %v", err)
+	}
+
+	if out := buf.String(); !strings.Contains(out, "at "+wt+"\n") {
+		t.Errorf("candidate named a path that is only true from this shell, want %q in:\n%s", wt, out)
+	}
+	if _, err := os.Stat(wt); !os.IsNotExist(err) {
+		t.Errorf("expected the worktree to be removed, stat err = %v", err)
+	}
+}
+
 func TestRunPruneRefusesToRemoveAStackedBase(t *testing.T) {
 	root := t.TempDir()
 	repoPath, wt := setupInstance(t, root, "service-a", "widget-fix", "based on main")
@@ -112,7 +171,7 @@ func TestRunPruneRefusesToRemoveAStackedBase(t *testing.T) {
 		t.Fatal(err)
 	}
 	stackStatus := "# shim-fix\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
-		"| service-a | shim-fix | " + filepath.Join(root, "service-a-worktrees", "shim-fix") + " | stacked on service-a:widget-fix | - |\n"
+		"| service-a | shim-fix | service-a-worktrees/shim-fix | stacked on service-a:widget-fix | - |\n"
 	if err := os.WriteFile(filepath.Join(stackDir, "status.md"), []byte(stackStatus), 0o644); err != nil {
 		t.Fatal(err)
 	}

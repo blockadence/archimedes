@@ -8,8 +8,10 @@ import (
 
 // StatusFileName is Archimedes' own cross-repo bookkeeping file inside
 // work/<slug>/: which repos this unit of work spans and where each one's
-// worktree lives. Not reference material, so materialize.go excludes it
-// from what gets copied into a worktree.
+// worktree lives, the latter recorded relative to the instance root like
+// every other path an instance writes down (see internal/worktree). Not
+// reference material, so materialize.go excludes it from what gets copied
+// into a worktree.
 const StatusFileName = "status.md"
 
 func statusFilePath(workDir, slug string) string {

@@ -206,7 +206,7 @@ func Conditions(root, contextFile string, prState prune.PRStateFunc, progress io
 		return state, err
 	}
 
-	items, err := prune.Scan(filepath.Join(root, "work"), "", watched)
+	items, err := prune.Scan(root, "", watched)
 	if err != nil {
 		return Snapshot{}, err
 	}

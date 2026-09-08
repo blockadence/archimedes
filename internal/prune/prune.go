@@ -14,9 +14,13 @@ import (
 	"strings"
 
 	"github.com/blockadence/gh-archimedes/internal/stackref"
+	"github.com/blockadence/gh-archimedes/internal/worktree"
 )
 
-// Row is one data row of a work/<slug>/status.md table.
+// Row is one data row of a work/<slug>/status.md table. Worktree is the
+// column as the file records it — relative to the instance root (see
+// internal/worktree); Scan is what resolves it, since that is the layer
+// given the root to resolve against.
 type Row struct {
 	Repo     string
 	Branch   string
@@ -73,8 +77,11 @@ type PRStateFunc func(repo, headBranch string) (string, error)
 // Item is one status.md row whose PR has merged or closed: a candidate
 // for pruning, unless Blockers is non-empty.
 type Item struct {
-	Slug       string
-	Repo       string
+	Slug string
+	Repo string
+	// Worktree is where this unit of work's worktree is on this machine,
+	// resolved against the instance root — a path to hand git, not the
+	// relative one the row carries.
 	Worktree   string
 	Note       string
 	PRState    string
@@ -86,13 +93,14 @@ type Item struct {
 // stacked base.
 func (it Item) Prunable() bool { return len(it.Blockers) == 0 }
 
-// Scan walks workDir/*/status.md (optionally filtered to one slug) and
-// returns every row whose PR has merged or closed. A row that's still
-// named as another unit of work's stacked base ("stacked on repo:slug" in
-// any status.md) comes back with Blockers set rather than being silently
-// pruned out from under it.
-func Scan(workDir, slugFilter string, prState PRStateFunc) ([]Item, error) {
-	paths, err := filepath.Glob(filepath.Join(workDir, "*", "status.md"))
+// Scan walks the work/*/status.md files of the instance at root
+// (optionally filtered to one slug) and returns every row whose PR has
+// merged or closed, each with its worktree resolved against root. A row
+// that's still named as another unit of work's stacked base ("stacked on
+// repo:slug" in any status.md) comes back with Blockers set rather than
+// being silently pruned out from under it.
+func Scan(root, slugFilter string, prState PRStateFunc) ([]Item, error) {
+	paths, err := filepath.Glob(filepath.Join(root, "work", "*", "status.md"))
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +143,7 @@ func Scan(workDir, slugFilter string, prState PRStateFunc) ([]Item, error) {
 			items = append(items, Item{
 				Slug:       slug,
 				Repo:       row.Repo,
-				Worktree:   row.Worktree,
+				Worktree:   worktree.Resolve(root, row.Worktree),
 				Note:       row.Note,
 				PRState:    state,
 				StatusPath: p,
