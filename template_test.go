@@ -77,29 +77,38 @@ func TestTheBinaryCarriesEveryDriverItShips(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var found []string
+	// What makes a directory a driver is its manifest — the same rule
+	// internal/driver's Set applies when it passes over lib/, which holds
+	// what drivers source rather than a driver. Asked here rather than
+	// matched against the name, so the two cannot come to disagree about
+	// what a driver is.
+	var found, notDrivers []string
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		found = append(found, e.Name())
 		if _, err := fs.Stat(drivers, e.Name()+"/driver.yaml"); err != nil {
-			t.Errorf("driver %s has no manifest: %v", e.Name(), err)
+			notDrivers = append(notDrivers, e.Name())
+			continue
 		}
+		found = append(found, e.Name())
 	}
 
 	for _, want := range []string{"openspec", "pocock", "spec-kit"} {
 		if !slices.Contains(found, want) {
-			t.Errorf("the binary does not carry the %s driver (carries %v)", want, found)
+			t.Errorf("the binary does not carry the %s driver (carries %v; directories declaring no manifest: %v)",
+				want, found, notDrivers)
 		}
 	}
 }
 
-// A driver is a directory, not a script: spec-kit's command sources a
-// helper beside it, and a copy carried without that helper would fail only
-// once it was already running inside somebody's repository.
-func TestTheBinaryCarriesWhatADriversCommandSourcesBesideIt(t *testing.T) {
-	if _, err := fs.Stat(archimedes.Drivers(), "spec-kit/repo-snapshot.sh"); err != nil {
-		t.Errorf("spec-kit's sourced helper is missing from the carried copy: %v", err)
+// A driver is not a script, and the drivers are not a set of unrelated
+// ones: two of them have to leave someone else's repository exactly as they
+// found it, and they share the code that does it out of lib/. A copy
+// carried without that would fail only once it was already running inside
+// somebody's repository.
+func TestTheBinaryCarriesTheHelpersDriversSource(t *testing.T) {
+	if _, err := fs.Stat(archimedes.Drivers(), "lib/repo-snapshot.sh"); err != nil {
+		t.Errorf("the shared snapshot/restore helper is missing from the carried copy: %v", err)
 	}
 }

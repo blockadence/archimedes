@@ -3,8 +3,8 @@
 # `archimedes run-driver` seam a context-mapping pass uses, against a
 # throwaway git repo. Exercises the fixed-location contract's actual
 # guarantees: the canonical CONTEXT.md lands in the control repo (here,
-# $WORK) and the target repo is left with no trace of it -- clean
-# `git status`.
+# $WORK) and the target repo is left with no trace of the run -- not of the
+# map, and not of anything else the session decided to write.
 #
 # This makes a real, billed `claude -p` call, so it's opt-in: set
 # ARCHIMEDES_TEST_LIVE_DRIVERS=1 to run it. Skips with a clear message
@@ -22,6 +22,11 @@
 # below go past "a file exists" to what is in it. That is the part worth
 # paying for, and it runs weekly in .github/workflows/live-drivers.yml
 # rather than never.
+#
+# The pristine-repo assertions at the bottom are here for the same reason.
+# The stub session writes an ADR because that is what the driver's prompt
+# argues with; a real one may write something nobody thought to forbid, and
+# only a run against the real skill puts that question to the real skill.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
@@ -78,7 +83,12 @@ else
 fi
 
 status="$(git -C "$REPO" status --porcelain)"
-assert_eq "$status" "" "target repo has no trace of the artifact after harvesting (clean git status)"
+assert_eq "$status" "" "target repo has no trace of the run after harvesting (clean git status)"
 assert_file_missing "$REPO/CONTEXT.md" "CONTEXT.md is gone from the target repo, not just untracked"
+# A real session that wrote an ADR, a settings file or a second markdown
+# file it thought was a favour fails the run before reaching here; what this
+# asks is whether the repo came out untouched either way -- empty
+# directories, which `git status` cannot see, included.
+assert_widget_repo_pristine "$REPO" "live run"
 
 report

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Unit tests for the spec-kit driver's snapshot/restore helpers
-# (drivers/spec-kit/repo-snapshot.sh). These are what let a driver that has
-# to scaffold a whole toolchain into the target repo still honor the
+# Unit tests for the snapshot/restore helpers the drivers share
+# (drivers/lib/repo-snapshot.sh). These are what let a driver that cannot
+# help writing all over the target repo -- spec-kit unpacking a toolchain
+# into it, pocock handing an agent session the run of it -- still honor the
 # fixed-location contract's "no trace left behind" guarantee: snapshot the
 # repo's state first, then afterwards undo everything the run added or
 # changed, keeping only the declared fixed_path for the driver runner to
@@ -9,13 +10,24 @@
 #
 # No network, no CLIs, no spec-kit -- the helpers are exercised directly
 # against a throwaway git repo with hand-made "scaffolding", so this runs in
-# the normal suite rather than being opt-in like the live e2e test.
+# the normal suite rather than being opt-in like the live e2e tests.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
+# The helpers need bash 4 for their associative arrays, and say so; the
+# drivers that source them check for it before they touch anybody's repo.
+# This file has to make the same check for itself, because the rest of the
+# suite is deliberately written to run under the bash 3.2 macOS still ships
+# -- and a file that errored out here rather than skipping would report the
+# machine's bash as a broken helper.
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+  echo "skip: repo_snapshot.sh (the snapshot/restore helpers need bash 4+, running ${BASH_VERSION}; the drivers that source them refuse under an older one too)"
+  exit 77
+fi
+
 ROOT="$(cd "$HERE/.." && pwd)"
-source "$ROOT/drivers/spec-kit/repo-snapshot.sh"
+source "$ROOT/drivers/lib/repo-snapshot.sh"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -37,7 +49,7 @@ mkdir -p "$REPO/src"
 echo "mine" > "$REPO/scratch-note.md"
 echo "# readme, edited by a human" > "$REPO/README.md"
 
-echo "spec-kit driver repo snapshot/restore:"
+echo "repo snapshot/restore:"
 
 SNAP="$WORK/snapshot"
 snapshot_repo_state "$REPO" > "$SNAP"
@@ -90,7 +102,7 @@ assert_eq "$(git -C "$REPO" status --porcelain)" \
   "git status after restore shows the pre-run state plus the kept artifact, nothing else"
 
 echo ""
-echo "spec-kit driver repo snapshot/restore, no kept path:"
+echo "repo snapshot/restore, no kept path:"
 
 REPO2="$WORK/repo2"
 mkdir -p "$REPO2"
@@ -114,7 +126,7 @@ assert_dir_missing "$REPO2/.specify" \
   "with nothing to keep, the scaffolding's directories are pruned entirely"
 
 echo ""
-echo "spec-kit driver repo snapshot/restore, directories holding no files:"
+echo "repo snapshot/restore, directories holding no files:"
 
 # git tracks no directories at all, so an empty one a scaffolder leaves
 # behind is invisible to `git status` -- it has to be caught by diffing the
@@ -142,7 +154,102 @@ assert_eq "$(git -C "$REPO3" status --porcelain)" "" \
   "the repo is clean afterwards (which git status would have said either way -- hence the directory assertions above)"
 
 echo ""
-echo "spec-kit driver repo snapshot/restore, HEAD moved during the run:"
+echo "repo snapshot/restore, naming what the run changed:"
+
+# Restoring silently is right for a driver whose tool was always going to
+# scaffold itself in. It is not right for one whose session was asked for a
+# single file and wrote four: that driver has to tell the operator what
+# happened, which means asking the same diff restore acts on to answer in
+# words instead. One diff, two readings -- a second way of working out what
+# a run touched would be free to disagree with the one that cleans up.
+REPO5="$WORK/repo5"
+mkdir -p "$REPO5/src"
+(
+  cd "$REPO5"
+  git init -q
+  echo "# readme" > README.md
+  echo "console.log('hi')" > src/index.js
+  git add -A
+  git -c user.email=test@example.com -c user.name=test commit -qm init
+)
+echo "mine" > "$REPO5/scratch-note.md"
+
+SNAP5="$WORK/snapshot5"
+snapshot_repo_state "$REPO5" > "$SNAP5"
+
+mkdir -p "$REPO5/docs/adr"
+echo "the map" > "$REPO5/CONTEXT.md"
+echo "an ADR nobody asked for" > "$REPO5/docs/adr/001-widgets.md"
+echo "helpfully reformatted" > "$REPO5/src/index.js"
+mkdir -p "$REPO5/.claude/skills"
+
+changed="$(paths_changed_since_snapshot "$REPO5" "$SNAP5" CONTEXT.md)"
+
+assert_contains "$changed" "docs/adr/001-widgets.md" \
+  "a file the run added is named"
+assert_contains "$changed" "src/index.js" \
+  "a tracked file the run changed is named"
+assert_not_contains "$changed" "CONTEXT.md" \
+  "the kept path is not named -- writing it is what the run was for"
+assert_not_contains "$changed" "scratch-note.md" \
+  "an untracked file that predates the run is not named: it is not the run's doing"
+assert_eq "$(printf '%s' "$changed" | wc -l | tr -d ' ')" "1" \
+  "nothing else is named (two paths, so one newline between them)"
+
+# What restore then does about them, on the same repo and the same
+# snapshot: naming and undoing have to agree, because a driver that reports
+# one set and cleans up another leaves the operator looking in the wrong
+# place.
+restore_repo_state "$REPO5" "$SNAP5" CONTEXT.md
+
+assert_file_missing "$REPO5/docs/adr/001-widgets.md" "everything named is put back"
+assert_dir_missing "$REPO5/docs" "and the directories it was written into go too"
+assert_dir_missing "$REPO5/.claude" \
+  "an empty directory the run left is pruned as well, though git status cannot see it and neither can the naming"
+assert_eq "$(cat "$REPO5/src/index.js" 2>/dev/null)" "console.log('hi')" \
+  "a tracked file the run changed is put back to what HEAD says"
+assert_file_exists "$REPO5/CONTEXT.md" "the kept path survives"
+assert_file_exists "$REPO5/scratch-note.md" "and so does what predated the run"
+
+assert_eq "$(paths_changed_since_snapshot "$REPO5" "$SNAP5" CONTEXT.md)" "" \
+  "after restore there is nothing left to name"
+
+echo ""
+echo "repo snapshot/restore, naming what the run changed when HEAD moved:"
+
+# The same refusal restore makes, for the same reason: with HEAD moved, what
+# the run added cannot be told apart from what was already committed, so
+# there is no honest answer to give. Failing is what lets a driver say the
+# repo needs looking at rather than report an empty list as "it wrote
+# nothing".
+REPO6="$WORK/repo6"
+mkdir -p "$REPO6"
+(
+  cd "$REPO6"
+  git init -q
+  echo "# readme" > README.md
+  git add -A
+  git -c user.email=test@example.com -c user.name=test commit -qm init
+)
+SNAP6="$WORK/snapshot6"
+snapshot_repo_state "$REPO6" > "$SNAP6"
+echo "an ADR nobody asked for" > "$REPO6/ADR.md"
+(
+  cd "$REPO6"
+  git add -A
+  git -c user.email=test@example.com -c user.name=test commit -qm "committed it too"
+) >/dev/null
+
+if err="$(paths_changed_since_snapshot "$REPO6" "$SNAP6" 2>&1)"; then
+  fail "naming what changed refuses when HEAD moved, rather than reporting nothing changed"
+else
+  pass "naming what changed refuses when HEAD moved, rather than reporting nothing changed"
+fi
+assert_contains "$err" "HEAD moved" "the refusal says what went wrong"
+assert_contains "$err" "$REPO6" "the refusal names the repo that needs looking at by hand"
+
+echo ""
+echo "repo snapshot/restore, HEAD moved during the run:"
 
 # Every judgement restore makes is relative to the commit HEAD pointed at
 # when the snapshot was taken. An agent session that commits has made the
