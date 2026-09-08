@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blockadence/gh-archimedes/internal/prune"
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
 	"github.com/blockadence/gh-archimedes/internal/testrepo"
 )
 
@@ -92,7 +92,7 @@ func TestRunPruneForceRemovesWorktreeBranchAndStatusRow(t *testing.T) {
 	}
 
 	statusPath := filepath.Join(root, "work", "widget-fix", "status.md")
-	rows := prune.ParseStatusFile(readFile(t, statusPath))
+	rows := statusfile.Parse(readFile(t, statusPath), "widget-fix")
 	if len(rows) != 0 {
 		t.Errorf("expected status.md row to be removed, got %+v", rows)
 	}

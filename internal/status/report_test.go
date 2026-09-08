@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
 )
 
 func stubRepos(known map[string]string) RepoLookup {
@@ -26,7 +28,7 @@ func stubLookup(prs map[string]PR) PRLookup {
 }
 
 func TestBuildReportLooksUpEachRow(t *testing.T) {
-	entries := []Entry{
+	entries := []statusfile.Row{
 		{Slug: "my-slug", Repo: "service-a", Note: "based on main"},
 		{Slug: "my-slug", Repo: "service-b", Note: "stacked on service-a:my-slug"},
 	}
@@ -63,7 +65,7 @@ func TestBuildReportLooksUpEachRow(t *testing.T) {
 }
 
 func TestBuildReportDegradesFailedLookupsToNoPR(t *testing.T) {
-	entries := []Entry{
+	entries := []statusfile.Row{
 		{Slug: "my-slug", Repo: "unknown-repo", Note: "note"},
 	}
 	repos := stubRepos(map[string]string{})
@@ -78,9 +80,9 @@ func TestBuildReportDegradesFailedLookupsToNoPR(t *testing.T) {
 }
 
 func TestBuildReportGuardrail(t *testing.T) {
-	entries := make([]Entry, 4)
+	entries := make([]statusfile.Row, 4)
 	for i := range entries {
-		entries[i] = Entry{Slug: "slug", Repo: "repo"}
+		entries[i] = statusfile.Row{Slug: "slug", Repo: "repo"}
 	}
 	repos := stubRepos(map[string]string{"repo": "/repos/repo"})
 	lookup := stubLookup(map[string]PR{"/repos/repo@slug": {Number: "-", State: "no PR"}})
@@ -150,7 +152,7 @@ func TestFormatHumanIncludesGuardrailWarning(t *testing.T) {
 }
 
 func TestBuildReportFlagsStackedRowWhoseBaseHasMerged(t *testing.T) {
-	entries := []Entry{
+	entries := []statusfile.Row{
 		{Slug: "auth-ui", Repo: "service-a", Branch: "auth-ui", Note: "stacked on service-a:auth-api"},
 		{Slug: "auth-ui", Repo: "service-b", Branch: "auth-ui", Note: "based on main"},
 	}
@@ -189,7 +191,7 @@ func TestBuildReportFlagsStackedRowWhoseBaseHasMerged(t *testing.T) {
 }
 
 func TestBuildReportClearsFlagOnceRebased(t *testing.T) {
-	entries := []Entry{
+	entries := []statusfile.Row{
 		{Slug: "auth-ui", Repo: "service-a", Branch: "auth-ui", Note: "stacked on service-a:auth-api"},
 	}
 	repos := stubRepos(map[string]string{"service-a": "/repos/service-a"})
@@ -213,7 +215,7 @@ func TestBuildReportClearsFlagOnceRebased(t *testing.T) {
 }
 
 func TestBuildReportFallsBackToSlugWhenBranchColumnIsEmpty(t *testing.T) {
-	entries := []Entry{
+	entries := []statusfile.Row{
 		{Slug: "auth-ui", Repo: "service-a", Note: "stacked on service-a:auth-api"},
 	}
 	repos := stubRepos(map[string]string{"service-a": "/repos/service-a"})

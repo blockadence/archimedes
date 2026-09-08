@@ -1,6 +1,9 @@
 package status
 
-import "github.com/blockadence/gh-archimedes/internal/stackref"
+import (
+	"github.com/blockadence/gh-archimedes/internal/stackref"
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
+)
 
 // GitRefs answers the questions stacked-rebase detection asks of a
 // checkout. Both are reads of refs already on disk — no fetching — so a
@@ -76,7 +79,7 @@ func NeedsRebase(refs GitRefs, merged MergedLookup, dep, base Branch) bool {
 // into the two Branches NeedsRebase compares: the row's own branch, and
 // the base it was cut from. Reports false for a note that isn't a stack
 // note at all, or one naming a repo this instance doesn't track.
-func stackedBase(e Entry, info RepoRef, repos RepoLookup) (dep, base Branch, ok bool) {
+func stackedBase(e statusfile.Row, info RepoRef, repos RepoLookup) (dep, base Branch, ok bool) {
 	ref, ok := stackref.ParseNote(e.Note)
 	if !ok {
 		return Branch{}, Branch{}, false
@@ -97,7 +100,7 @@ func stackedBase(e Entry, info RepoRef, repos RepoLookup) (dep, base Branch, ok 
 // checkStack decides whether one status.md row is a stacked branch left
 // behind by its base merging, returning the flag and the ref to rebase
 // onto.
-func checkStack(src Sources, e Entry, info RepoRef) (bool, string) {
+func checkStack(src Sources, e statusfile.Row, info RepoRef) (bool, string) {
 	dep, base, ok := stackedBase(e, info, src.Repos)
 	if !ok {
 		return false, ""

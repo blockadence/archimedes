@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/blockadence/gh-archimedes/internal/manifest"
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
 )
 
 // DefaultGuardrailMax is the concurrent-stream threshold used when
@@ -92,7 +93,7 @@ func (r Report) RebaseNeeded() []Row {
 // its base has merged out from under, and applies the guardrail
 // threshold. A Repos or PR failure degrades that row to noPR rather than
 // failing the whole report: one unreadable row doesn't stop the others.
-func BuildReport(entries []Entry, src Sources, guardrailMax int) Report {
+func BuildReport(entries []statusfile.Row, src Sources, guardrailMax int) Report {
 	rows := make([]Row, 0, len(entries))
 	for _, e := range entries {
 		pr := noPR

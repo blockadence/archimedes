@@ -8,6 +8,7 @@ import (
 
 	"github.com/blockadence/gh-archimedes/internal/dossier"
 	"github.com/blockadence/gh-archimedes/internal/spawn"
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
 	"github.com/blockadence/gh-archimedes/internal/testrepo"
 	"github.com/blockadence/gh-archimedes/internal/worktree"
 )
@@ -84,7 +85,7 @@ func TestMaterializeCopiesReferenceMaterial(t *testing.T) {
 	mustMkdirAll(t, filepath.Join(src, "notes"))
 	mustWriteFile(t, filepath.Join(src, "notes", "call.md"), "notes\n")
 	// Bookkeeping, not reference material — must not be copied.
-	mustWriteFile(t, filepath.Join(src, spawn.StatusFileName), "bookkeeping")
+	mustWriteFile(t, filepath.Join(src, statusfile.Name), "bookkeeping")
 
 	f.materialize(t, "target")
 
@@ -101,7 +102,7 @@ func TestMaterializeCopiesReferenceMaterial(t *testing.T) {
 	if _, err := os.ReadFile(f.contextPath("notes", "call.md")); err != nil {
 		t.Errorf("nested notes/call.md was not materialized: %v", err)
 	}
-	if _, err := os.Stat(f.contextPath(spawn.StatusFileName)); !os.IsNotExist(err) {
+	if _, err := os.Stat(f.contextPath(statusfile.Name)); !os.IsNotExist(err) {
 		t.Error("status.md (bookkeeping) leaked into the materialized context")
 	}
 }

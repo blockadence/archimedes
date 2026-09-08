@@ -8,6 +8,7 @@ import (
 
 	"github.com/blockadence/gh-archimedes/internal/dossier"
 	"github.com/blockadence/gh-archimedes/internal/gitutil"
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
 )
 
 // ContextDirName is the conventional, inside-the-worktree location for
@@ -75,9 +76,10 @@ type Context struct {
 // Materialize copies this unit of work's control-repo directory
 // (work/<slug>/, whatever reference material it holds) into a freshly
 // spawned worktree, at the conventional ContextDirName location, and
-// guarantees it can never end up in a commit there. StatusFileName is
-// Archimedes' own cross-repo bookkeeping (other worktrees' local paths for
-// this slug), not reference material, so it's excluded from the copy.
+// guarantees it can never end up in a commit there. The status.md
+// internal/statusfile owns is Archimedes' own cross-repo bookkeeping (the
+// other repos this slug spans and where their worktrees are), not
+// reference material, so it's excluded from the copy.
 //
 // The target repo's house rules are delivered too, independently of whether
 // this slug has any reference material of its own: house rules apply to
@@ -112,7 +114,7 @@ func Materialize(c Context) error {
 		if err := copyTree(src, dest); err != nil {
 			return err
 		}
-		if err := os.Remove(filepath.Join(dest, StatusFileName)); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(filepath.Join(dest, statusfile.Name)); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}

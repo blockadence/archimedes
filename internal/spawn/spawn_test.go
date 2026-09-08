@@ -12,6 +12,7 @@ import (
 	"github.com/blockadence/gh-archimedes/internal/dossier"
 	"github.com/blockadence/gh-archimedes/internal/spawn"
 	"github.com/blockadence/gh-archimedes/internal/stackref"
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
 	"github.com/blockadence/gh-archimedes/internal/testrepo"
 	"github.com/blockadence/gh-archimedes/internal/workspace"
 	"github.com/blockadence/gh-archimedes/internal/worktree"
@@ -184,7 +185,7 @@ func TestRunMaterializesContextAndTracksStatus(t *testing.T) {
 		t.Errorf("missing 'Worktree ready' line: %s", out)
 	}
 
-	statusContent, err := os.ReadFile(filepath.Join(workSlugDir, spawn.StatusFileName))
+	statusContent, err := os.ReadFile(filepath.Join(workSlugDir, statusfile.Name))
 	if err != nil {
 		t.Fatalf("status.md was not written: %v", err)
 	}
@@ -202,14 +203,14 @@ func TestRunMaterializesContextAndTracksStatus(t *testing.T) {
 	}
 
 	wt2 := worktree.Path(inst.target2.Clone, slug)
-	if _, err := os.Stat(filepath.Join(wt2, spawn.ContextDirName, spawn.StatusFileName)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(wt2, spawn.ContextDirName, statusfile.Name)); !os.IsNotExist(err) {
 		t.Error("status.md (bookkeeping) leaked into the second worktree's materialized context")
 	}
 	if _, err := os.Stat(filepath.Join(wt2, spawn.ContextDirName, "ticket.md")); err != nil {
 		t.Errorf("ticket.md was not materialized into the second worktree: %v", err)
 	}
 
-	statusContent, err = os.ReadFile(filepath.Join(workSlugDir, spawn.StatusFileName))
+	statusContent, err = os.ReadFile(filepath.Join(workSlugDir, statusfile.Name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +244,7 @@ func TestRunRelativeRootDoesNotNestWorktreeInsideRepo(t *testing.T) {
 	// The recorded path is relative to the instance, and resolving it
 	// against the root has to land on the real worktree however the root
 	// was spelled on the way in.
-	statusContent, err := os.ReadFile(filepath.Join(workSlugDir, spawn.StatusFileName))
+	statusContent, err := os.ReadFile(filepath.Join(workSlugDir, statusfile.Name))
 	if err != nil {
 		t.Fatal(err)
 	}

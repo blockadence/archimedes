@@ -1,72 +1,18 @@
 // Package prune finds and removes worktrees/branches whose PR has merged
-// or closed. Parsing and candidate
-// selection are pure (Scan takes PR lookup as an injected function so they
-// can be unit-tested without gh or a real git checkout); the gh-facing
-// adapter lives in gh.go, and the git commands that do the actual removal
-// come from internal/gitutil.
+// or closed. Candidate selection is pure (Scan takes PR lookup as an
+// injected function so it can be unit-tested without gh or a real git
+// checkout); what a status.md row says is internal/statusfile's, the
+// gh-facing adapter lives in gh.go, and the git commands that do the
+// actual removal come from internal/gitutil.
 package prune
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/blockadence/gh-archimedes/internal/stackref"
+	"github.com/blockadence/gh-archimedes/internal/statusfile"
 	"github.com/blockadence/gh-archimedes/internal/worktree"
 )
-
-// Row is one data row of a work/<slug>/status.md table. Worktree is the
-// column as the file records it — relative to the instance root (see
-// internal/worktree); Scan is what resolves it, since that is the layer
-// given the root to resolve against.
-type Row struct {
-	Repo     string
-	Branch   string
-	Worktree string
-	Note     string
-	PR       string
-}
-
-// parseRow parses one "| repo | branch | worktree | note | pr |" line.
-// Splitting on "|" yields a leading and trailing empty field around the
-// five columns, so a well-formed row has at least 6 fields.
-func parseRow(line string) (Row, bool) {
-	fields := strings.Split(line, "|")
-	if len(fields) < 6 {
-		return Row{}, false
-	}
-	repo := strings.TrimSpace(fields[1])
-	if repo == "" {
-		return Row{}, false
-	}
-	return Row{
-		Repo:     repo,
-		Branch:   strings.TrimSpace(fields[2]),
-		Worktree: strings.TrimSpace(fields[3]),
-		Note:     strings.TrimSpace(fields[4]),
-		PR:       strings.TrimSpace(fields[5]),
-	}, true
-}
-
-// ParseStatusFile parses a status.md's data rows, skipping the fixed
-// 4-line header (title, blank, table header, separator) that spawn always
-// writes.
-func ParseStatusFile(data []byte) []Row {
-	lines := strings.Split(string(data), "\n")
-	if len(lines) <= 4 {
-		return nil
-	}
-
-	var rows []Row
-	for _, line := range lines[4:] {
-		if row, ok := parseRow(line); ok {
-			rows = append(rows, row)
-		}
-	}
-	return rows
-}
 
 // PRStateFunc looks up a head branch's PR state ("MERGED", "CLOSED",
 // "OPEN", or "NONE") for repo, the way `gh pr list` does. A returned error
@@ -96,34 +42,25 @@ func (it Item) Prunable() bool { return len(it.Blockers) == 0 }
 // Scan walks the work/*/status.md files of the instance at root
 // (optionally filtered to one slug) and returns every row whose PR has
 // merged or closed, each with its worktree resolved against root. A row
-// that's still named as another unit of work's stacked base ("stacked on
-// repo:slug" in any status.md) comes back with Blockers set rather than
-// being silently pruned out from under it.
+// that's still named as another unit of work's stacked base comes back
+// with Blockers set rather than being silently pruned out from under it.
+//
+// Every file is read even when one slug was asked for, because whether a
+// branch is somebody's base is a question about the other files.
 func Scan(root, slugFilter string, prState PRStateFunc) ([]Item, error) {
-	paths, err := filepath.Glob(filepath.Join(root, "work", "*", "status.md"))
+	files, err := statusfile.Discover(root)
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(paths)
-
-	contents := make(map[string]string, len(paths))
-	for _, p := range paths {
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", p, err)
-		}
-		contents[p] = string(data)
-	}
 
 	var items []Item
-	for _, p := range paths {
-		slug := filepath.Base(filepath.Dir(p))
-		if slugFilter != "" && slug != slugFilter {
+	for _, f := range files {
+		if slugFilter != "" && f.Slug != slugFilter {
 			continue
 		}
 
-		for _, row := range ParseStatusFile([]byte(contents[p])) {
-			state, err := prState(row.Repo, slug)
+		for _, row := range f.Rows {
+			state, err := prState(row.Repo, f.Slug)
 			if err != nil {
 				state = "NONE"
 			}
@@ -131,23 +68,14 @@ func Scan(root, slugFilter string, prState PRStateFunc) ([]Item, error) {
 				continue
 			}
 
-			target := stackref.Note(stackref.Ref{Repo: row.Repo, Slug: slug})
-			var blockers []string
-			for other, content := range contents {
-				if strings.Contains(content, target) {
-					blockers = append(blockers, other)
-				}
-			}
-			sort.Strings(blockers)
-
 			items = append(items, Item{
-				Slug:       slug,
+				Slug:       f.Slug,
 				Repo:       row.Repo,
 				Worktree:   worktree.Resolve(root, row.Worktree),
 				Note:       row.Note,
 				PRState:    state,
-				StatusPath: p,
-				Blockers:   blockers,
+				StatusPath: f.Path,
+				Blockers:   blockers(files, stackref.Ref{Repo: row.Repo, Slug: f.Slug}),
 			})
 		}
 	}
@@ -155,21 +83,32 @@ func Scan(root, slugFilter string, prState PRStateFunc) ([]Item, error) {
 	return items, nil
 }
 
-// RemoveStatusRow deletes every row for repo from the status.md at path.
-func RemoveStatusRow(path, repo string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	lines := strings.Split(string(data), "\n")
-	out := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if row, ok := parseRow(line); ok && row.Repo == repo {
-			continue
+// blockers is every status.md holding a row stacked on ref: the units of
+// work that would lose the branch under them if it were removed.
+//
+// The question is asked of each row's parsed note rather than of the file
+// as text. Scanning for the note's wording in the raw file made the answer
+// turn on the row's spacing — a note an editor's table formatter had
+// re-spaced named no base, and the base it still named was pruned out from
+// under it — and on a prefix, since "stacked on service-a:widget-fix"
+// occurs inside "stacked on service-a:widget-fix-2".
+func blockers(files []statusfile.File, ref stackref.Ref) []string {
+	var paths []string
+	for _, f := range files {
+		for _, row := range f.Rows {
+			if on, ok := stackref.ParseNote(row.Note); ok && on == ref {
+				paths = append(paths, f.Path)
+				break
+			}
 		}
-		out = append(out, line)
 	}
+	sort.Strings(paths)
+	return paths
+}
 
-	return os.WriteFile(path, []byte(strings.Join(out, "\n")), 0o644)
+// RemoveStatusRow deletes every row for repo from the status.md at path,
+// which is what retiring a unit of work in that repo leaves behind. The
+// caller names the file in its own error, so this one doesn't repeat it.
+func RemoveStatusRow(path, repo string) error {
+	return statusfile.RemoveRows(path, func(r statusfile.Row) bool { return r.Repo == repo })
 }
