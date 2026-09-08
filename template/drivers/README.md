@@ -203,8 +203,10 @@ modes are supported:
   standing in for the CLI it runs, has that stub write past the declared
   `fixed_path` the way a real scaffolder or a real agent session does, and
   asks the one question the contract turns on: did the repo come back as it
-  was found? It runs on every push and costs nothing, and a driver added
-  there needs no test of its own to be held to it.
+  was found? It asks it of both ways a run can end — one allowed to finish,
+  and one stopped by a signal while its session is still writing (see *Being
+  stopped* below). It runs on every push and costs nothing, and a driver
+  added there needs no test of its own to be held to it.
 
   A driver *you* write here is outside that suite's reach — it runs in the
   Archimedes repository, over the drivers that ship from there — so this
@@ -248,9 +250,12 @@ Two things follow for a driver you write:
   ordering. Snapshot and arm first, scaffold second, and a signal that beats
   your traps also beats anything there would have been to undo. Both shipped
   drivers that put a repo back — `pocock` and `spec-kit` — are written that
-  way. `openspec` is not, and does not need to be: it is
-  path-parameterized, so it never promised the repo back and rolls nothing
-  back on any exit path.
+  way, and for the drivers Archimedes ships that is checked rather than
+  trusted: the conformance check above stops a run at the moment its stub
+  session is writing in the repo, which is a moment a driver that armed
+  first can act on and one that armed afterwards cannot. `openspec` is not
+  written that way, and does not need to be: it is path-parameterized, so it
+  never promised the repo back and rolls nothing back on any exit path.
 
 Only the *first* signal is forwarded. An operator who hits Ctrl-C again
 because the first appeared to do nothing is told what is being waited for

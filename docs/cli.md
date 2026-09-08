@@ -837,6 +837,19 @@ was found apart from the harvested `fixed_path`. It discovers the drivers by
 reading the manifests rather than from a list, so a third one is covered the
 day it declares the mode and without a test of its own.
 
+It asks that of both ways a run can end, because the promise is made about
+both. A run allowed to finish is the easy half. A run *stopped* — a Ctrl-C,
+a `kill`, a supervisor, a cancelled CI job — is the other, and it is the one
+where a driver has to reach its rollback from a signal rather than from the
+end of its own script. The check stops a run at the moment its stub session
+is writing inside the target repo, which is a moment a driver that armed its
+traps before anything wrote can act on and one that armed them afterwards
+cannot — so the ordering `template/drivers/README.md` asks for is checked
+rather than trusted. `tests/pocock_driver_run.sh` and
+`tests/spec_kit_driver_run.sh` keep their own interrupted cases, in both
+shapes an interrupt arrives in; this is the floor under them, not a
+replacement for them.
+
 It asks one thing of a driver, which the three shipped ones already do:
 every CLI it runs is named by a `command -v <name>` guard before it touches
 the repo. That is where the check learns what to stand a stub session in

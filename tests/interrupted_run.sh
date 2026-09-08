@@ -26,16 +26,12 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/helpers.sh"
 
-# The stub driver sources repo-snapshot.sh, which needs bash 4+ for
-# associative arrays, and it is the bash a driver gets -- not this file's --
-# that decides. Same reading as fixed_location_conformance.sh makes, for the
-# same reason: run by hand under an old bash, a test that consulted its own
-# shell would skip a floor the drivers could have cleared.
-DRIVER_BASH_MAJOR="$(env bash -c 'echo "${BASH_VERSINFO[0]}"' 2>/dev/null)"
-if [ "${DRIVER_BASH_MAJOR:-0}" -lt 4 ]; then
-  echo "skip: interrupted_run.sh (the stub driver's rollback is drivers/lib/repo-snapshot.sh, which needs bash 4+, and the bash a driver would run under here is $(env bash -c 'echo "$BASH_VERSION"' 2>/dev/null))"
-  exit 77
-fi
+# The stub driver's rollback is the real drivers/lib/repo-snapshot.sh, which
+# needs bash 4+ for its associative arrays. Why the bash a *driver* would get
+# is the one that decides here, rather than this file's own, is written down
+# once at the helper.
+skip_without_driver_bash_4 "interrupted_run.sh" \
+  "the stub driver's rollback is drivers/lib/repo-snapshot.sh, which needs bash 4+"
 
 ROOT="$(cd "$HERE/.." && pwd)"
 build_archimedes || exit 1
