@@ -1,0 +1,148 @@
+# The two driver tests that cost money, run on a cadence instead of when
+# somebody remembers.
+#
+# tests/pocock-driver-e2e.sh and tests/spec-kit-driver-e2e.sh each make a
+# real, billed `claude -p` call, so they sit behind
+# ARCHIMEDES_TEST_LIVE_DRIVERS=1 and skip everywhere else -- including
+# test.yml, the push check and release gate, which stay free and
+# credential-free on purpose. This is the one place that opt-in is set.
+#
+# What they cover that nothing else can: the upstream half. A driver is a
+# wrapper around somebody else's CLI and somebody else's skill, and the way
+# it breaks is that they change. Our half -- that the drivers orchestrate
+# and clean up correctly -- is covered for free by tests/pocock_driver_run.sh
+# and tests/spec_kit_driver_run.sh against stub CLIs, on every push.
+#
+# WHAT THIS COSTS, since a schedule spends money without asking again:
+# two headless sessions per run, each pointed at a throwaway repo holding
+# one 10-line source file, so each is a handful of file reads and one
+# short file written. At today's prices that is on the order of $0.10-$0.50
+# a session, so roughly $0.20-$1.00 a run. The installs add nothing.
+# docs/cli.md ("The live driver tests") works that up to a yearly figure
+# against the cadence below, so the arithmetic lives in one place rather
+# than in two comments that can disagree. Both are estimates until the
+# first month's usage lands: check them against the API console and correct
+# them rather than leaving a guess in place. If the real figure is
+# meaningfully worse, the cadence is one line away.
+#
+# Deliberately not pinned: the `claude` CLI and Spec Kit are installed at
+# whatever version is current. test.yml pins its openspec install because a
+# gate must not break for upstream reasons; this workflow exists precisely
+# to find out when upstream moves, so pinning would empty it out.
+name: live-drivers
+
+on:
+  # Weekly, early Monday UTC -- a red build lands at the start of a week
+  # rather than into a weekend.
+  schedule:
+    - cron: "0 7 * * 1"
+  # And by hand, which is the pre-tag ritual: dispatch this, watch it go
+  # green, then push the tag.
+  workflow_dispatch:
+
+# No `pull_request`, and there is no safe way to add one. A pull request
+# from a fork runs the base repo's workflow file, so a job here holding
+# ANTHROPIC_API_KEY would hand the key to anyone who opened one.
+# tests/ci_runs_live_drivers.sh pins that trigger's absence.
+
+permissions:
+  contents: read
+  # For the issue a red run files. Nothing here writes to the repo.
+  issues: write
+
+# A weekly job that overlaps itself is spending twice to learn once.
+concurrency:
+  group: live-drivers
+  cancel-in-progress: false
+
+jobs:
+  live-drivers:
+    runs-on: ubuntu-latest
+    # The credential lives on this environment, not on the repository, so
+    # it is reachable only from a job that names it -- a second job added
+    # to this file later does not get it by being nearby.
+    environment: live-drivers
+    env:
+      ARCHIMEDES_TEST_LIVE_DRIVERS: "1"
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Without this the first failure is a `claude` auth error buried in a
+      # test log, which reads like the driver broke. The setup it is
+      # pointing at is one-time: see docs/cli.md, "The live driver tests".
+      - name: Check the credential is actually there
+        run: |
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::error::No ANTHROPIC_API_KEY. Create the 'live-drivers' environment and add the secret to it (docs/cli.md, 'The live driver tests'). Nothing ran." >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install the claude CLI both drivers run headlessly
+        run: npm install -g @anthropic-ai/claude-code
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install the specify CLI the spec-kit driver unpacks
+        run: |
+          uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Run the two files directly rather than through run-all.sh: the rest
+      # of the suite already ran on the push that got here, and repeating it
+      # would only add ways for this job to go red for reasons that cost
+      # nothing to find.
+      #
+      # A skip fails this job, which is the point. These files exit 77 when
+      # the opt-in is unset or a CLI is missing, and run-all.sh counts that
+      # as skipped; here, 77 means the one job that was supposed to run them
+      # did not, and a green square would say the opposite.
+      - name: pocock driver, against the real claude CLI
+        run: ./tests/pocock-driver-e2e.sh
+
+      # `!cancelled()` rather than `always()`: if pocock failed, we still
+      # want to know whether spec-kit did too -- one dispatch, both answers
+      # -- but a cancelled run should stop spending.
+      - name: spec-kit driver, against the real claude and specify CLIs
+        if: ${{ !cancelled() }}
+        run: ./tests/spec-kit-driver-e2e.sh
+
+      # A scheduled red build is the easiest kind to stop seeing, so it
+      # leaves something with an owner behind. One open issue, commented on
+      # each week it stays broken, rather than a new one every Monday.
+      - name: File an issue when the live suite goes red
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create live-drivers \
+            --description "The scheduled live driver suite" --color B60205 >/dev/null 2>&1 || true
+          # bash -e here, so anything that can fail has to say so and carry
+          # on: a lookup that errors must not be the reason nothing gets filed.
+          open="$(gh issue list --label live-drivers --state open --limit 1 --json number --jq '.[0].number' 2>/dev/null || true)"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "Still red: $RUN_URL"
+          else
+            gh issue create --label live-drivers \
+              --title "The live driver suite is failing" \
+              --body "$(printf '%s\n' \
+                "The scheduled live driver run failed: $RUN_URL" \
+                "" \
+                "These are the two tests that make real \`claude -p\` calls, so a failure here is" \
+                "either a driver of ours or the upstream tool it wraps having moved. The stub-level" \
+                "tests (tests/pocock_driver_run.sh, tests/spec_kit_driver_run.sh) run on every push" \
+                "and cover our half -- if those are green, look upstream first." \
+                "" \
+                "Reproduce locally with a credentialed machine:" \
+                "" \
+                "    ARCHIMEDES_TEST_LIVE_DRIVERS=1 ./tests/run-all.sh")"
+          fi

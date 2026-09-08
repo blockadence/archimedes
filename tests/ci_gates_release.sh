@@ -26,11 +26,7 @@ RELEASE_WF="$ROOT/.github/workflows/release.yml"
 # up to the next job. Enough structure to tell "the release job needs the
 # test job" from "the file contains the word needs somewhere".
 job_block() { # <workflow-file> <job-name>
-  awk -v want="  $2:" '
-    $0 == want { inblock = 1; next }
-    inblock && /^  [^ ]/ { inblock = 0 }
-    inblock { print }
-  ' "$1"
+  yaml_block "$1" "  $2:"
 }
 
 echo "the release is gated on the tests:"

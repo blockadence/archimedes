@@ -52,8 +52,17 @@ jobs:
       # What this runner does NOT exercise, plainly: the two opt-in e2e
       # files, tests/pocock-driver-e2e.sh and tests/spec-kit-driver-e2e.sh.
       # Both make a real, billed `claude -p` call, so they stay behind
-      # ARCHIMEDES_TEST_LIVE_DRIVERS=1 and are run by hand against a
-      # credentialed machine -- the same way the drivers themselves are.
+      # ARCHIMEDES_TEST_LIVE_DRIVERS=1, which nothing here sets -- a gate
+      # that costs money and needs a credential is a gate that fails when
+      # someone else's API is down.
+      #
+      # Where they are exercised: .github/workflows/live-drivers.yml, which
+      # runs both weekly and on demand with a scoped ANTHROPIC_API_KEY, and
+      # files an issue when they go red. What those two files add over what
+      # runs here is the upstream half only; the drivers' own orchestration
+      # is covered on this runner by tests/pocock_driver_run.sh and
+      # tests/spec_kit_driver_run.sh against stub CLIs.
+      #
       # They report themselves skipped rather than passing, and run-all.sh
       # names every skipped file in its summary, so this step's log says
       # which files actually ran rather than only that none failed.

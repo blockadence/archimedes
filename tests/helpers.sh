@@ -83,6 +83,33 @@ build_archimedes() {
   }
 }
 
+# The block of lines nested under a header line in a YAML file --
+# everything indented more deeply than the header, up to the first line
+# that dedents back to it or past it. Blank lines don't end a block.
+#
+# Two test files read the workflows to pin guarantees that live nowhere but
+# there (ci_gates_release.sh: the release waits on the tests;
+# ci_runs_live_drivers.sh: the billed suite is not reachable from a fork),
+# and both need the same thing of them -- enough structure to tell "the
+# release job needs the test job" from "the file contains the word needs
+# somewhere". Reading it two ways would be two answers to that question.
+#
+# <file> <header-line>, the header given exactly as it appears, indent and
+# trailing colon included: `yaml_block wf.yml "  release:"`.
+yaml_block() {
+  awk -v header="$2" '
+    BEGIN {
+      match(header, /^[ ]*/)
+      header_indent = RLENGTH
+    }
+    !inblock { if ($0 == header) inblock = 1; next }
+    /^[[:space:]]*$/ { print; next }
+    { match($0, /^[ ]*/) }
+    RLENGTH <= header_indent { inblock = 0; next }
+    { print }
+  ' "$1"
+}
+
 # One top-level scalar field out of a driver manifest — enough for the flat
 # key/value manifests drivers actually ship, and it reads nothing nested.
 # Deliberately not yq: retiring the vendored scripts took yq off the list of
