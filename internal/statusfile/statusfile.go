@@ -14,12 +14,12 @@
 // So the file's shape has one owner, the way a worktree's does
 // (internal/worktree) and the way the stack note's wording does
 // (internal/stackref). What is here is everything that knows the format:
-// the file's name and where an instance keeps it, the header spawn writes,
-// how a row is rendered and read back, and the walk over an instance's
-// units of work. What is not here is what any of it means — whether a note
-// names a stacked base is internal/stackref's, whether a worktree column
-// resolves to a usable path is internal/worktree's, and whether a row is
-// prunable is prune's.
+// the file's name, the header spawn writes, how a row is rendered and read
+// back, and the walk over an instance's units of work. What is not here is
+// what any of it means — whether a note names a stacked base is
+// internal/stackref's, whether a worktree column resolves to a usable path
+// is internal/worktree's, and whether a row is prunable is prune's — nor
+// the work/<slug> directory the file sits in, which is internal/workdir's.
 package statusfile
 
 import (
@@ -28,6 +28,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/blockadence/gh-archimedes/internal/workdir"
 )
 
 // Name is the file itself. Archimedes' own bookkeeping rather than
@@ -37,11 +39,10 @@ const Name = "status.md"
 
 // Path is where the instance at root keeps slug's file: stated once, so a
 // writer, a reader and the walk cannot come to different conclusions about
-// where the file is. The work/<slug> directory around it is not this
-// package's — it is a unit of work's reference material, which spawn
-// materializes and this file is deliberately excluded from.
+// where the file is. What this package states is the name; the directory
+// around it is internal/workdir's, which says what it is.
 func Path(root, slug string) string {
-	return filepath.Join(root, "work", slug, Name)
+	return filepath.Join(workdir.Path(root, slug), Name)
 }
 
 // Row is one data row: what the file says about one repo's part in one
@@ -126,8 +127,9 @@ func formatRow(r Row) string {
 
 // Append records one row in the instance at root, creating the file with
 // its header first if this is the slug's first spawn. The work/<slug>
-// directory is the caller's to have made — it is where the unit of work's
-// reference material goes, so whoever is spawning has already created it.
+// directory (internal/workdir) is the caller's to have made — it is where
+// the unit of work's reference material goes, so whoever is spawning has
+// already created it.
 func Append(root string, r Row) error {
 	path := Path(root, r.Slug)
 

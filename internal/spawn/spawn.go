@@ -15,6 +15,7 @@ import (
 	"github.com/blockadence/gh-archimedes/internal/manifest"
 	"github.com/blockadence/gh-archimedes/internal/stackref"
 	"github.com/blockadence/gh-archimedes/internal/statusfile"
+	"github.com/blockadence/gh-archimedes/internal/workdir"
 	"github.com/blockadence/gh-archimedes/internal/workspace"
 	"github.com/blockadence/gh-archimedes/internal/worktree"
 )
@@ -149,8 +150,10 @@ func Run(opts Options, out, progress io.Writer) (Result, error) {
 		return Result{}, err
 	}
 
-	workDir := filepath.Join(root, "work")
-	if err := os.MkdirAll(filepath.Join(workDir, opts.Slug), 0o755); err != nil {
+	// The unit of work's directory, made whether or not the operator has
+	// put anything in it yet: statusfile.Append writes into it below and
+	// expects it to be there.
+	if err := os.MkdirAll(workdir.Path(root, opts.Slug), 0o755); err != nil {
 		return Result{}, err
 	}
 	if err := Materialize(Context{

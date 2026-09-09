@@ -556,6 +556,9 @@ sharing those is the whole reason the directory exists. Splitting the
 directory to un-share one column of one file buys less than making the
 column mean the same thing everywhere.
 
+`internal/workdir` owns that argument now — see "Where a unit of work's
+directory is" below.
+
 And it does mean the same thing everywhere.
 `../service-a-worktrees/widget-fix` is not a claim that the directory is
 there; it is where this unit of work's worktree belongs, which is as true
@@ -602,13 +605,45 @@ scaffolded instances byte for byte with nothing normalized away. Two runs
 land in two different temp directories, so a path that is true in one of
 them fails the comparison and names the file it came from.
 
+## Where a unit of work's directory is
+
+`internal/workdir` owns `work/<slug>`, and `Path(root, slug)` is the whole
+of it. `spawn` makes the directory through it, `spawn`'s materialize reads
+the unit of work's reference material out of it, and `internal/statusfile`
+joins `status.md` onto it — the three sites that each used to write
+`filepath.Join(root, "work", slug)` out by hand (issue 66).
+
+One function is not much to move, and moving it is not the point. The
+directory is the one part of an instance that is *both* a unit of work's
+reference material and, in the one file `internal/statusfile` owns,
+Archimedes' bookkeeping — and each half is the premise of a decision made
+somewhere else: the relative worktree column above, the single parser
+below. Each of those packages was restating the premise to justify its own
+decision. The package comment on `internal/workdir` states it once, in
+full, and they cite it.
+
+`internal/instance` would have been the obvious owner, since it scaffolds
+what a new instance starts with. It is not: `Create` walks whatever
+template tree it is handed and never names `work/`, so what knows the
+layout at creation time is `template/`, not the package that copies it.
+
+`work/<slug>/` itself is unchanged, and is not what this was about:
+`template/` scaffolds it and every instance in existence carries it.
+
+The fixtures that spell the layout out still spell it out — `work/<slug>`
+written literally, never built by calling `workdir.Path` — because a
+fixture that agrees with whatever produces it cannot catch that producer
+changing. That is the same rule the `prune` and `statusfile` fixtures
+follow for the worktree column and the table header.
+
 ## What reads `work/<slug>/status.md`
 
-`internal/statusfile` owns the file: its name, the `work/<slug>/` place an
-instance keeps it, the header a slug's first spawn writes, how a row is
-rendered, how a row is read back, and the walk over an instance's units of
-work. `spawn` writes through it, `status` reports what it says, `prune`
-acts on it, and none of the three decides for itself what a row is.
+`internal/statusfile` owns the file: its name, the header a slug's first
+spawn writes, how a row is rendered, how a row is read back, and the walk
+over an instance's units of work. Where an instance keeps it is
+`internal/workdir`'s, above. `spawn` writes through it, `status` reports
+what it says, `prune` acts on it, and none of the three decides for itself
+what a row is.
 
 They used to, and they disagreed. `status` skipped four header lines, split
 on `|`, required five fields and put every cell through

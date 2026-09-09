@@ -222,3 +222,15 @@ func TestBranchNameFallsBackToTheSlug(t *testing.T) {
 		t.Errorf("BranchName = %q, want the slug for a row written without a branch", got)
 	}
 }
+
+// The file's place, stated here rather than assembled from workdir.Path:
+// the directory around it has an owner now (internal/workdir), and what
+// holds this package and that one together is a test that says what the
+// two of them add up to instead of agreeing with whichever changes.
+func TestPathIsTheStatusFileInTheUnitOfWorksDirectory(t *testing.T) {
+	got := Path("/Users/someone/Code/widgets", "widget-fix")
+	want := "/Users/someone/Code/widgets/work/widget-fix/status.md"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
