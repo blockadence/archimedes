@@ -92,6 +92,14 @@
 # whole of it -- these are named, never restored -- and the line the
 # fingerprinting stops at is drawn, with its reasons, at changed_since_snapshot.
 #
+# One path is left out of all that on purpose: the driver's own fixed_path,
+# which the run exists to write and which reporting as a loss would fail every
+# run against a repo that already had one in flight. Left out of the losses,
+# not left unsaid -- archimedes moves that file out of the repo afterwards, so
+# an operator who had edited it and not committed it loses it end to end on a
+# run that succeeded. report_kept_paths_replaced is where the driver's success
+# path says so, and why it has to be the success path that does.
+#
 # Requires bash 4+ for associative arrays, same as the drivers that source
 # it. Sourced, not run: `source ../lib/repo-snapshot.sh`.
 
@@ -311,24 +319,26 @@ changed_since_snapshot() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
 
   snapshot_head_unmoved "$repo" "$snapshot" || return 1
 
-  local -A before=() keep=() fingerprint=()
+  local -A before=() keep=() fingerprinted=()
   local -a fingerprinted_order=()
   local record value
   while IFS= read -r -d '' record; do
     # B records carry two fields where every other kind carries one, so they
-    # are read out here rather than folded into the name-keyed set below. The
-    # order they were written in is kept alongside, so what this reports comes
-    # out in the order the snapshot listed it rather than in whatever order a
-    # hash table hands back.
+    # are read out here rather than folded into the name-keyed set below.
+    # Only the path is taken, because comparing the fingerprints belongs to
+    # the helper below and this is the list of paths to ask it about. The
+    # order they were written in is kept, so what this reports comes out in
+    # the order the snapshot listed it rather than in whatever order a hash
+    # table hands back.
     if [ "${record%%$'\t'*}" = "B" ]; then
-      value="${record#*$'\t'}"
+      value="${record#*$'\t'}"; value="${value#*$'\t'}"
       # Added to the order once however many times it was recorded: an
       # unmerged index has `git diff --name-only HEAD` name a path once per
       # stage, and the report is a list for a person to read.
-      if [ -z "${fingerprint["${value#*$'\t'}"]+set}" ]; then
-        fingerprinted_order+=("${value#*$'\t'}")
+      if [ -z "${fingerprinted["$value"]+set}" ]; then
+        fingerprinted_order+=("$value")
       fi
-      fingerprint["${value#*$'\t'}"]="${value%%$'\t'*}"
+      fingerprinted["$value"]=1
       continue
     fi
     before["${record%%$'\t'*}:${record#*$'\t'}"]=1
@@ -365,12 +375,12 @@ changed_since_snapshot() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
   fi
 
   # And the one reading nothing above can reach: the paths recorded by
-  # content. Re-fingerprinted by name from the B records rather than by asking
-  # git for the untracked set a second time, because a run that wrote a
-  # .gitignore -- which is exactly what a scaffolder does -- would have git
-  # answer that question differently afterwards, and a path that merely became
-  # ignored would read as a path that was written over.
-  if [ "${#fingerprint[@]}" -gt 0 ]; then
+  # content. Asked by name from the B records rather than by asking git for
+  # the untracked set a second time, because a run that wrote a .gitignore --
+  # which is exactly what a scaffolder does -- would have git answer that
+  # question differently afterwards, and a path that merely became ignored
+  # would read as a path that was written over.
+  if [ "${#fingerprinted_order[@]}" -gt 0 ]; then
     local -a work=()
     for value in "${fingerprinted_order[@]+"${fingerprinted_order[@]}"}"; do
       [ -n "${keep["$value"]:-}" ] && continue
@@ -378,12 +388,121 @@ changed_since_snapshot() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
     done
     if [ "${#work[@]}" -gt 0 ]; then
       while IFS= read -r -d '' record; do
-        value="${record#*$'\t'}"
-        [ "${record%%$'\t'*}" = "${fingerprint["$value"]}" ] && continue
-        printf 'O\t%s\0' "$value"
-      done < <(printf '%s\0' "${work[@]}" | fingerprint_paths "$repo")
+        printf 'O\t%s\0' "${record#*$'\t'}"
+      done < <(overwritten_since_snapshot "$repo" "$snapshot" "${work[@]}")
     fi
   fi
+}
+
+# Which of <relpath>... the run has written over since <snapshot-file> was
+# taken: the ones the snapshot fingerprinted whose contents no longer match
+# what it recorded, as NUL-terminated "<fingerprint-before><TAB><relpath>"
+# records.
+#
+# The one comparison behind both readings of that question -- the O records
+# above, which name what a run destroyed, and report_kept_paths_replaced
+# below, which names the one path those deliberately skip. They differ in
+# which paths they ask about and in what they say afterwards; a second way of
+# working out whether a file was written over would be a second answer, and
+# the two would disagree exactly where it mattered.
+#
+# What the path said before is handed back rather than dropped, because that
+# is the one thing the two callers read differently. `-` for it means there
+# was nothing there at all -- a path the operator had deleted and not
+# committed. Written over, that is a loss for an ordinary path, whose deletion
+# the rollback leaves undone; it is nothing at all for a kept path, which the
+# harvest carries back out of the repo. Each caller says which it is; this
+# only reports that the contents moved.
+#
+# A path the snapshot did not fingerprint is not reported. There is no record
+# of what it said before, so there is nothing to compare and nothing that can
+# be claimed either way: a path the run created, and a path git was already
+# ignoring, both arrive here as silence rather than as a loss.
+#
+# The comparison is of contents, so a run that rewrote a file byte for byte is
+# not reported. Nothing of the operator's went anywhere in that case, which is
+# the blind spot named at fingerprint_paths and is not one worth closing.
+overwritten_since_snapshot() { # <repo-path> <snapshot-file> [<relpath> ...]
+  local repo="$1" snapshot="$2"; shift 2
+  [ "$#" -gt 0 ] || return 0
+
+  local -A fingerprint=()
+  local record value
+  while IFS= read -r -d '' record; do
+    [ "${record%%$'\t'*}" = "B" ] || continue
+    value="${record#*$'\t'}"
+    fingerprint["${value#*$'\t'}"]="${value%%$'\t'*}"
+  done < "$snapshot"
+
+  local -a work=()
+  for value in "$@"; do
+    if [ -n "${fingerprint["$value"]+set}" ]; then work+=("$value"); fi
+  done
+  [ "${#work[@]}" -gt 0 ] || return 0
+
+  while IFS= read -r -d '' record; do
+    value="${record#*$'\t'}"
+    [ "${record%%$'\t'*}" = "${fingerprint["$value"]}" ] && continue
+    printf '%s\t%s\0' "${fingerprint["$value"]}" "$value"
+  done < <(printf '%s\0' "${work[@]}" | fingerprint_paths "$repo")
+}
+
+# Say, on stderr, that the run replaced work the operator had uncommitted at
+# one of its <keep-relpath> arguments -- the driver's own fixed_path, the one
+# file the run exists to write.
+#
+# Everything else this file reports is a driver apologising: a path it wrote
+# over, a repo it could not put back. This one is the driver doing its job, and
+# the message reads that way, because failing over it would fail every run
+# against a repo that already had a context map in flight -- which is most of
+# the repos these are pointed at. The exemption is right; the silence around it
+# was not, because the contract does not stop at writing that file. Archimedes
+# moves it out of the repo afterwards, so an operator who had edited it and not
+# committed it has their version replaced and then carried away, and until this
+# every step of that was an ordinary successful run with nothing said anywhere.
+#
+# For the driver's success path only, and that is not a style note. It needs
+# both things restore_repo_state cannot know -- that the run succeeded, and
+# that the kept path is therefore being kept -- and restore_repo_state runs
+# from the exit trap on the failure path too, where nothing is kept and the
+# file has already gone.
+#
+# It asks nothing about HEAD for the same reason. Called where it is meant to
+# be, restore_repo_state has already refused a run that moved HEAD and taken
+# the driver down with it, so by here the snapshot is known to still describe
+# this repo. Asking again would be a second answer to a question already
+# settled, and one this is in no position to act on.
+#
+# Silent when there is nothing to say, and three different states count as
+# nothing. A repo with no file of its own at that path never had one to lose.
+# A file the run rewrote byte for byte still says what it said. And a file the
+# operator had deleted without committing the deletion is put back where they
+# left it: the run writes one, and the harvest moves it straight back out, so
+# a run that announced a loss there would be announcing one that did not
+# happen. A note printed on every run is a note nobody reads by the time it
+# means something.
+#
+# What it does not claim is that the file is unrecoverable. A tracked
+# fixed_path still has whatever HEAD holds; what has gone is the operator's
+# uncommitted version of it, which is what nothing here keeps a copy of.
+report_kept_paths_replaced() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
+  local repo="$1" snapshot="$2"; shift 2
+  [ "$#" -gt 0 ] || return 0
+
+  local -a replaced=()
+  local record
+  while IFS= read -r -d '' record; do
+    # Nothing was there before, so nothing of theirs was replaced -- see above.
+    [ "${record%%$'\t'*}" = "-" ] && continue
+    replaced+=("${record#*$'\t'}")
+  done < <(overwritten_since_snapshot "$repo" "$snapshot" "$@")
+  [ "${#replaced[@]}" -gt 0 ] || return 0
+
+  {
+    echo "$repo had uncommitted work at the path this run was for, and the run wrote its own over it:"
+    printf '  %s\n' "${replaced[@]}"
+    echo "nothing went wrong -- writing that file is the whole of what this run does -- but it is moved out of the repo when the run finishes, and nothing here holds a copy of what your version said. Commit it first if you want to keep it."
+  } >&2
 }
 
 # The same set, one path per line, for a driver that has to say what a

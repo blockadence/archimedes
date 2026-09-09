@@ -24,6 +24,13 @@
 # as the session left them -- the run fails naming them, and the rollback says
 # separately which ones it could not undo. ../lib/repo-snapshot.sh has the
 # reasoning, and the one place it still cannot look (paths git is ignoring).
+#
+# CONTEXT.md itself is the exception to that exception. Replacing an
+# uncommitted one is this run doing its job, not disobeying, and failing over
+# it would refuse every repo that already had a map in flight -- which is many
+# of the repos this is pointed at. So the run succeeds, and says so on its way
+# out instead: the operator's version was replaced, and the harvest then moves
+# the result out of the repo.
 set -euo pipefail
 
 [ $# -eq 1 ] || { echo "usage: run.sh <repo-path>" >&2; exit 1; }
@@ -133,4 +140,13 @@ fi
 # keeping nothing, which is the right end state for a run about to exit
 # non-zero.
 restore_repo_state "$REPO_PATH" "$SNAPSHOT" "$CONTEXT_MAP"
+
+# And the one thing neither the naming above nor the rollback can say, because
+# only this line knows the run succeeded: an operator who had a CONTEXT.md of
+# their own uncommitted has just had it replaced by this run's, and the
+# harvest is about to move the result out of the repo. Not a failure and not
+# an apology -- writing that file is the job -- but not silence either. Here
+# rather than in the trap: on the failure path the map is not kept, and by the
+# time the trap runs it has already gone.
+report_kept_paths_replaced "$REPO_PATH" "$SNAPSHOT" "$CONTEXT_MAP"
 RESTORE_ON_EXIT=0
