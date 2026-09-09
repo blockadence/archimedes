@@ -35,6 +35,17 @@
 # and again by a real run reporting no deprecation annotation -- see
 # docs/cli.md, "The Node the actions run on".
 #
+# What does reach the network is .github/dependabot.yml, which watches the
+# same `uses:` lines from outside the gate and opens one grouped pull
+# request a month when a newer release exists. It is not a second opinion on
+# this table. It says a newer version exists; the table says which versions
+# someone has read an upstream action.yml for -- and the pull request it
+# opens runs this file before anyone reviews it, so a bump past a floor
+# fails on arrival. What neither can see is a row here going stale: a floor
+# is only as current as the reading it was taken from, and merging a green
+# bump is not that reading. Do it in the same pull request when a bump
+# lands, and move the date above with it.
+#
 # An action not in the table fails rather than passing quietly. That is the
 # point: the table is the record of someone having looked, and a `uses:` no
 # one has looked at is exactly the thing this file exists to catch.

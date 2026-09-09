@@ -1,0 +1,58 @@
+# The half of the Node-runtime guard that has the network.
+#
+# tests/ci_action_runtimes.sh holds every `uses:` in .github/workflows/ to a
+# floor per action, and says in its own header what it cannot do: check that
+# table against upstream, because a test in a release gate must not need the
+# network. This file is the other side of that. It has the network and no
+# gate to hold up, so it is what notices that a newer release exists.
+#
+# The two answer different questions and neither replaces the other. This
+# file says a newer version exists. The table says which versions someone
+# has read the upstream `action.yml` of and found not to be on a dead
+# runtime. A bump past a floor fails this bot's own pull request -- the
+# branch Dependabot pushes runs test.yml, and the floors guard is in it --
+# but nothing here or there notices the table going stale, which is the way
+# this arrangement fails. docs/cli.md, "The Node the actions run on", says
+# which of the two is load-bearing and what a green pull request from here
+# is and is not evidence of. Read that before merging one.
+#
+# Why this exists at all: the deprecation that became issue 52 sat as a
+# warning on every run for an unknown number of runs before anyone acted on
+# it, and the fix was half an hour of reading upstream `action.yml` files by
+# hand. "Read the annotations when cutting a release" was available the
+# whole time and did not happen.
+#
+# Scoped narrowly, because what it costs is review attention on a repository
+# with one maintainer:
+#
+#   - github-actions and nothing else. Whatever else this repository grows a
+#     manifest for -- gomod is the obvious one, and go.mod is already here --
+#     is its own decision with its own argument, and must not be picked up
+#     by this file having been left open. tests/ci_watches_action_versions.sh
+#     fails on a second ecosystem rather than letting one arrive quietly.
+#   - monthly, not weekly. A handful of `uses:` lines against actions that
+#     release on the order of once a quarter is roughly twelve pull requests
+#     a year, each arriving with test.yml already run against it.
+#   - grouped, so a quiet month is one pull request and a busy one is still
+#     one pull request rather than one per action.
+#
+# Deliberately not: pinning actions to commit SHAs, which Dependabot also
+# offers. Issue 52 ruled that out on its own merits and this does not
+# reopen it (docs/cli.md, same section).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    # The root, not .github/workflows/. This ecosystem reads the workflow
+    # directory relative to the repository root itself, and pointing it at
+    # the workflows would find nothing while looking like it was configured.
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      # One pull request for the lot. The reviewer's question is the same for
+      # every row in it -- does each of these clear its floor, and did anyone
+      # read what changed -- so splitting it per action multiplies the
+      # arrivals without splitting the work.
+      actions:
+        patterns:
+          - "*"
