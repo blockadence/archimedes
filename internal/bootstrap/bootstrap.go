@@ -96,7 +96,7 @@ func Run(opts Options, out, progress io.Writer) error {
 			}
 		}
 
-		if _, err := dossier.WriteStub(filepath.Join(root, "repos"), dossier.Stub{
+		if _, err := dossier.WriteStub(dossier.Dir(root), dossier.Stub{
 			Name:       entry.Name,
 			Path:       entry.Path,
 			BaseBranch: entry.BaseBranch,

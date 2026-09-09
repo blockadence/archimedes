@@ -636,6 +636,45 @@ fixture that agrees with whatever produces it cannot catch that producer
 changing. That is the same rule the `prune` and `statusfile` fixtures
 follow for the worktree column and the table header.
 
+## Where an instance's dossiers are
+
+`internal/dossier` owns `repos/`, and `Dir(root)` is the whole of the
+location. `bootstrap` scaffolds a stub through it, `sync-house-rules` reads
+the `## House rules` section it pushes into a repo through it, and
+`spawn`'s materialize reads that same section through it — the three sites
+that each wrote `filepath.Join(root, "repos")` out by hand (issue 72).
+
+What did *not* change is the difference from `work/<slug>` above. Every
+entry point here still takes the directory as a parameter —
+`WriteStub(dossierDir, s)`, `HouseRules(dossierDir, repo)`,
+`Path(dossierDir, repo)` — rather than taking a root and joining inside.
+That parameter is not a spelled-out path with a shorter spelling available:
+it is what lets a dossier be written and parsed against a bare
+`t.TempDir()` with no instance around it, and those tests are worth more
+than the three lines it costs. So the joins moved and the signatures did
+not. `internal/workdir` is a package whose whole content is a location;
+`internal/dossier` is a package that had everything *except* one.
+
+The other half of owning the location is saying which directory it is,
+because two different things can live under this one name: `repos/<name>.md`
+is the prose Archimedes parses, and `repos/<name>/` may be a checkout of the
+repository that prose is about, since `repos.yaml` permits a path below the
+root. `Dir`'s comment holds that argument in full, including why nothing
+resolves a checkout through it. It is stated there rather than here because
+the place a fourth caller reads is the package, not this file.
+
+The directory's name and layout are unchanged, and were not what this was
+about. `template/` ships an empty `repos/`, `bootstrap` writes
+`repos/<name>.md` into it, and every instance in existence carries both — so
+a name that could not be confused with a checkout would be a migration, not
+a rename.
+
+The fixtures that spell the layout out still spell it out — `repos/<name>.md`
+written literally in `bootstrap`, `reposync`, `spawn` and `cmd`, never built
+by calling `dossier.Dir` — for the same reason the `work/<slug>` fixtures
+do. Mutating the join here fails tests in all four, which is the check that
+they still hold it.
+
 ## What reads `work/<slug>/status.md`
 
 `internal/statusfile` owns the file: its name, the header a slug's first

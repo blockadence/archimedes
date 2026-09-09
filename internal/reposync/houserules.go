@@ -69,7 +69,7 @@ func SyncHouseRules(opts HouseRulesOptions, out, progress io.Writer, run ExecFun
 
 	// The dossier parse is shared with the per-worktree delivery in
 	// internal/spawn, so a house rule only ever needs editing in one place.
-	dossierDir := filepath.Join(root, "repos")
+	dossierDir := dossier.Dir(root)
 	rules, err := dossier.HouseRules(dossierDir, opts.Repo)
 	if err != nil {
 		return err
