@@ -130,8 +130,8 @@ func TestRepoStatusToolMatchesTheStatusCommand(t *testing.T) {
 func TestRepoStatusToolMatchesTheStatusCommandForOneSlug(t *testing.T) {
 	dir := writeInstanceFixture(t)
 	writeFile(t, filepath.Join(dir, "work", "other-slug", "status.md"),
-		"# other-slug\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n"+
-			"| service-a | other-slug | /wt/service-a-2 | based on main | - |\n")
+		"# other-slug\n\n| repo | branch | worktree | note |\n|---|---|---|---|\n"+
+			"| service-a | other-slug | /wt/service-a-2 | based on main |\n")
 
 	var buf bytes.Buffer
 	if err := runStatus(&buf, dir, "other-slug", true, plainSources()); err != nil {

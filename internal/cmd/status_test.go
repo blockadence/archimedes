@@ -30,9 +30,9 @@ func writeInstanceFixture(t *testing.T) string {
 	if err := os.MkdirAll(slugDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	statusMD := "# my-slug\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
-		"| service-a | my-slug | /wt/service-a | based on main | - |\n" +
-		"| service-b | my-slug | /wt/service-b | stacked on service-a:auth-api | - |\n"
+	statusMD := "# my-slug\n\n| repo | branch | worktree | note |\n|---|---|---|---|\n" +
+		"| service-a | my-slug | /wt/service-a | based on main |\n" +
+		"| service-b | my-slug | /wt/service-b | stacked on service-a:auth-api |\n"
 	if err := os.WriteFile(filepath.Join(slugDir, "status.md"), []byte(statusMD), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +82,36 @@ func TestRunStatusHumanTable(t *testing.T) {
 	}
 }
 
+// An instance spawned before the pr column was dropped has rows with a
+// fifth cell in them, committed to a git repository this one does not own.
+// They go on reporting as the rows they are, and the state reported is the
+// live one either way — the cell was never where it came from.
+func TestRunStatusReadsAFileWrittenBeforeTheColumnWentAway(t *testing.T) {
+	dir := writeInstanceFixture(t)
+
+	legacy := "# my-slug\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
+		"| service-a | my-slug | /wt/service-a | based on main | - |\n" +
+		"| service-b | my-slug | /wt/service-b | stacked on service-a:auth-api | 7 |\n"
+	if err := os.WriteFile(filepath.Join(dir, "work", "my-slug", "status.md"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := runStatus(&buf, dir, "", false, plainSources()); err != nil {
+		t.Fatalf("runStatus returned error: %v", err)
+	}
+
+	got := buf.String()
+	for _, want := range []string{
+		"my-slug              service-a      42       OPEN       based on main",
+		"my-slug              service-b      -        no PR      stacked on service-a:auth-api",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected output to contain %q, got:\n%s", want, got)
+		}
+	}
+}
+
 func TestRunStatusFiltersBySlug(t *testing.T) {
 	dir := writeInstanceFixture(t)
 
@@ -89,8 +119,8 @@ func TestRunStatusFiltersBySlug(t *testing.T) {
 	if err := os.MkdirAll(slugDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	statusMD := "# other-slug\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
-		"| service-a | other-slug | /wt/service-a-2 | based on main | - |\n"
+	statusMD := "# other-slug\n\n| repo | branch | worktree | note |\n|---|---|---|---|\n" +
+		"| service-a | other-slug | /wt/service-a-2 | based on main |\n"
 	if err := os.WriteFile(filepath.Join(slugDir, "status.md"), []byte(statusMD), 0o644); err != nil {
 		t.Fatal(err)
 	}

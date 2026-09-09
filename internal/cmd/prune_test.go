@@ -42,8 +42,8 @@ func setupInstance(t *testing.T, root, repoName, slug, note string) (repoPath, w
 	// so the rows these tests prune are the rows an instance carries.
 	// Spelled out rather than run through worktree.Record, so the fixture
 	// states the shape instead of agreeing with whatever produces it.
-	status := "# " + slug + "\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
-		"| " + repoName + " | " + slug + " | " + repoName + "-worktrees/" + slug + " | " + note + " | - |\n"
+	status := "# " + slug + "\n\n| repo | branch | worktree | note |\n|---|---|---|---|\n" +
+		"| " + repoName + " | " + slug + " | " + repoName + "-worktrees/" + slug + " | " + note + " |\n"
 	if err := os.WriteFile(filepath.Join(statusDir, "status.md"), []byte(status), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -170,8 +170,8 @@ func TestRunPruneRefusesToRemoveAStackedBase(t *testing.T) {
 	if err := os.MkdirAll(stackDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	stackStatus := "# shim-fix\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
-		"| service-a | shim-fix | service-a-worktrees/shim-fix | stacked on service-a:widget-fix | - |\n"
+	stackStatus := "# shim-fix\n\n| repo | branch | worktree | note |\n|---|---|---|---|\n" +
+		"| service-a | shim-fix | service-a-worktrees/shim-fix | stacked on service-a:widget-fix |\n"
 	if err := os.WriteFile(filepath.Join(stackDir, "status.md"), []byte(stackStatus), 0o644); err != nil {
 		t.Fatal(err)
 	}
