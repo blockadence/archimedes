@@ -1291,6 +1291,40 @@ refuses to remove a branch still acting as another unit of work's stacked
 base — decided from every `status.md`'s parsed notes, not from their text
 (see "What reads `work/<slug>/status.md`").
 
+A `--force` run goes through every candidate it listed rather than stopping
+at the first one git will not let go of. Each is its own worktree, branch
+and row, and none of them is any less prunable for a locked worktree three
+entries back; a run that stopped there left `removed.` behind it, silence
+ahead of it, and a second run to find out which was which. Each candidate is
+retired in one order — worktree, branch, row — and a step that fails leaves
+the ones after it undone, so a worktree git kept keeps the branch and the
+row that name it rather than being written out of the instance while it is
+still on disk. The failures are named again at the end, since a caller
+reading nothing but the error still has to learn what to come back for, and
+the run exits non-zero.
+
+Git's reason for each one stands under the entry it belongs to, in git's own
+words, with none of this tool's framing around it — the opposite of what
+`init` does one command over, and for a reason that is about who is reading
+rather than about the errors. `gitutil`'s errors all name the command they
+ran, including the ones `init` decided were not enough (issue 39). What
+differs here is that the operator typed a git-shaped command with `--force`
+in it, against their own checkout, and what comes back is git's objection to
+exactly that: a locked worktree, a dirty one, a path already gone. What they
+typed is the context that makes git's sentence readable (issue 47), which is
+precisely what `init` has to supply for somebody who never asked for a
+commit at all. It is printed against the candidate rather than carried up as
+the command's error for the same reason: several failures arriving together
+as one error reach an operator as a single reflowed paragraph with git's
+sentences run into each other. The trade is that git's reason is in the
+report and not in the command's error, so a caller reading stderr alone gets
+the entries and not the reasons; the report is where this run's account of
+itself is, and the entries are what a caller has to act on.
+`contextmap.LocalSHA`'s `rev-parse` is the
+same captured shape and reaches an operator less directly; the same
+conclusion covers it. `tests/prune_when_a_worktree_will_not_go.sh` drives a
+half-failing run through the installed binary, where that last hop is.
+
 `context-map` sequences a mapping pass across every repo, dependency/base
 repos first, skipping any repo already current for its base branch's latest
 commit (`--dry-run` reports that plan without acting on it). It splits two

@@ -148,5 +148,10 @@ restore_repo_state "$REPO_PATH" "$SNAPSHOT" "$CONTEXT_MAP"
 # an apology -- writing that file is the job -- but not silence either. Here
 # rather than in the trap: on the failure path the map is not kept, and by the
 # time the trap runs it has already gone.
-report_kept_paths_replaced "$REPO_PATH" "$SNAPSHOT" "$CONTEXT_MAP"
+#
+# Guarded the same way the rollback above is, and for a reason spelled out
+# where the helper is: alone among these, its status must not end a run that
+# succeeded. So the run stands and this says which of the two happened.
+report_kept_paths_replaced "$REPO_PATH" "$SNAPSHOT" "$CONTEXT_MAP" \
+  || echo "could not work out whether this run replaced uncommitted work at $REPO_PATH/$CONTEXT_MAP -- if you had a version of your own there that you had not committed, the map this run harvests is not it" >&2
 RESTORE_ON_EXIT=0
