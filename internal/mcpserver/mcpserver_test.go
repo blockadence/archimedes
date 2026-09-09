@@ -112,8 +112,8 @@ func TestRepoStatusReportsEveryRow(t *testing.T) {
 func TestRepoStatusNarrowsToOneSlug(t *testing.T) {
 	inst := newInstance(t)
 	mustWriteFile(t, filepath.Join(inst.root, "work", "other-slug", "status.md"),
-		"# other-slug\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n"+
-			"| app | other-slug | /wt/app-2 | based on main | - |\n")
+		"# other-slug\n\n| repo | branch | worktree | note |\n|---|---|---|---|\n"+
+			"| app | other-slug | /wt/app-2 | based on main |\n")
 	cs := connect(t, mcpserver.Options{Root: inst.root, Status: quietSources()})
 
 	var got status.Report

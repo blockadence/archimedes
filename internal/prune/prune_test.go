@@ -28,7 +28,7 @@ func writeStatus(t *testing.T, root, slug, body string) string {
 // internal/statusfile: a fixture that agrees with whatever produces it
 // cannot catch that producer changing.
 func statusBody(slug string, rows ...string) string {
-	body := "# " + slug + "\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n"
+	body := "# " + slug + "\n\n| repo | branch | worktree | note |\n|---|---|---|---|\n"
 	for _, r := range rows {
 		body += r + "\n"
 	}
@@ -40,7 +40,7 @@ func alwaysMerged(_, _ string) (string, error) { return "MERGED", nil }
 func TestScanFindsMergedCandidate(t *testing.T) {
 	dir := t.TempDir()
 	writeStatus(t, dir, "widget-fix", statusBody("widget-fix",
-		"| service-a | widget-fix | ../service-a-worktrees/widget-fix | based on main | - |",
+		"| service-a | widget-fix | ../service-a-worktrees/widget-fix | based on main |",
 	))
 
 	items, err := prune.Scan(dir, "", alwaysMerged)
@@ -68,7 +68,7 @@ func TestScanFindsMergedCandidate(t *testing.T) {
 func TestScanReadsAnAbsoluteRowAsItStands(t *testing.T) {
 	dir := t.TempDir()
 	writeStatus(t, dir, "widget-fix", statusBody("widget-fix",
-		"| service-a | widget-fix | /Users/someone/Code/service-a-worktrees/widget-fix | based on main | - |",
+		"| service-a | widget-fix | /Users/someone/Code/service-a-worktrees/widget-fix | based on main |",
 	))
 
 	items, err := prune.Scan(dir, "", alwaysMerged)
@@ -83,7 +83,7 @@ func TestScanReadsAnAbsoluteRowAsItStands(t *testing.T) {
 func TestScanIgnoresOpenAndUnknownPRs(t *testing.T) {
 	dir := t.TempDir()
 	writeStatus(t, dir, "widget-fix", statusBody("widget-fix",
-		"| service-a | widget-fix | /wt/service-a | based on main | - |",
+		"| service-a | widget-fix | /wt/service-a | based on main |",
 	))
 
 	open := func(_, _ string) (string, error) { return "OPEN", nil }
@@ -108,7 +108,7 @@ func TestScanIgnoresOpenAndUnknownPRs(t *testing.T) {
 func TestScanTreatsLookupErrorAsNone(t *testing.T) {
 	dir := t.TempDir()
 	writeStatus(t, dir, "widget-fix", statusBody("widget-fix",
-		"| service-a | widget-fix | /wt/service-a | based on main | - |",
+		"| service-a | widget-fix | /wt/service-a | based on main |",
 	))
 
 	failing := func(_, _ string) (string, error) { return "", errBoom }
@@ -124,10 +124,10 @@ func TestScanTreatsLookupErrorAsNone(t *testing.T) {
 func TestScanFiltersBySlug(t *testing.T) {
 	dir := t.TempDir()
 	writeStatus(t, dir, "widget-fix", statusBody("widget-fix",
-		"| service-a | widget-fix | /wt/a | based on main | - |",
+		"| service-a | widget-fix | /wt/a | based on main |",
 	))
 	writeStatus(t, dir, "other-fix", statusBody("other-fix",
-		"| service-a | other-fix | /wt/b | based on main | - |",
+		"| service-a | other-fix | /wt/b | based on main |",
 	))
 
 	items, err := prune.Scan(dir, "widget-fix", alwaysMerged)
@@ -143,10 +143,10 @@ func TestScanRefusesToPruneAStackedBase(t *testing.T) {
 	dir := t.TempDir()
 	// widget-fix/service-a has merged, but shim-fix stacks on it.
 	writeStatus(t, dir, "widget-fix", statusBody("widget-fix",
-		"| service-a | widget-fix | /wt/widget-fix | based on main | - |",
+		"| service-a | widget-fix | /wt/widget-fix | based on main |",
 	))
 	writeStatus(t, dir, "shim-fix", statusBody("shim-fix",
-		"| service-a | shim-fix | /wt/shim-fix | stacked on service-a:widget-fix | - |",
+		"| service-a | shim-fix | /wt/shim-fix | stacked on service-a:widget-fix |",
 	))
 
 	items, err := prune.Scan(dir, "", alwaysMerged)
@@ -179,8 +179,8 @@ func TestScanRefusesToPruneAStackedBase(t *testing.T) {
 func TestRemoveStatusRowDropsOnlyMatchingRepo(t *testing.T) {
 	dir := t.TempDir()
 	path := writeStatus(t, dir, "widget-fix", statusBody("widget-fix",
-		"| service-a | widget-fix | /wt/a | based on main | - |",
-		"| service-b | widget-fix | /wt/b | stacked on service-a:widget-fix | - |",
+		"| service-a | widget-fix | /wt/a | based on main |",
+		"| service-b | widget-fix | /wt/b | stacked on service-a:widget-fix |",
 	))
 
 	if err := prune.RemoveStatusRow(path, "service-a"); err != nil {
@@ -215,10 +215,10 @@ var errBoom = boomErr{}
 func TestScanRefusesToPruneAStackedBaseWhoseNoteWasRespaced(t *testing.T) {
 	dir := t.TempDir()
 	writeStatus(t, dir, "widget-fix", statusBody("widget-fix",
-		"| service-a | widget-fix | /wt/widget-fix | based on main | - |",
+		"| service-a | widget-fix | /wt/widget-fix | based on main |",
 	))
 	writeStatus(t, dir, "shim-fix", statusBody("shim-fix",
-		"| service-a | shim-fix | /wt/shim-fix | stacked  on   service-a:widget-fix | - |",
+		"| service-a | shim-fix | /wt/shim-fix | stacked  on   service-a:widget-fix |",
 	))
 
 	items, err := prune.Scan(dir, "", alwaysMerged)

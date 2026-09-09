@@ -49,8 +49,8 @@ func (i instance) commit(t *testing.T, name, content string) {
 func (i instance) spawned(t *testing.T, slug, note string) {
 	t.Helper()
 	write(t, filepath.Join(i.root, "work", slug, "status.md"),
-		"# "+slug+"\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n"+
-			"| app | "+slug+" | "+filepath.Join(i.tmp, "app-worktrees", slug)+" | "+note+" | - |\n")
+		"# "+slug+"\n\n| repo | branch | worktree | note |\n|---|---|---|---|\n"+
+			"| app | "+slug+" | "+filepath.Join(i.tmp, "app-worktrees", slug)+" | "+note+" |\n")
 }
 
 // mapped records app as having been context-mapped at its base branch's

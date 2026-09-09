@@ -14,8 +14,8 @@ func writeStatus(t *testing.T, root, slug, worktree string) {
 	if err := os.MkdirAll(slugDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	content := "# " + slug + "\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
-		"| service-a | " + slug + " | " + worktree + " | based on main | - |\n"
+	content := "# " + slug + "\n\n| repo | branch | worktree | note |\n|---|---|---|---|\n" +
+		"| service-a | " + slug + " | " + worktree + " | based on main |\n"
 	if err := os.WriteFile(filepath.Join(slugDir, "status.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}

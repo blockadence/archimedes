@@ -672,14 +672,15 @@ and is named after the slug, so that is a path nothing here produces. And
 `stackref.Ref` the note names, rather than asking the file as a string.
 
 The alternative worth taking seriously was that the two want different
-things and one parse would serve neither: `prune` needs the PR column and
-`status` does not, `status` needs the note interpreted and `prune` did not.
-It loses because that is a difference about what to *do* with a row, not
-about what a row *says*. `statusfile.Row` reports all five cells and
-interprets none of them — whether a note names a stacked base stays
-`internal/stackref`'s, whether a worktree column resolves stays
-`internal/worktree`'s, whether a row is prunable stays `prune`'s — so each
-reader still takes what it needs and they cannot disagree about the taking.
+things and one parse would serve neither: `status` needs the note
+interpreted and `prune` did not, `prune` needs the worktree column resolved
+against the instance root and `status` does not. It loses because that is a
+difference about what to *do* with a row, not about what a row *says*.
+`statusfile.Row` reports every cell and interprets none of them — whether a
+note names a stacked base stays `internal/stackref`'s, whether a worktree
+column resolves stays `internal/worktree`'s, whether a row is prunable stays
+`prune`'s — so each reader still takes what it needs and they cannot
+disagree about the taking.
 
 Two smaller things fall out of one owner. The "skip four header lines" rule
 now sits beside the header it skips, held by a test rather than by two
@@ -692,6 +693,78 @@ whether a branch is somebody's base is a question about the *other* files.
 `status` has no such tie, so narrowed to one slug it reads that slug's file
 and no other — one unit of work's unreadable file must not cost an operator
 the report on the unit of work they asked about.
+
+### Why a row carries no pull request
+
+A row is `repo | branch | worktree | note`, and every one of those is
+something `spawn` knows when it writes the row and that stays true for as
+long as the row exists. There was a fifth, `pr`. `spawn` wrote `-` into it
+on every row it appended, nothing ever wrote anything else, and nothing read
+it: `status` asks `gh pr list` for a row's live state on every run, `prune`
+asks the same lookup before it acts, and `notify` goes through
+`prune.Scan`. The column was state-shaped and was not state (issue 65).
+
+That is not free, because the table is read by people. A `pr` header over a
+dash reads as a record — *there is no pull request* — when what the dash
+meant was that nothing had ever been recorded there, including for a unit of
+work whose pull request merged last month. The one reader who trusted it was
+the one it cost.
+
+The alternative was to fill it in rather than drop it. `spawn` cannot — there
+is no pull request when a worktree is created — but `status` holds the number
+every time it runs and could write it back, which would make the table
+readable by a teammate who has the instance and no `gh` session, and readable
+at all offline. It loses because it turns bookkeeping into a cache: a number
+written on Tuesday is wrong the moment anyone opens, closes or merges a pull
+request, and then every reader that has one has to decide whether to believe
+it. Nobody has to now. What a row carries is what a lookup is keyed by, and
+the answer comes from `gh`.
+
+Files written before the column went away are in operators' own git
+histories, and they go on working, in both directions. Their rows have a
+fifth cell; `parseRow` reads the four columns the header names and no more,
+so an old row says exactly what it always said. And a row written now has
+four cells where the reading before this one wanted five, which that reading
+already tolerated — its last cell comes back empty, the same as for a row
+whose last cell a hand had removed. Both directions are held by a test, the
+older reading spelled out rather than imported, since it is gone from the
+code and a fixture that agrees with what produces it cannot catch anything.
+
+Any write through this package — `spawn` appending, `prune` removing — also
+brings the file's two column lines up to the current header on the way past
+(`upgradeColumns`), because a header naming a column is a promise about the
+cells under it and this package is the one place that promise is made.
+Dropping the column from new files alone would have left every instance in
+existence still making it.
+
+That rewrite fires only where the two lines it would replace name *exactly*
+the columns this package has stopped writing. Anything else is somebody
+else's — a paragraph an operator put under the title, a second table they
+keep below — and the cost of guessing is their words gone, on a write they
+asked for something else entirely. A header they have aligned by hand is
+still recognized, since the column names are read the way a row's cells
+are. And the rows are left byte for byte either way: a cell past the last
+column renders as nothing, so an old row under the new header already reads
+as what it is, and re-rendering the rows to be rid of it would take an
+operator's alignment with them.
+
+One thing moved that is not the column. A row was read from a line with at
+least `cells+1` `|`-separated fields, which is one short of a full row, so
+the last cell could go missing and still leave a row standing. That cost
+nothing while the last cell was `pr`, because nobody read it. Over four
+columns the cell that goes missing is the *note*, and the note is what says
+a branch is somebody's stacked base — a row that quietly lost its note reads
+as a row with nothing stacked on it, which is the removal `Item.Blockers`
+exists to refuse, arriving silently and on the destroying side. So a row now
+has to be a full row: short of a cell it is not a data row at all, and it is
+invisible to every reader alike, which is loud. The operator sees their unit
+of work gone from `status` rather than reported with a note it does not
+have.
+
+Nothing outside this repository reads the file. The drivers, the bash suite
+and `template/` never name it; the MCP server serves `status`'s report
+rather than the row. What is left is the reader the column was costing:
+a person, sometimes, reading markdown in their own git repository.
 
 ## Adding a subcommand
 
