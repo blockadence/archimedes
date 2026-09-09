@@ -51,7 +51,7 @@ commit.`,
 // A build file that has to be edited by hand gets those instructions on
 // errOut, where they keep their line breaks, and still fails the command.
 func runApplyConventionPack(out, errOut io.Writer, root, repoName string) error {
-	manifestPath := filepath.Join(root, "repos.yaml")
+	manifestPath := manifest.Path(root)
 	m, err := manifest.Load(manifestPath)
 	if err != nil {
 		return fmt.Errorf("loading %s: %w", manifestPath, err)

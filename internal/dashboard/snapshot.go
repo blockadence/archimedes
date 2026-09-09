@@ -17,7 +17,6 @@ package dashboard
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/blockadence/gh-archimedes/internal/contextmap"
 	"github.com/blockadence/gh-archimedes/internal/manifest"
@@ -73,7 +72,7 @@ type Snapshot struct {
 // lookup that couldn't reach gh degrades that row to "no PR", and a repo
 // whose base branch couldn't be read carries its own error.
 func Collect(opts Options) (Snapshot, error) {
-	manifestPath := filepath.Join(opts.Root, "repos.yaml")
+	manifestPath := manifest.Path(opts.Root)
 	m, err := manifest.Load(manifestPath)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("loading %s: %w", manifestPath, err)

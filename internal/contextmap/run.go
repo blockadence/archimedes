@@ -67,7 +67,7 @@ func Run(opts Options, out, progress io.Writer, in io.Reader) error {
 	if err != nil {
 		return err
 	}
-	manifestPath := filepath.Join(root, "repos.yaml")
+	manifestPath := manifest.Path(root)
 
 	contextFile := opts.ContextFile
 	if contextFile == "" {

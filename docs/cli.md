@@ -675,6 +675,59 @@ by calling `dossier.Dir` — for the same reason the `work/<slug>` fixtures
 do. Mutating the join here fails tests in all four, which is the check that
 they still hold it.
 
+## Where an instance's manifest is
+
+`internal/manifest` owns `repos.yaml` — it always did, apart from where the
+file is — and `Path(root)` is that last piece. Eight production sites built
+`filepath.Join(root, "repos.yaml")` by hand, and the eighth was inside
+`LoadInstance`: the package that reads and writes the file knew where it
+was, used the answer, and handed back `(root, *Manifest)` — everything
+except the path it had just built (issue 75).
+
+Three joins was a small cost, and the argument for leaving them was real
+both times above. Eight is not that argument any more.
+
+The alternative was to widen `LoadInstance` to return the path it already
+has. It was rejected on the shape of the callers. `contextmap` and
+`reposync`'s template sync do load an instance and then need the file's name
+anyway — they are the two the wider return would have served. The other five
+never call `LoadInstance` at all: `bootstrap` names the file to seed an empty
+one before there is anything to load, and `status`, `dashboard`, `mcpserver`
+and `applyconventionpack` need the name in order to `Load` it. They would
+have gone on joining. `Path(root)` serves all eight, and `LoadInstance`
+becomes its first caller rather than a ninth way to ask.
+
+The signatures did not change, for `internal/dossier`'s reason: `Load`,
+`AppendRepo` and `SetRepoField` all go on taking a file path rather than a
+root, because that parameter is what lets a manifest be read and rewritten
+against a bare `t.TempDir()` with no instance around it — which is exactly
+what `setfield_test.go` and `append_test.go` do.
+
+The two packages with the most uses had each already extracted something of
+this privately, which is the tell that it wanted extracting.
+`mcpserver.manifestPath()` was exactly this answer, scoped to one server
+struct; it stays, now as a caller, because `s.root` is what a tool has in
+hand — the same reason `s.repo` exists beside it. `cmd.loadManifest`
+extracted the *other* half, the load prologue, with the path deliberately
+dropped (issue 59) — which is why `applyconventionpack`, the one `cmd` site
+that has to name the file, bypasses it and asks `Path` instead. That is also
+why the rule about a relative `--root` is not restated on `Path`: `Path`
+answers with the root as the operator typed it and points at `loadManifest`,
+where the decision about what a caller may resolve against a relative root is
+written down in full.
+
+The file's name, its format, and the paths recorded *inside* it are
+untouched, and were not what this was about — `Path` answers for the
+manifest file, and where a repo's checkout is still comes from the entry
+that records it (`manifest.CheckoutOf`).
+
+The fixtures that spell the layout out still spell it out — `repos.yaml`
+written literally in every test that writes one, never built by calling
+`manifest.Path` — for the same reason as above. Mutating the join here fails
+tests in `manifest`, `bootstrap`, `cmd`, `contextmap`, `dashboard`,
+`mcpserver`, `notify`, `reposync` and `spawn`, which is the check that they
+still hold it.
+
 ## What reads `work/<slug>/status.md`
 
 `internal/statusfile` owns the file: its name, the header a slug's first

@@ -2,7 +2,6 @@ package status
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/blockadence/gh-archimedes/internal/manifest"
 )
@@ -17,7 +16,7 @@ import (
 // comes through here, so none of them can disagree about what the instance
 // currently looks like.
 func Collect(root, slugFilter string, src Sources, guardrailMax int) (Report, error) {
-	manifestPath := filepath.Join(root, "repos.yaml")
+	manifestPath := manifest.Path(root)
 	m, err := manifest.Load(manifestPath)
 	if err != nil {
 		return Report{}, fmt.Errorf("loading %s: %w", manifestPath, err)

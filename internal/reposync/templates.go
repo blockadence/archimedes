@@ -125,11 +125,11 @@ func SyncTemplates(opts TemplatesOptions, out, progress io.Writer, run ExecFunc)
 		slugs = append(slugs, slug)
 	}
 	if len(slugs) == 0 {
-		reposYAML := filepath.Join(root, "repos.yaml")
+		manifestPath := manifest.Path(root)
 		if opts.Repo != "" {
-			return fmt.Errorf("no repos matched %q in %s", opts.Repo, reposYAML)
+			return fmt.Errorf("no repos matched %q in %s", opts.Repo, manifestPath)
 		}
-		return fmt.Errorf("no repos listed in %s", reposYAML)
+		return fmt.Errorf("no repos listed in %s", manifestPath)
 	}
 
 	token, err := ghToken(run, progress)

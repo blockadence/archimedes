@@ -64,7 +64,7 @@ func Run(opts Options, out, progress io.Writer) error {
 		return err
 	}
 
-	manifestPath := filepath.Join(root, "repos.yaml")
+	manifestPath := manifest.Path(root)
 	if err := ensureManifest(manifestPath); err != nil {
 		return err
 	}

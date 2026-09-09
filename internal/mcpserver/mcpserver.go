@@ -17,6 +17,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/blockadence/gh-archimedes/internal/contextmap"
+	"github.com/blockadence/gh-archimedes/internal/manifest"
 	"github.com/blockadence/gh-archimedes/internal/status"
 )
 
@@ -109,7 +110,15 @@ func newServer(opts Options) server {
 // tool reports the same absolute location for the same repo.
 func (s server) repo(path string) string { return filepath.Join(s.root, path) }
 
-func (s server) manifestPath() string { return filepath.Join(s.root, "repos.yaml") }
+// manifestPath is where this server's instance keeps its manifest —
+// manifest.Path's answer, against the root already absolutized above, so
+// the tools that load and name the file agree with the rest of the
+// codebase about where it is rather than only with each other (issue 75).
+// The method stays because s.root is what a tool has in hand, the same way
+// s.repo above spares every tool the join onto it: list_repos and
+// context_map_status ask it twice each, to load and then to name what they
+// failed to load.
+func (s server) manifestPath() string { return manifest.Path(s.root) }
 
 // readOnly annotates a tool that only reads instance state, so a client can
 // tell at a glance which calls are safe to make unprompted.
