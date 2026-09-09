@@ -203,6 +203,42 @@ assert_file_missing "$OUT" "no output file is produced"
 assert_widget_repo_pristine "$REPO" "specify scaffolded no constitution"
 
 echo ""
+echo "spec-kit driver, the run replaces a constitution the repo already had:"
+
+# The same note the pocock driver makes, asked of the other shipped driver
+# because the mechanism is not that driver's. An operator with uncommitted
+# work at .specify/memory/constitution.md is a good deal less likely than one
+# with a hand-edited CONTEXT.md -- but "less likely" is not a reason for the
+# helper to know which fixed_path it is answering for, and a driver that only
+# reported the likely case would be the one that stopped reporting when a
+# third driver arrived.
+#
+# Here `specify init` is what does the replacing, before the session has said
+# anything: the scaffolded template lands on top of the operator's file and
+# the session then fills that in. Which of the two wrote over it does not
+# change what the operator lost.
+fresh_repo "$REPO"
+mkdir -p "$REPO/.specify/memory"
+echo "the constitution I was half way through drafting" > "$REPO/.specify/memory/constitution.md"
+OUT="$WORK/replaced.md"
+if err="$("$ARCHIMEDES_BIN" run-driver spec-kit "$REPO" "$OUT" 2>&1 >/dev/null)"; then
+  pass "a run that replaced an uncommitted constitution still succeeds -- filling that file in is what the run is for"
+else
+  fail "a run that replaced an uncommitted constitution still succeeds -- filling that file in is what the run is for"
+  printf '%s\n' "$err" >&2
+fi
+assert_file_exists "$OUT" "the constitution is harvested"
+assert_contains "$(cat "$OUT" 2>/dev/null)" "Zero-Dependency" \
+  "and it is the session's, not the version the operator had sitting there"
+assert_contains "$err" ".specify/memory/constitution.md" \
+  "the run says which file of the operator's it replaced, rather than leaving them to find it gone"
+assert_contains "$err" "Commit it first" \
+  "and says what would have kept it, since nothing here holds a copy of what it said"
+assert_file_missing "$REPO/.specify/memory/constitution.md" \
+  "the file really is gone from the repo -- replaced and then harvested away, which is why the run has to say so"
+assert_widget_repo_pristine "$REPO" "run replaced a constitution the repo already had"
+
+echo ""
 echo "spec-kit driver, interrupted mid-run:"
 
 # The case hand-placed error handling can't reach, and the reason rollback
