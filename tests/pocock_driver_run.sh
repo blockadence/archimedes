@@ -295,6 +295,41 @@ assert_eq "$(cat "$REPO/scratch-note.md" 2>/dev/null)" "helpfully rewritten" \
   "the file is left as the session left it -- there is no copy of what it said, so guessing would be the worse answer"
 
 echo ""
+echo "pocock driver, the session replaces a CONTEXT.md the repo already had:"
+
+# The one path the section above exempts, and the one case where saying so is
+# not the same as failing. A repo this driver is pointed at may well already
+# have a CONTEXT.md the operator was part-way through editing -- writing that
+# file is the whole of what the run does, so refusing every repo with one in
+# flight would leave the driver unusable on exactly the repos it is for. The
+# run succeeds and harvests, as it should.
+#
+# What was missing is that the harvest *moves* it: the operator's version is
+# replaced and then carried out of the repo, and until this the entire
+# sequence was an ordinary success with nothing printed anywhere. No stub mode
+# of its own -- the ordinary `write` session, run against a repo that already
+# had the file, is precisely the case.
+fresh_repo "$REPO"
+echo "the map I was half way through writing" > "$REPO/CONTEXT.md"
+OUT="$WORK/replaced.md"
+if err="$("$ARCHIMEDES_BIN" run-driver pocock "$REPO" "$OUT" 2>&1 >/dev/null)"; then
+  pass "a run that replaced an uncommitted CONTEXT.md still succeeds -- writing that file is what the run is for"
+else
+  fail "a run that replaced an uncommitted CONTEXT.md still succeeds -- writing that file is what the run is for"
+  printf '%s\n' "$err" >&2
+fi
+assert_file_exists "$OUT" "the map is harvested"
+assert_contains "$(cat "$OUT" 2>/dev/null)" "Widget Catalog" \
+  "and it is the session's, not the version the operator had sitting there"
+assert_contains "$err" "CONTEXT.md" \
+  "the run says which file of the operator's it replaced, rather than leaving them to find it gone"
+assert_contains "$err" "Commit it first" \
+  "and says what would have kept it, since nothing here holds a copy of what it said"
+assert_file_missing "$REPO/CONTEXT.md" \
+  "the file really is gone from the repo -- replaced and then harvested away, which is why the run has to say so"
+assert_widget_repo_pristine "$REPO" "session replaced a CONTEXT.md the repo already had"
+
+echo ""
 echo "pocock driver, interrupted mid-run:"
 
 # The case hand-placed error handling cannot reach, and the reason the
