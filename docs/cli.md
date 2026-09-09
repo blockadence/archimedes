@@ -931,6 +931,47 @@ anywhere here: pinning actions to commit SHAs. That is a supply-chain
 decision with its own argument and its own maintenance cost, and it is not
 what the deprecation was asking for.
 
+#### What watches upstream, and which half is load-bearing
+
+`.github/dependabot.yml` covers the `github-actions` ecosystem and nothing
+else, monthly, with the bumps grouped into one pull request rather than one
+per action. It is there because the notice that became this section sat on
+every run for an unknown number of runs before anyone read one: "read the
+annotations when cutting a release" was available the whole time and did not
+happen, and the fix was half an hour of reading upstream `action.yml` files
+by hand. The scoping is what makes the standing review cost bearable on a
+repository with one maintainer — roughly twelve pull requests a year against
+a handful of `uses:` lines, each arriving with `test.yml` already run
+against it.
+
+It and the floors table answer different questions, and **the table is the
+load-bearing one**. Dependabot says a newer release exists. The table says
+which releases someone has read the upstream `action.yml` of and found not
+to be on a dead runtime. Only the second is a claim about what this section
+is about, and only the second is checked on every push.
+
+That the bot's pull request goes green is worth having and is not that
+reading. Green means the versions in it clear floors that were already in
+the table — which is the useful direction, since it makes a bump past a
+floor fail before review rather than after merge. It says nothing about
+whether the floors themselves are still current. So when a bump lands, do
+the same thing 52 did by hand, only prompted: read each bumped action's
+`action.yml` for its `runs: using:`, and if the deprecation has moved on —
+node24 to whatever succeeds it — the floors table changes in that same pull
+request, with the date in its header. The failure mode to design against is
+merging the green square and letting the table rot behind it, which is the
+old silence in a new place.
+
+The mechanism that puts the guard in front of the bot: Dependabot pushes a
+branch to this repository (`dependabot/github_actions/…`), `test.yml` runs
+on a push to every branch, and the floors guard is in the suite it runs.
+`tests/ci_watches_action_versions.sh` pins that whole shape — the config
+exists, it covers `github-actions` and nothing else, monthly and grouped,
+and `test.yml`'s `push` filter is still `"**"` rather than a list of named
+branches. Narrowing that filter would take the guard off the bot's pull
+requests without touching a line of the guard, and nothing else here would
+notice.
+
 ## The live driver tests
 
 Those two files are the only place the drivers meet the real tools they
