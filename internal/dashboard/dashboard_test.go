@@ -35,9 +35,9 @@ func writeInstance(t *testing.T) string {
 		"  - name: service-b\n    path: ../service-b\n    base_branch: main\n"
 	write(t, filepath.Join(dir, "repos.yaml"), reposYAML)
 
-	statusMD := "# widget\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
-		"| service-a | widget | /wt/a | based on main | - |\n" +
-		"| service-b | widget | /wt/b | stacked on service-a:auth | - |\n"
+	statusMD := "# widget\n\n| repo | branch | worktree | note |\n|---|---|---|---|\n" +
+		"| service-a | widget | /wt/a | based on main |\n" +
+		"| service-b | widget | /wt/b | stacked on service-a:auth |\n"
 	write(t, filepath.Join(dir, "work", "widget", "status.md"), statusMD)
 
 	// Both checkouts exist, so neither repo reports as uncloned; only

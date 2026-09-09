@@ -305,7 +305,7 @@ assert_contains "$changed7" "half-done.md" \
 assert_not_contains "$changed7" "src/other.js" \
   "an uncommitted edit the run left alone is not named: being dirty is not the same as being written to"
 assert_not_contains "$changed7" "CONTEXT.md" \
-  "the kept path is not named even though the operator had uncommitted work in it -- writing that one is what the run was for"
+  "the kept path is not named among what the run wrote over, even though the operator had uncommitted work in it: writing that one is what the run was for, and a driver failing over it would fail against every repo that already had one in flight -- it is reported separately, by the section below"
 assert_not_contains "$changed7" "node_modules" \
   "a path git is ignoring is not named: fingerprinting those would mean reading the whole of node_modules on every run, which is the cost this deliberately does not pay"
 
@@ -333,6 +333,27 @@ assert_eq "$(cat "$REPO7/src/other.js" 2>/dev/null)" \
 assert_file_exists "$REPO7/node_modules/pkg/index.js" \
   "and an ignored path is still there -- unreported, but not deleted either"
 
+# And the one path both of those readings pass over, asked for on its own.
+#
+# The exemption above is right and stays: the kept path is the file the run
+# exists to write, so reporting it as a loss would fail every run against a
+# repo that already had one. But the fixed-location contract does not stop at
+# writing it -- archimedes then moves it out of the repo -- so an operator who
+# had a CONTEXT.md of their own in flight has it replaced and then taken away,
+# and every word of that happens on a run that succeeded. Said here, on the
+# same repo and the same snapshot as the two readings that skip it, so the
+# three cannot drift into three different answers about the same file.
+#
+# Asked after restore, deliberately: that is where a driver's success path
+# asks it, with everything but the kept path already put back.
+replaced7="$(report_kept_paths_replaced "$REPO7" "$SNAP7" CONTEXT.md 2>&1 >/dev/null)"
+
+assert_contains "$replaced7" "CONTEXT.md" \
+  "the kept path the operator had uncommitted work in, which the run then wrote its own over, is named"
+assert_contains "$replaced7" "$REPO7" "and the repo it was in is named"
+assert_not_contains "$replaced7" "scratch-note.md" \
+  "and nothing else is: what restore already reported is not reported a second time here"
+
 # The other half of the report: a run that touched none of it says nothing,
 # so the message means something when it does appear.
 REPO9="$WORK/repo9"
@@ -349,6 +370,71 @@ assert_eq "$(paths_changed_since_snapshot "$REPO9" "$SNAP9" CONTEXT.md)" "" \
   "a run that wrote only what it was asked for names nothing, though the repo was dirty throughout"
 assert_eq "$(restore_repo_state "$REPO9" "$SNAP9" CONTEXT.md 2>&1 >/dev/null)" "" \
   "and restore says nothing either -- the report has to be silent when there is nothing to report, or it is noise"
+assert_eq "$(report_kept_paths_replaced "$REPO9" "$SNAP9" CONTEXT.md 2>&1 >/dev/null)" "" \
+  "and nothing is said about the kept path: this repo had no CONTEXT.md of its own for the run to replace, and a note on every successful run is a note nobody reads"
+
+echo ""
+echo "repo snapshot, a kept path the run rewrote without changing it:"
+
+# The write that is not a loss. A CONTEXT.md the operator had uncommitted and
+# the run rewrote byte for byte says exactly what it said before, so there is
+# nothing to tell them about -- and the fingerprint already knows, because it
+# is the contents that are compared and not the fact of a write.
+REPO14="$WORK/repo14"
+mkdir -p "$REPO14"
+echo "# readme" > "$REPO14/README.md"
+make_repo_at "$REPO14"
+echo "the map, as it already was" > "$REPO14/CONTEXT.md"
+SNAP14="$WORK/snapshot14"
+snapshot_repo_state "$REPO14" > "$SNAP14"
+echo "the map, as it already was" > "$REPO14/CONTEXT.md"
+
+assert_eq "$(report_kept_paths_replaced "$REPO14" "$SNAP14" CONTEXT.md 2>&1 >/dev/null)" "" \
+  "a kept path the run rewrote identically is not reported: the operator's version and the run's say the same thing, so nothing of theirs went anywhere"
+
+echo ""
+echo "repo snapshot, a kept path the operator had deleted:"
+
+# The other write that is not a loss, and the one the fingerprint alone gets
+# wrong. A tracked CONTEXT.md the operator deleted without committing the
+# deletion is recorded as `-`, and a run that writes a new one moves that
+# fingerprint -- which for any other path is a real loss, since the rollback
+# leaves the operator's deletion undone. Not here: the harvest carries the
+# run's file straight back out, so the repo ends with no CONTEXT.md, which is
+# exactly where the operator left it. Reporting it would be announcing a loss
+# that did not happen.
+REPO16="$WORK/repo16"
+mkdir -p "$REPO16"
+echo "# readme" > "$REPO16/README.md"
+echo "the map as it was committed" > "$REPO16/CONTEXT.md"
+make_repo_at "$REPO16"
+rm "$REPO16/CONTEXT.md"
+SNAP16="$WORK/snapshot16"
+snapshot_repo_state "$REPO16" > "$SNAP16"
+echo "the map the run wrote" > "$REPO16/CONTEXT.md"
+
+assert_eq "$(report_kept_paths_replaced "$REPO16" "$SNAP16" CONTEXT.md 2>&1 >/dev/null)" "" \
+  "a kept path the operator had deleted and not committed is not reported: the harvest takes the run's copy away again, leaving the repo as they left it"
+
+echo ""
+echo "repo snapshot, a kept path nested inside the repo:"
+
+# The same mechanism for the other shipped driver's fixed_path. spec-kit's is
+# .specify/memory/constitution.md, an operator is much less likely to have one
+# of those in flight than a hand-edited CONTEXT.md, and none of that is a
+# reason for this to know which driver it is answering for.
+REPO15="$WORK/repo15"
+mkdir -p "$REPO15/.specify/memory"
+echo "# readme" > "$REPO15/README.md"
+make_repo_at "$REPO15"
+echo "the constitution I was drafting" > "$REPO15/.specify/memory/constitution.md"
+SNAP15="$WORK/snapshot15"
+snapshot_repo_state "$REPO15" > "$SNAP15"
+echo "the constitution the run wrote" > "$REPO15/.specify/memory/constitution.md"
+
+assert_contains "$(report_kept_paths_replaced "$REPO15" "$SNAP15" .specify/memory/constitution.md 2>&1 >/dev/null)" \
+  ".specify/memory/constitution.md" \
+  "a kept path several directories down is reported the same way as one at the root"
 
 echo ""
 echo "repo snapshot/restore, a run that staged what the repo already had:"

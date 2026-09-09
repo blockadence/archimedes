@@ -63,9 +63,9 @@ func newInstance(t *testing.T) instance {
 	}
 	mustWriteFile(t, filepath.Join(inst.root, "repos.yaml"), reposYAML)
 	mustWriteFile(t, filepath.Join(inst.root, "work", "widget-fix", "status.md"),
-		"# widget-fix\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n"+
-			"| app | widget-fix | /wt/app | based on main | - |\n"+
-			"| shared | widget-fix | /wt/shared | stacked on app:auth-api | - |\n")
+		"# widget-fix\n\n| repo | branch | worktree | note |\n|---|---|---|---|\n"+
+			"| app | widget-fix | /wt/app | based on main |\n"+
+			"| shared | widget-fix | /wt/shared | stacked on app:auth-api |\n")
 
 	return inst
 }

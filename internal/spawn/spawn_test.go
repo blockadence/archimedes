@@ -189,8 +189,8 @@ func TestRunMaterializesContextAndTracksStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status.md was not written: %v", err)
 	}
-	want := "# widget-fix\n\n| repo | branch | worktree | note | pr |\n|---|---|---|---|---|\n" +
-		"| target | widget-fix | ../target-repo-worktrees/widget-fix | based on main | - |\n"
+	want := "# widget-fix\n\n| repo | branch | worktree | note |\n|---|---|---|---|\n" +
+		"| target | widget-fix | ../target-repo-worktrees/widget-fix | based on main |\n"
 	if string(statusContent) != want {
 		t.Errorf("status.md mismatch\n got: %q\nwant: %q", statusContent, want)
 	}

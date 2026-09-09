@@ -23,6 +23,12 @@
 # unlike pocock's, scaffolding this repo was always the job here, and failing
 # would not un-write anything -- but the operator is told. The reasoning, and
 # the one place this still cannot look, are in ../lib/repo-snapshot.sh.
+#
+# The constitution itself is left out of that report and said separately, on
+# the success path only: an uncommitted one is replaced here by design --
+# first by the template `specify init` unpacks, then by the session -- and the
+# harvest carries the result out of the repo afterwards, so the operator is
+# told plainly rather than warned.
 set -euo pipefail
 
 [ $# -eq 1 ] || { echo "usage: run.sh <repo-path>" >&2; exit 1; }
@@ -136,4 +142,13 @@ fi
 # HEAD, say), the trap gets its turn and tries again keeping nothing, which
 # is the right end state for a run that is about to exit non-zero.
 restore_repo_state "$REPO_PATH" "$SNAPSHOT" "$CONSTITUTION"
+
+# And the one thing the rollback cannot say, because only this line knows the
+# run succeeded: an operator who had a constitution of their own uncommitted
+# has just had it replaced -- by `specify init`'s template, then by the
+# session -- and the harvest is about to move the result out of the repo. Not
+# a failure and not an apology; writing that file is the job. Here rather than
+# in the trap: on the failure path the constitution is not kept, and by the
+# time the trap runs it has already gone.
+report_kept_paths_replaced "$REPO_PATH" "$SNAPSHOT" "$CONSTITUTION"
 RESTORE_ON_EXIT=0

@@ -223,16 +223,33 @@ modes are supported:
   ignored, and a run that writes over one is **not** reported. That is the
   part still open, said here rather than left in a comment.
 
-  One more path is exempt, for a different reason: the driver's own
-  `fixed_path`. Writing that file is what the run is *for*, and Archimedes
-  moves it out of the repo afterwards by contract — so uncommitted work you
-  had sitting at `CONTEXT.md` before a `pocock` run is replaced and harvested
-  away without being reported as written over. Commit it first if you want
-  to keep it.
+  One more path is exempt from *that* report, for a different reason: the
+  driver's own `fixed_path`. Writing that file is what the run is *for*, so
+  counting it as a loss would fail every `pocock` run against a repo that
+  already had a `CONTEXT.md` in flight — which is most of the repos worth
+  pointing it at.
 
-  For the drivers Archimedes ships, that obligation is checked rather than
-  taken on trust: `tests/fixed_location_conformance.sh` in the Archimedes
-  repository finds every driver declaring this mode by reading the manifests
+  Exempt from the losses is not the same as unmentioned, though, because
+  Archimedes then *moves* that file out of the repo by contract. So if you
+  had uncommitted work sitting at `CONTEXT.md` when a `pocock` run started,
+  the run replaced it and the harvest carried the result away, and both of
+  those are the run succeeding. `report_kept_paths_replaced` says so on the
+  driver's success path — an ordinary note naming the file, not a warning —
+  and the success path is the only place that can: on a failure the
+  `fixed_path` is not kept, and by the time the rollback runs it has already
+  gone. Commit it first if you want to keep it.
+
+  That last note is the one part of this the conformance suite below does
+  *not* hold you to. It checks the pristine-repo obligation, and it checks
+  that a run names the uncommitted work it wrote over — but its dirty-repo
+  case seeds a path of its own rather than your `fixed_path`, so a driver
+  that skipped the note would still pass. The two shipped drivers are held
+  to it by their own tests (`tests/pocock_driver_run.sh`,
+  `tests/spec_kit_driver_run.sh`); a driver you write is on its honour.
+
+  For the drivers Archimedes ships, the pristine-repo obligation is checked
+  rather than taken on trust: `tests/fixed_location_conformance.sh` in the
+  Archimedes repository finds every driver declaring this mode by reading the manifests
   — no list to add one to — points each at a throwaway repo with a stub
   standing in for the CLI it runs, has that stub write past the declared
   `fixed_path` the way a real scaffolder or a real agent session does, and
