@@ -1,6 +1,11 @@
 // Package dossier reads an instance's per-repo dossiers (repos/<name>.md).
 // A dossier is hand-maintained prose; only the sections Archimedes acts on
 // are parsed here.
+//
+// Dir is where an instance keeps them, and the one place that says so.
+// Everything else here takes that directory as a parameter, so a dossier
+// can be read and written against a bare directory with no instance around
+// it — see Dir for why that is worth the parameter.
 package dossier
 
 import (

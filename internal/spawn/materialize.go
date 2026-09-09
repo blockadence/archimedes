@@ -97,7 +97,7 @@ func Materialize(c Context) error {
 	entries, err := os.ReadDir(src)
 	hasWork := err == nil && len(entries) > 0
 
-	rules, err := dossier.HouseRules(filepath.Join(c.Root, "repos"), c.RepoName)
+	rules, err := dossier.HouseRules(dossier.Dir(c.Root), c.RepoName)
 	if err != nil {
 		return err
 	}
