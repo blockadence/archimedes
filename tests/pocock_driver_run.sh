@@ -479,4 +479,76 @@ else
 fi
 assert_contains "$err" "usage:" "the rejection says how to call it"
 
+echo ""
+echo "pocock driver, a helper that could not do its job:"
+
+# The failure the whole rollback is written against, arriving from underneath
+# it. Every question this driver asks about the operator's repo -- what the
+# session wrote, what it wrote over, what could not be put back -- is answered
+# by the shared helpers, and each answer is a list of paths. An empty list
+# means "the run touched nothing of yours", so a helper that could not work
+# the answer out at all must not be able to hand one back.
+#
+# Reached with a stand-in helper rather than a machine with no temp space,
+# because what is under test here is this driver's answer and not how the
+# helper came to fail. drivers/lib/repo-snapshot.sh's own tests are where the
+# failure is traced from the fingerprinting up to each of these.
+
+BROKEN_DRIVERS="$WORK/broken-drivers"
+
+# A fingerprinting that cannot run at all, which the snapshot needs before the
+# session is ever started. Nothing is billed and nothing is written: the run
+# ends where it found out it could not keep its promise about the repo.
+drivers_with_override "$BROKEN_DRIVERS" 'fingerprint_paths() { return 1; }' || exit 1
+fresh_repo "$REPO"
+OUT="$WORK/no-fingerprint.md"
+if err="$(ARCHIMEDES_DRIVERS_DIR="$BROKEN_DRIVERS" "$ARCHIMEDES_BIN" run-driver pocock "$REPO" "$OUT" 2>&1 >/dev/null)"; then
+  fail "a run whose snapshot cannot be taken fails rather than going ahead without one"
+else
+  pass "a run whose snapshot cannot be taken fails rather than going ahead without one"
+fi
+assert_file_missing "$OUT" "and nothing is harvested from it"
+assert_file_missing "$CLAUDE_STUB_LOG" \
+  "and no session was started -- the promise about the repo is checked before anything is billed to write into it"
+assert_widget_repo_pristine "$REPO" "snapshot could not be taken"
+
+# And the same failure arriving after the session, where the driver has to say
+# what the session wrote and cannot find out. An empty answer here is this
+# driver's "the session kept to the one file it was asked for", which is the
+# reading that harvests the map -- so the status has to be the difference.
+drivers_with_override "$BROKEN_DRIVERS" 'paths_changed_since_snapshot() { return 1; }' || exit 1
+fresh_repo "$REPO"
+OUT="$WORK/no-naming.md"
+if err="$(ARCHIMEDES_DRIVERS_DIR="$BROKEN_DRIVERS" "$ARCHIMEDES_BIN" run-driver pocock "$REPO" "$OUT" 2>&1 >/dev/null)"; then
+  fail "a run that cannot find out what the session wrote fails rather than reading that as a session that wrote only the map"
+else
+  pass "a run that cannot find out what the session wrote fails rather than reading that as a session that wrote only the map"
+fi
+assert_contains "$err" "could not work out what the session wrote" \
+  "and says so, rather than leaving the operator with a run that simply failed"
+assert_file_missing "$OUT" "and no context map is harvested from it"
+assert_widget_repo_pristine "$REPO" "could not work out what the session wrote"
+
+# The one that must not fail the run. It is the note saying the operator's own
+# CONTEXT.md was replaced and is about to be carried out of the repo, and it
+# runs after the harvest is a foregone conclusion -- so a driver that let its
+# status meet `set -e` would fail a run that succeeded over a courtesy note.
+# It says it could not tell instead, which is the one thing worse than the
+# note: not saying anything.
+drivers_with_override "$BROKEN_DRIVERS" 'report_kept_paths_replaced() { return 1; }' || exit 1
+fresh_repo "$REPO"
+echo "the map I was half way through writing" > "$REPO/CONTEXT.md"
+OUT="$WORK/no-report.md"
+if err="$(ARCHIMEDES_DRIVERS_DIR="$BROKEN_DRIVERS" "$ARCHIMEDES_BIN" run-driver pocock "$REPO" "$OUT" 2>&1 >/dev/null)"; then
+  pass "a run that could not work out whether it replaced the operator's own map still succeeds -- the map is written and harvested either way"
+else
+  fail "a run that could not work out whether it replaced the operator's own map still succeeds -- the map is written and harvested either way"
+  printf '%s\n' "$err" >&2
+fi
+assert_file_exists "$OUT" "and the map is harvested"
+assert_contains "$err" "could not work out whether" \
+  "and the run says it could not tell, rather than letting silence stand for the report that there was nothing to tell"
+assert_contains "$err" "CONTEXT.md" "naming the path it could not answer for"
+assert_widget_repo_pristine "$REPO" "could not work out whether the map was replaced"
+
 report

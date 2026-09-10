@@ -344,4 +344,51 @@ assert_contains "$err" "HEAD moved" "the failure explains that the repo moved ou
 assert_contains "$err" "by hand" "the failure tells the operator the repo needs their attention"
 assert_file_missing "$OUT" "no context map is harvested from a repo the driver could not clean up"
 
+echo ""
+echo "spec-kit driver, a helper that could not do its job:"
+
+# The same two answers the pocock driver's file pins, asked here because the
+# shared helpers are shared: a driver that answered a broken helper one way
+# while the other answered it another would mean an operator's repo is looked
+# after differently depending on which driver they picked. What is under test
+# is this driver's answer and not how the helper came to fail -- the failure
+# is traced from the fingerprinting up to each helper in
+# tests/repo_snapshot.sh.
+
+BROKEN_DRIVERS="$WORK/broken-drivers"
+
+# A fingerprinting that cannot run at all. The snapshot needs it before
+# `specify init` unpacks a toolchain into the repo, so the run stops there --
+# which is the point: nothing is unpacked that nothing could then put back.
+drivers_with_override "$BROKEN_DRIVERS" 'fingerprint_paths() { return 1; }' || exit 1
+fresh_repo "$REPO"
+OUT="$WORK/no-fingerprint.md"
+if err="$(ARCHIMEDES_DRIVERS_DIR="$BROKEN_DRIVERS" "$ARCHIMEDES_BIN" run-driver spec-kit "$REPO" "$OUT" 2>&1 >/dev/null)"; then
+  fail "a run whose snapshot cannot be taken fails rather than scaffolding into a repo it could not describe first"
+else
+  pass "a run whose snapshot cannot be taken fails rather than scaffolding into a repo it could not describe first"
+fi
+assert_file_missing "$OUT" "and nothing is harvested from it"
+assert_widget_repo_pristine "$REPO" "snapshot could not be taken"
+
+# And the note that must not fail the run, for the reason the pocock file
+# gives at length: it runs after the harvest is a foregone conclusion, so its
+# status is something to say rather than something to die on.
+drivers_with_override "$BROKEN_DRIVERS" 'report_kept_paths_replaced() { return 1; }' || exit 1
+fresh_repo "$REPO"
+mkdir -p "$REPO/.specify/memory"
+echo "the constitution I was half way through drafting" > "$REPO/.specify/memory/constitution.md"
+OUT="$WORK/no-report.md"
+if err="$(ARCHIMEDES_DRIVERS_DIR="$BROKEN_DRIVERS" "$ARCHIMEDES_BIN" run-driver spec-kit "$REPO" "$OUT" 2>&1 >/dev/null)"; then
+  pass "a run that could not work out whether it replaced the operator's own constitution still succeeds"
+else
+  fail "a run that could not work out whether it replaced the operator's own constitution still succeeds"
+  printf '%s\n' "$err" >&2
+fi
+assert_file_exists "$OUT" "and the constitution is harvested"
+assert_contains "$err" "could not work out whether" \
+  "and the run says it could not tell, rather than letting silence stand for the report that there was nothing to tell"
+assert_contains "$err" ".specify/memory/constitution.md" "naming the path it could not answer for"
+assert_widget_repo_pristine "$REPO" "could not work out whether the constitution was replaced"
+
 report

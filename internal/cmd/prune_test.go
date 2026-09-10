@@ -29,8 +29,18 @@ func setupInstance(t *testing.T, root, repoName, slug, note string) (repoPath, w
 	}
 	testrepo.Git(t, repoPath, "worktree", "add", wt, "-b", slug, "main")
 
-	reposYAML := "repos:\n  - name: " + repoName + "\n    path: ./" + repoName + "\n    base_branch: main\n"
-	if err := os.WriteFile(filepath.Join(root, "repos.yaml"), []byte(reposYAML), 0o644); err != nil {
+	// The manifest gains a repo per call rather than being rewritten, so a
+	// test can stand up a second unit of work in the same instance --
+	// which is what a run with more than one candidate needs.
+	manifestPath := filepath.Join(root, "repos.yaml")
+	reposYAML, err := os.ReadFile(manifestPath)
+	if os.IsNotExist(err) {
+		reposYAML = []byte("repos:\n")
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	reposYAML = append(reposYAML, "  - name: "+repoName+"\n    path: ./"+repoName+"\n    base_branch: main\n"...)
+	if err := os.WriteFile(manifestPath, reposYAML, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -215,6 +225,90 @@ func TestRunPruneMissingDependencyErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing dependency") {
 		t.Errorf("expected a missing-dependency error, got: %v", err)
+	}
+}
+
+// A locked worktree is git's refusal an operator actually meets: `git
+// worktree remove --force` will not touch one. The candidates behind it in
+// the run have already been removed and the ones ahead of it had not been
+// looked at, so stopping there left the operator to find out what was still
+// pruneable by running again. The run goes on, and every candidate ends it
+// with an outcome printed against it.
+func TestRunPruneForceKeepsGoingPastAWorktreeGitWillNotRemove(t *testing.T) {
+	root := t.TempDir()
+	lockedRepo, locked := setupInstance(t, root, "service-a", "aaa-fix", "based on main")
+	_, removable := setupInstance(t, root, "service-b", "zzz-fix", "based on main")
+	testrepo.Git(t, lockedRepo, "worktree", "lock", locked)
+
+	var buf bytes.Buffer
+	merged := func(_, _ string) (string, error) { return "MERGED", nil }
+	err := runPrune(&buf, root, "", true, merged)
+	if err == nil {
+		t.Fatal("expected the locked worktree's failure to reach the caller, got nil")
+	}
+	if !strings.Contains(err.Error(), "service-a:aaa-fix") {
+		t.Errorf("expected the failed candidate named in what came back, got: %v", err)
+	}
+
+	if _, statErr := os.Stat(removable); !os.IsNotExist(statErr) {
+		t.Errorf("expected the candidate after the failure to be removed, stat err = %v", statErr)
+	}
+	if _, statErr := os.Stat(locked); statErr != nil {
+		t.Errorf("expected the locked worktree to survive, stat err = %v", statErr)
+	}
+
+	// Nothing of the failed candidate is half-retired: the branch and the
+	// row still name a worktree that is still there.
+	if branches := testrepo.GitOut(t, lockedRepo, "branch", "--list", "aaa-fix"); branches == "" {
+		t.Error("expected the locked candidate's branch to survive, since its worktree did")
+	}
+	rows := statusfile.Parse(readFile(t, filepath.Join(root, "work", "aaa-fix", "status.md")), "aaa-fix")
+	if len(rows) != 1 {
+		t.Errorf("expected the locked candidate's status row to survive, got %+v", rows)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "at "+locked+"\n  not removed:") {
+		t.Errorf("expected the failed candidate to be marked not removed, got:\n%s", out)
+	}
+	if !strings.Contains(out, "at "+removable+"\n  removed.") {
+		t.Errorf("expected the candidate after it to be marked removed, got:\n%s", out)
+	}
+	// Git's own sentence, with none of prune's wrapping around it: the
+	// operator typed --force at their own checkout, and what they typed is
+	// the context that makes git's objection readable (issue 47).
+	if !strings.Contains(out, "git worktree remove "+locked+" --force:") || !strings.Contains(out, "cannot remove a locked working tree") {
+		t.Errorf("expected git's own words under the failed candidate, got:\n%s", out)
+	}
+}
+
+// Two locked worktrees are two things the operator has to go and unlock,
+// and learning about the second one only after fixing the first is the
+// second run this is meant to save them.
+func TestRunPruneForceReportsEveryFailureNotJustTheFirst(t *testing.T) {
+	root := t.TempDir()
+	repoA, lockedA := setupInstance(t, root, "service-a", "aaa-fix", "based on main")
+	repoB, lockedB := setupInstance(t, root, "service-b", "zzz-fix", "based on main")
+	testrepo.Git(t, repoA, "worktree", "lock", lockedA)
+	testrepo.Git(t, repoB, "worktree", "lock", lockedB)
+
+	var buf bytes.Buffer
+	merged := func(_, _ string) (string, error) { return "MERGED", nil }
+	err := runPrune(&buf, root, "", true, merged)
+	if err == nil {
+		t.Fatal("expected both failures to reach the caller, got nil")
+	}
+	for _, candidate := range []string{"service-a:aaa-fix", "service-b:zzz-fix"} {
+		if !strings.Contains(err.Error(), candidate) {
+			t.Errorf("expected %s named in what came back, got: %v", candidate, err)
+		}
+	}
+
+	out := buf.String()
+	for _, wt := range []string{lockedA, lockedB} {
+		if !strings.Contains(out, "git worktree remove "+wt+" --force:") {
+			t.Errorf("expected git's reason for %s in the report, got:\n%s", wt, out)
+		}
 	}
 }
 

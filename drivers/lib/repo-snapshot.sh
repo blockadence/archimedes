@@ -194,6 +194,33 @@ hash_one_path() { # <repo-path> <relpath>
   printf '%s\t%s\0' "${h:--}" "$2"
 }
 
+# Split a "<fingerprint><TAB><path>" record into FINGERPRINT_RECORD_HASH and
+# FINGERPRINT_RECORD_PATH.
+#
+# One record shape, one reading of it. Four places take these apart --
+# fingerprint_paths' own output, the snapshot's B records in two functions,
+# and overwritten_since_snapshot's answer -- and before this they did it with
+# three different field expressions, so a change to the shape needed every one
+# of them found. Whether a path is quoted, or has a tab in it, is a question
+# with one answer here rather than one per caller.
+#
+# The outer "<kind><TAB><value>" wrapper a snapshot record arrives in is not
+# this function's business -- that shape is read the same way for every kind
+# there is, B included, wherever a snapshot is walked. This is the inner pair
+# only.
+#
+# Two globals rather than a printed pair, because these run once per path in
+# loops as long as the operator's working tree, and a command substitution
+# there is a fork each. The names are long for the same reason a global always
+# wants a long name: this is sourced into a driver's shell, not a scope of its
+# own. Nothing here nests, so the second write cannot land on the first: every
+# caller reads its producer out of a file that is complete before the loop
+# starts.
+read_fingerprint_record() { # <record>
+  FINGERPRINT_RECORD_HASH="${1%%$'\t'*}"
+  FINGERPRINT_RECORD_PATH="${1#*$'\t'}"
+}
+
 # Read NUL-terminated paths, relative to <repo-path>, on stdin; print one
 # NUL-terminated "<fingerprint><TAB><path>" record for each, in no particular
 # order. Every path read gets a record, so the caller can compare two runs of
@@ -219,14 +246,28 @@ hash_one_path() { # <repo-path> <relpath>
 #
 # One `git hash-object` for the lot of them, because the per-path shape is a
 # fork each and the set can be as large as the operator's working tree.
+#
+# It holds no temporary file of its own, and that is a property to keep rather
+# than an accident. Everything downstream of here has to be able to tell "the
+# run wrote over nothing of yours" apart from "I could not look", and the
+# cheapest way to be sure of that is for the looking to have no way of
+# failing: a batch git cannot answer is not an error to plumb out, it is the
+# per-path slow path below, and a path git cannot read is the `-` fingerprint,
+# which is a real value rather than a failure. So there is no status here for
+# a caller to lose. The callers still spool this rather than read it through a
+# process substitution -- see changed_since_snapshot -- because that is what
+# makes a stand-in, or anything this grows later, unable to pass for silence.
+#
+# That spooling costs one temp file per reader, so a rollback is still three
+# deep in them and a machine with none still fails. What it no longer does is
+# fail *here*, innermost, in the one function every reading of the repo passes
+# through -- and where it does fail now, it fails with a status somebody
+# catches.
 fingerprint_paths() { # <repo-path>
-  local repo="$1" list hashes p lf=$'\n' cr=$'\r'
-  local -a batch=()
+  local repo="$1" p h lf=$'\n' cr=$'\r'
+  local -a batch=() hashes=()
 
-  list="$(mktemp)" || return 1
-  hashes="$(mktemp)" || { rm -f "$list"; return 1; }
-
-  # Gathered into an array and written out in one go afterwards, rather than
+  # Gathered into an array and answered for in one go afterwards, rather than
   # streamed to a file descriptor: this is a library, and a spare fd opened
   # inside it is one the caller may already be using for something else.
   while IFS= read -r -d '' p; do
@@ -249,27 +290,39 @@ fingerprint_paths() { # <repo-path>
       printf -- '-\t%s\0' "$p"
     fi
   done
-  if [ "${#batch[@]}" -gt 0 ]; then
-    printf '%s\n' "${batch[@]}" > "$list"
+  [ "${#batch[@]}" -gt 0 ] || return 0
+
+  # `git hash-object` stops at the first path it cannot open, so a shorter
+  # answer than the question is not a partial result to be salvaged -- pasted
+  # back onto the path list it would attach every hash after the failure to
+  # the wrong file, which is worse than no answer at all. Counting the answers
+  # is what catches that, and the slow path re-asks one at a time.
+  #
+  # Taken through a command substitution rather than a process substitution,
+  # which is not a style choice in this file of all files: a `< <(...)` would
+  # throw git's status away, and this is the function everything downstream
+  # trusts to have looked. Here the status is the substitution's own, so a git
+  # that fell over is refused outright, and a git that answered short is
+  # refused by the count -- the two ways of not being an answer, kept apart
+  # from an answer. Neither is a failure to hand back: both mean the slow path.
+  local i answers
+  answers="$(printf '%s\n' "${batch[@]}" \
+    | git -C "$repo" hash-object --no-filters --stdin-paths 2>/dev/null)" || answers=""
+  if [ -n "$answers" ]; then
+    while IFS= read -r h; do
+      hashes+=("$h")
+    done <<< "$answers"
   fi
 
-  if [ -s "$list" ]; then
-    # `git hash-object` stops at the first path it cannot open, so a shorter
-    # answer than the question is not a partial result to be salvaged --
-    # pasted back onto the path list it would attach every hash after the
-    # failure to the wrong file, which is worse than no answer at all. The
-    # count is what catches that, and the slow path re-asks one at a time.
-    if git -C "$repo" hash-object --no-filters --stdin-paths < "$list" > "$hashes" 2>/dev/null \
-      && [ "$(wc -l < "$hashes")" -eq "$(wc -l < "$list")" ]; then
-      paste "$hashes" "$list" | tr '\n' '\0'
-    else
-      while IFS= read -r p; do
-        hash_one_path "$repo" "$p"
-      done < "$list"
-    fi
+  if [ "${#hashes[@]}" -eq "${#batch[@]}" ]; then
+    for (( i = 0; i < ${#batch[@]}; i++ )); do
+      printf '%s\t%s\0' "${hashes[i]}" "${batch[i]}"
+    done
+  else
+    for p in "${batch[@]}"; do
+      hash_one_path "$repo" "$p"
+    done
   fi
-
-  rm -f "$list" "$hashes"
 }
 
 # What the run did to <repo-path> since <snapshot-file> was taken, as
@@ -313,7 +366,17 @@ fingerprint_paths() { # <repo-path>
 # leaves the file byte-for-byte as it was, which is not a loss to report.
 #
 # Returns non-zero, printing why, if HEAD has moved since the snapshot --
-# see snapshot_head_unmoved.
+# see snapshot_head_unmoved. Returns non-zero, too, if the fingerprinting
+# behind the O records could not be done at all -- the other way this could be
+# wrong in the reassuring direction, since an empty answer from here reads as
+# "the run touched nothing of yours" and so has to mean that and only that.
+#
+# Unlike the two helpers below, it does not promise to have printed nothing
+# when it fails that way: the A, C and S records are already out by the time
+# the O records are asked for. Both callers spool this whole answer into a
+# file and throw the file away on a non-zero status, so a half-written list is
+# never acted on -- which is the other half of why they spool it, and why a
+# third caller has to do the same.
 changed_since_snapshot() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
   local repo="$1" snapshot="$2"; shift 2
 
@@ -331,7 +394,8 @@ changed_since_snapshot() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
     # the order the snapshot listed it rather than in whatever order a hash
     # table hands back.
     if [ "${record%%$'\t'*}" = "B" ]; then
-      value="${record#*$'\t'}"; value="${value#*$'\t'}"
+      read_fingerprint_record "${record#*$'\t'}"
+      value="$FINGERPRINT_RECORD_PATH"
       # Added to the order once however many times it was recorded: an
       # unmerged index has `git diff --name-only HEAD` name a path once per
       # stage, and the report is a list for a person to read.
@@ -387,9 +451,26 @@ changed_since_snapshot() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
       work+=("$value")
     done
     if [ "${#work[@]}" -gt 0 ]; then
+      # Spooled into a file rather than read through a process substitution,
+      # for the reason restore_repo_state gives about this function's own
+      # output -- and it matters more here than it does there. A producer that
+      # fails inside `< <(...)` hands back no records and no status, and no
+      # records is byte-for-byte what "the run wrote over nothing of yours"
+      # looks like; `set -euo pipefail`, which every driver sourcing this has
+      # on, does not change that, since neither errexit nor pipefail can see
+      # inside a process substitution. Read that way, the one place a driver
+      # is told nothing of the operator's was written over would be the one
+      # place that cannot tell that answer apart from not having been able to
+      # look.
+      local overwritten
+      overwritten="$(mktemp)" || return 1
+      overwritten_since_snapshot "$repo" "$snapshot" "${work[@]}" > "$overwritten" \
+        || { rm -f "$overwritten"; return 1; }
       while IFS= read -r -d '' record; do
-        printf 'O\t%s\0' "${record#*$'\t'}"
-      done < <(overwritten_since_snapshot "$repo" "$snapshot" "${work[@]}")
+        read_fingerprint_record "$record"
+        printf 'O\t%s\0' "$FINGERPRINT_RECORD_PATH"
+      done < "$overwritten"
+      rm -f "$overwritten"
     fi
   fi
 }
@@ -414,6 +495,11 @@ changed_since_snapshot() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
 # harvest carries back out of the repo. Each caller says which it is; this
 # only reports that the contents moved.
 #
+# Returns non-zero, having printed nothing, if the fingerprinting could not be
+# run. Silence and failure are not the same answer here -- "none of these was
+# written over" is the report an operator is entitled to act on -- so the two
+# are told apart by status and every caller has to keep them apart.
+#
 # A path the snapshot did not fingerprint is not reported. There is no record
 # of what it said before, so there is nothing to compare and nothing that can
 # be claimed either way: a path the run created, and a path git was already
@@ -430,8 +516,8 @@ overwritten_since_snapshot() { # <repo-path> <snapshot-file> [<relpath> ...]
   local record value
   while IFS= read -r -d '' record; do
     [ "${record%%$'\t'*}" = "B" ] || continue
-    value="${record#*$'\t'}"
-    fingerprint["${value#*$'\t'}"]="${value%%$'\t'*}"
+    read_fingerprint_record "${record#*$'\t'}"
+    fingerprint["$FINGERPRINT_RECORD_PATH"]="$FINGERPRINT_RECORD_HASH"
   done < "$snapshot"
 
   local -a work=()
@@ -440,11 +526,25 @@ overwritten_since_snapshot() { # <repo-path> <snapshot-file> [<relpath> ...]
   done
   [ "${#work[@]}" -gt 0 ] || return 0
 
+  # Spooled, not read through `< <(...)`, and this is the spool the whole of
+  # the reporting rests on: both readings of "was this written over" come
+  # through here, so a fingerprinting that could not run and was read this way
+  # would answer both of them with the reassuring silence. See
+  # changed_since_snapshot for the shape of that failure. The pipeline's status
+  # is fingerprint_paths' own -- it is the last stage -- so this needs no
+  # pipefail of the caller's to catch it.
+  local now
+  now="$(mktemp)" || return 1
+  printf '%s\0' "${work[@]}" | fingerprint_paths "$repo" > "$now" \
+    || { rm -f "$now"; return 1; }
+
   while IFS= read -r -d '' record; do
-    value="${record#*$'\t'}"
-    [ "${record%%$'\t'*}" = "${fingerprint["$value"]}" ] && continue
+    read_fingerprint_record "$record"
+    value="$FINGERPRINT_RECORD_PATH"
+    [ "$FINGERPRINT_RECORD_HASH" = "${fingerprint["$value"]}" ] && continue
     printf '%s\t%s\0' "${fingerprint["$value"]}" "$value"
-  done < <(printf '%s\0' "${work[@]}" | fingerprint_paths "$repo")
+  done < "$now"
+  rm -f "$now"
 }
 
 # Say, on stderr, that the run replaced work the operator had uncommitted at
@@ -485,17 +585,39 @@ overwritten_since_snapshot() { # <repo-path> <snapshot-file> [<relpath> ...]
 # What it does not claim is that the file is unrecoverable. A tracked
 # fixed_path still has whatever HEAD holds; what has gone is the operator's
 # uncommitted version of it, which is what nothing here keeps a copy of.
+#
+# Returns non-zero, having printed nothing, if it could not work the answer
+# out. That is a status for the caller to say something about rather than to
+# die on -- see the body for why this one, alone among these, must not end a
+# run that succeeded.
 report_kept_paths_replaced() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
   local repo="$1" snapshot="$2"; shift 2
   [ "$#" -gt 0 ] || return 0
 
+  # Spooled for the reason the two functions above are, and answered for
+  # differently, which is the whole of the awkwardness here: this one runs on
+  # the success path, after the harvest is a foregone conclusion. A non-zero
+  # return under the caller's `set -e` would end a run that genuinely
+  # succeeded, over a courtesy note. So the status is handed to the driver
+  # rather than acted on, and both drivers answer it with a line saying they
+  # could not work out whether they replaced anything -- see pocock's and
+  # spec-kit's run.sh. What is not on offer is the third option: printing
+  # nothing and returning zero, which is this file's silence-is-a-bug rule
+  # broken in the one place the bug reads as good news.
+  local records
+  records="$(mktemp)" || return 1
+  overwritten_since_snapshot "$repo" "$snapshot" "$@" > "$records" \
+    || { rm -f "$records"; return 1; }
+
   local -a replaced=()
   local record
   while IFS= read -r -d '' record; do
+    read_fingerprint_record "$record"
     # Nothing was there before, so nothing of theirs was replaced -- see above.
-    [ "${record%%$'\t'*}" = "-" ] && continue
-    replaced+=("${record#*$'\t'}")
-  done < <(overwritten_since_snapshot "$repo" "$snapshot" "$@")
+    [ "$FINGERPRINT_RECORD_HASH" = "-" ] && continue
+    replaced+=("$FINGERPRINT_RECORD_PATH")
+  done < "$records"
+  rm -f "$records"
   [ "${#replaced[@]}" -gt 0 ] || return 0
 
   {
@@ -543,7 +665,10 @@ paths_changed_since_snapshot() { # <repo-path> <snapshot-file> [<keep-relpath> .
 # out and nothing else is going to ask.
 #
 # Returns non-zero, having changed nothing, if HEAD has moved since the
-# snapshot.
+# snapshot, or if working out what the run did failed for any other reason.
+# Both drivers answer that with "could not roll <repo> back to how it was
+# found -- it needs looking at by hand", which is the honest thing to say: a
+# rollback that could not find out what to undo has undone nothing.
 restore_repo_state() { # <repo-path> <snapshot-file> [<keep-relpath> ...]
   local repo="$1" snapshot="$2"
 

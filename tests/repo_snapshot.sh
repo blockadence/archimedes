@@ -539,4 +539,159 @@ fi
 assert_contains "$(tr '\0' '\n' < "$WORK/snapshot12")" "scratch-note.md" \
   "and it still fingerprints the work already sitting there, HEAD or no HEAD"
 
+echo ""
+echo "repo snapshot, a batch answer that does not line up with the question:"
+
+# `git hash-object --stdin-paths` stops at the first path it cannot open, so a
+# short answer is not a partial result to be salvaged: paired back onto the
+# paths that were asked about, every hash after the failure lands on the wrong
+# file -- which is worse than no answer, because each one is a claim about a
+# file nobody looked at. Counting the answers is what catches it, and the slow
+# path re-asks one at a time.
+#
+# Reachable only with a stand-in git, because provoking it for real needs a
+# file that passes the readable test and then refuses to open. The stand-in
+# answers for the first path and stops, which is the shape of the real thing.
+REPO18="$WORK/repo18"
+mkdir -p "$REPO18"
+echo "# readme" > "$REPO18/README.md"
+make_repo_at "$REPO18"
+echo "one" > "$REPO18/one.md"
+echo "two" > "$REPO18/two.md"
+echo "three" > "$REPO18/three.md"
+
+git() { # <arg>...
+  local a
+  for a in "$@"; do
+    if [ "$a" = "--stdin-paths" ]; then
+      command git "$@" | head -1
+      return
+    fi
+  done
+  command git "$@"
+}
+short18="$(printf 'one.md\0two.md\0three.md\0' | fingerprint_paths "$REPO18" | tr '\0' '\n')"
+unset -f git
+
+assert_eq "$short18" \
+  "$(cd "$REPO18" && git hash-object --no-filters -- one.md two.md three.md \
+     | paste - <(printf '%s\n' one.md two.md three.md))" \
+  "a batch answer shorter than the question is thrown away and every path re-asked, rather than each hash being paired with whichever path it lands beside"
+
+echo ""
+echo "repo snapshot, a fingerprinting that could not run:"
+
+# The one way this report can be wrong in the reassuring direction. Everything
+# above asks whether the run wrote over work the operator had in flight, and
+# the answer comes back through a fingerprinting step. A fingerprinting that
+# could not run hands back no records -- which, read as records, is
+# byte-for-byte "the run wrote over nothing of yours". So each of the three
+# functions that read one is asked here to tell the two apart, with a stand-in
+# fingerprinter that does nothing but fail.
+#
+# A stand-in rather than a machine with no temp space, because it is the
+# readers that are under test and not the fingerprinter: what has to hold is
+# that a producer failing anywhere down there cannot pass for an all-clear,
+# whatever made it fail. The real fingerprint_paths is put back afterwards, so
+# nothing below this section inherits it.
+REPO17="$WORK/repo17"
+mkdir -p "$REPO17"
+echo "# readme" > "$REPO17/README.md"
+make_repo_at "$REPO17"
+echo "notes to self" > "$REPO17/scratch-note.md"
+echo "the map I was drafting" > "$REPO17/CONTEXT.md"
+SNAP17="$WORK/snapshot17"
+snapshot_repo_state "$REPO17" > "$SNAP17"
+
+# The run: an ADR nobody asked for, the operator's note written over, and
+# their draft map replaced. Everything the sections above report on.
+echo "an ADR nobody asked for" > "$REPO17/ADR.md"
+echo "helpfully rewritten" > "$REPO17/scratch-note.md"
+echo "the map" > "$REPO17/CONTEXT.md"
+
+# Kept before it is stood on, and checked: an empty capture here would put
+# nothing back at the end of the section, and everything after it would run
+# against the stand-in while reading as though it had not.
+FINGERPRINT_PATHS_REAL="$(declare -f fingerprint_paths)"
+[ -n "$FINGERPRINT_PATHS_REAL" ] || { echo "could not capture the real fingerprint_paths to put back" >&2; exit 1; }
+fingerprint_paths() { return 1; }
+
+if out="$(overwritten_since_snapshot "$REPO17" "$SNAP17" scratch-note.md 2>&1)"; then
+  fail "asking what the run wrote over fails when the fingerprinting cannot run"
+else
+  pass "asking what the run wrote over fails when the fingerprinting cannot run"
+fi
+assert_eq "$out" "" \
+  "and names nothing while it fails: a path named here is one the caller reports as lost"
+
+if changed_since_snapshot "$REPO17" "$SNAP17" CONTEXT.md >/dev/null 2>&1; then
+  fail "reading what the run did fails rather than reporting the paths it could still see"
+else
+  pass "reading what the run did fails rather than reporting the paths it could still see"
+fi
+
+# The reading pocock acts on. It aborts the run on a non-zero status here, and
+# an empty answer is the run reporting that the session kept to the one file
+# it was asked for -- so these two are the same list of files told apart by
+# status alone, and the status is the whole of the difference.
+if out="$(paths_changed_since_snapshot "$REPO17" "$SNAP17" CONTEXT.md 2>&1)"; then
+  fail "naming what the run changed fails rather than coming back empty, which is what a clean repo looks like"
+else
+  pass "naming what the run changed fails rather than coming back empty, which is what a clean repo looks like"
+fi
+assert_eq "$out" "" "and names nothing while it fails"
+
+# And the rollback, which is where an operator is told the repo was put back.
+# It has to have found out what to undo before it can claim to have undone it.
+if out="$(restore_repo_state "$REPO17" "$SNAP17" CONTEXT.md 2>&1)"; then
+  fail "restore refuses when it cannot find out what the run did, rather than reporting a repo put back that it never touched"
+else
+  pass "restore refuses when it cannot find out what the run did, rather than reporting a repo put back that it never touched"
+fi
+assert_file_exists "$REPO17/ADR.md" \
+  "and it really did leave the repo alone -- a rollback that could not work out what to undo has undone nothing"
+assert_not_contains "$out" "back as it was found" \
+  "and says nothing about a repo it put back"
+
+# The one that runs on the success path, where the harvest has already
+# happened. It fails the same way; what differs is what the drivers do with
+# the status, which is the section in each driver's test file.
+if out="$(report_kept_paths_replaced "$REPO17" "$SNAP17" CONTEXT.md 2>&1)"; then
+  fail "the note about a replaced kept path fails rather than staying silent, which is how it reports there was nothing to replace"
+else
+  pass "the note about a replaced kept path fails rather than staying silent, which is how it reports there was nothing to replace"
+fi
+assert_eq "$out" "" "and says nothing while it fails, so nothing reads as a report"
+
+# The half that was already right, pinned so it stays that way: the
+# fingerprinting in snapshot_repo_state is the last pipeline of the function,
+# so pipefail carries its status out and a driver's `set -e` ends the run
+# before a session ever starts.
+if ( set -euo pipefail; snapshot_repo_state "$REPO17" > "$WORK/snapshot17-failed" ); then
+  fail "snapshotting fails under a driver's shell options when the fingerprinting cannot run"
+else
+  pass "snapshotting fails under a driver's shell options when the fingerprinting cannot run"
+fi
+
+eval "$FINGERPRINT_PATHS_REAL"
+
+# And the fingerprinter itself, which no longer has anything to fail at. It
+# used to want two temp files of its own -- three deep by the time a rollback
+# reached it -- and failing to get one was the whole of how it could fail.
+#
+# That is not the same as a machine with no temp files now getting an answer:
+# the callers above spool this, so such a machine still fails, and the section
+# above is what makes it fail loudly. What has gone is the deepest place it
+# could fail, in the one function every reading of the repo goes through.
+#
+# A stand-in mktemp rather than a hostile TMPDIR, because macOS's mktemp
+# ignores a TMPDIR it cannot use and falls back to the per-user temp directory
+# -- so the hostile-TMPDIR spelling of this passed against the version that
+# did use temp files, which is no test at all.
+mktemp() { return 1; }
+assert_eq "$(printf 'scratch-note.md\0' | fingerprint_paths "$REPO17" | tr '\0' '\n')" \
+  "$(printf '%s\t%s' "$(git -C "$REPO17" hash-object --no-filters -- scratch-note.md)" scratch-note.md)" \
+  "the fingerprinting itself needs no temp file, so it has nothing left to fail at on a machine that has run out of them"
+unset -f mktemp
+
 report

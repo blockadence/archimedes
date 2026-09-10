@@ -253,6 +253,34 @@ deliverable_interrupt() {
   esac
 }
 
+# A copy of the shipped drivers tree at <dest>, with <override-shell-code>
+# appended to its copy of lib/repo-snapshot.sh. Point archimedes at it with
+# ARCHIMEDES_DRIVERS_DIR, or run one of its drivers directly, to see a driver
+# meet a helper that cannot do its job.
+#
+# A copy rather than a function exported into the driver's environment,
+# because a driver sources those helpers itself and the file's own definitions
+# would land on top of anything a test had exported. Appended for the same
+# reason from the other side: the last definition of a bash function is the
+# one that stands, so an override written after the source line wins without
+# the copy having to be edited in place.
+#
+# What this reaches is failure-path code with no cheap way to provoke it for
+# real -- a fingerprinting that could not run needs a machine that has run out
+# of temp files, and a driver's answer to that is worth pinning long before a
+# machine like that turns up. Shared by both driver test files rather than
+# written twice: they are asking the same question of two drivers that have to
+# answer it the same way. <dest> <override-shell-code>
+drivers_with_override() {
+  local dest="$1" override="$2"
+  # Checked, because a dest that survived would have cp nest the tree inside
+  # it -- and a driver run out of a tree with no override in it passes every
+  # assertion the caller was about to make for the wrong reason.
+  rm -rf "$dest" || return 1
+  cp -R "$TESTS_REPO_ROOT/drivers" "$dest" || return 1
+  printf '\n%s\n' "$override" >> "$dest/lib/repo-snapshot.sh"
+}
+
 # Skip <file-name>, printing why, when the bash a *driver* would run under
 # is older than 4.
 #

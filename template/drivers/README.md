@@ -239,6 +239,30 @@ modes are supported:
   `fixed_path` is not kept, and by the time the rollback runs it has already
   gone. Commit it first if you want to keep it.
 
+  **Every one of those answers can also come back as "I could not find
+  out", and a driver has to keep that apart from "there was nothing to
+  find".** They are lists of paths, so the answer meaning *the run touched
+  nothing of yours* is an empty list — which is exactly what a helper that
+  could not do its job at all would otherwise hand you. So each of them
+  returns non-zero instead, and a driver that reads the list without reading
+  the status will one day tell you your repo came through clean on the
+  strength of a question nobody managed to ask.
+
+  Two of them you answer by failing. `restore_repo_state` and
+  `paths_changed_since_snapshot` returning non-zero mean the run cannot
+  promise what it was going to promise about your repo, and both shipped
+  drivers say so: `could not roll <repo> back to how it was found -- it
+  needs looking at by hand`. `report_kept_paths_replaced` is the one that
+  must not: it runs on the success path, after the harvest is settled, so a
+  bare call under `set -e` would fail a run that genuinely succeeded over a
+  courtesy note. Guard it the way the shipped drivers do, and say the note
+  could not be worked out rather than saying nothing:
+
+  ```bash
+  report_kept_paths_replaced "$REPO_PATH" "$SNAPSHOT" "$FIXED_PATH" \
+    || echo "could not work out whether this run replaced uncommitted work at $REPO_PATH/$FIXED_PATH" >&2
+  ```
+
   That last note is the one part of this the conformance suite below does
   *not* hold you to. It checks the pristine-repo obligation, and it checks
   that a run names the uncommitted work it wrote over — but its dirty-repo
