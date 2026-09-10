@@ -158,13 +158,18 @@ func findRepoNode(doc *yaml.Node, repoName string) (*yaml.Node, error) {
 // relative to the instance, while git, drivers, and the tools those wrap
 // all run with working directories of their own: a relative root would
 // resolve against whichever of those happened to be running.
+//
+// What comes back is the root and the manifest, not the file. A caller
+// that needs the file's name too — to rewrite one field of it, or to name
+// it in a message — asks Path with the root it was just handed, which is
+// the same question this asks and so cannot answer differently.
 func LoadInstance(rootOption string) (root string, m *Manifest, err error) {
 	root, err = filepath.Abs(rootOption)
 	if err != nil {
 		return "", nil, fmt.Errorf("resolving instance root %s: %w", rootOption, err)
 	}
 
-	manifestPath := filepath.Join(root, "repos.yaml")
+	manifestPath := Path(root)
 	m, err = Load(manifestPath)
 	if err != nil {
 		return "", nil, fmt.Errorf("loading %s: %w", manifestPath, err)
